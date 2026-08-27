@@ -1,0 +1,615 @@
+<div id="billing" class="module-page hidden fade-in">
+
+  <div class="page-header">
+    <div class="page-title">
+      <h2>🧾 Billing &amp; GST Invoice</h2>
+      <p>All invoice types · GST calculation · Split payments · EMI</p>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-outline" onclick="setBillType('credit_note');showTab('bill-new',document.querySelector('#billing .tab'),document.getElementById('billing'))">📋 Credit Note</button>
+      <button class="btn btn-outline" onclick="setBillType('debit_note');showTab('bill-new',document.querySelector('#billing .tab'),document.getElementById('billing'))">📄 Debit Note</button>
+      <button class="btn btn-gold" onclick="setBillType('retail');showTab('bill-new',document.querySelector('#billing .tab'),document.getElementById('billing'))">➕ New Invoice</button>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-icon gold">🧾</div><div class="stat-value">₹8.4L</div><div class="stat-label">Today's Billing</div></div>
+    <div class="stat-card green"><div class="stat-icon green">✅</div><div class="stat-value">23</div><div class="stat-label">Bills Today</div></div>
+    <div class="stat-card blue"><div class="stat-icon blue">💳</div><div class="stat-value">₹1.2L</div><div class="stat-label">Pending Payments</div></div>
+    <div class="stat-card red"><div class="stat-icon red">↩️</div><div class="stat-value">3</div><div class="stat-label">Returns / Refunds</div></div>
+    <div class="stat-card purple"><div class="stat-icon" style="background:rgba(155,89,182,.15);color:#9b59b6">🗓️</div><div class="stat-value">5</div><div class="stat-label">Active EMIs</div></div>
+    <div class="stat-card"><div class="stat-icon" style="background:rgba(241,196,15,.15);color:#f39c12">🎟️</div><div class="stat-value">8</div><div class="stat-label">Coupons Used</div></div>
+  </div>
+
+  <!-- MAIN TABS -->
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('bill-new',this,document.getElementById('billing'))">🆕 New Invoice</div>
+    <div class="tab" onclick="showTab('bill-list',this,document.getElementById('billing'))">📋 All Bills</div>
+    <div class="tab" onclick="showTab('bill-receipt',this,document.getElementById('billing'))">🧾 Receipt / Print</div>
+    <div class="tab" onclick="showTab('bill-notes',this,document.getElementById('billing'))">📝 Credit / Debit Notes</div>
+    <div class="tab" onclick="showTab('bill-returns',this,document.getElementById('billing'))">↩️ Returns &amp; Refunds</div>
+  </div>
+
+  <!-- ===== TAB 1: NEW INVOICE ===== -->
+  <div class="tab-content active" id="bill-new">
+
+    <!-- Invoice Type Selector -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">📄 Invoice Type</div></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0" id="invTypePills">
+        <button class="pill-btn active" onclick="setBillType('retail',this)">🛍️ Retail Invoice</button>
+        <button class="pill-btn" onclick="setBillType('wholesale',this)">🏭 Wholesale Invoice</button>
+        <button class="pill-btn" onclick="setBillType('tax',this)">🏛️ Tax Invoice</button>
+        <button class="pill-btn" onclick="setBillType('estimate',this)">📝 Estimate Invoice</button>
+        <button class="pill-btn" onclick="setBillType('quotation',this)">💬 Quotation</button>
+        <button class="pill-btn" onclick="setBillType('credit_note',this)">📋 Credit Note</button>
+        <button class="pill-btn" onclick="setBillType('debit_note',this)">📄 Debit Note</button>
+        <button class="pill-btn" onclick="setBillType('exchange',this)">🔄 Exchange Billing</button>
+        <button class="pill-btn" onclick="setBillType('return',this)">↩️ Return Invoice</button>
+        <button class="pill-btn" onclick="setBillType('refund',this)">💸 Refund Invoice</button>
+      </div>
+      <div id="billTypeNote" style="margin-top:10px;padding:8px 12px;border-radius:8px;background:rgba(184,134,11,.1);border-left:3px solid var(--accent);font-size:.82rem;color:var(--text-muted)">
+        🛍️ <b>Retail Invoice</b> — Standard GST invoice for walk-in customers. CGST + SGST applied.
+      </div>
+    </div>
+
+    <div class="grid-2-1">
+      <!-- LEFT: FORM -->
+      <div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><div class="card-title">📋 Invoice Details</div></div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Invoice No</label>
+              <input class="form-control" id="inv_no" value="INV-2026-8842" readonly style="color:var(--accent);font-weight:700">
+            </div>
+            <div class="form-group">
+              <label>Date</label>
+              <input class="form-control" type="date" id="inv_date" value="2026-08-20">
+            </div>
+            <div class="form-group">
+              <label>Customer *</label>
+              <select class="form-control" id="inv_customer" onchange="fillCustomerGST(this.value)">
+                <option value="">-- Select Customer --</option>
+                <option value="C001">Priya Sharma (C001)</option>
+                <option value="C002">Rajesh Patel (C002)</option>
+                <option value="C003">Sunita Verma (C003)</option>
+                <option value="C006">Vikram Malhotra (C006)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Customer GSTIN</label>
+              <input class="form-control" id="inv_cust_gstin" placeholder="For B2B / wholesale">
+            </div>
+            <div class="form-group">
+              <label>Salesperson</label>
+              <select class="form-control" id="inv_sales">
+                <option>Karan Mehta</option><option>Ravi Sharma</option><option>Deepika Singh</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>HSN Code</label>
+              <input class="form-control" id="inv_hsn" value="7113">
+            </div>
+            <div class="form-group">
+              <label>Reference / PO No</label>
+              <input class="form-control" placeholder="Against PO or order no.">
+            </div>
+            <div class="form-group">
+              <label>Notes</label>
+              <input class="form-control" placeholder="Special instructions...">
+            </div>
+          </div>
+        </div>
+
+        <!-- ITEMS TABLE -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <div class="card-title">📦 Items</div>
+            <button class="btn btn-outline btn-sm" onclick="addBillItem()">➕ Add Item</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th style="min-width:160px">Description</th>
+                  <th>HSN</th>
+                  <th>Purity</th>
+                  <th>Wt (g)</th>
+                  <th>Rate/g (₹)</th>
+                  <th>Making (₹)</th>
+                  <th>Stone (₹)</th>
+                  <th>GST%</th>
+                  <th>Discount%</th>
+                  <th>Amount (₹)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="bill-items-tbody">
+                <tr id="bill-empty-row"><td colspan="11" style="text-align:center;padding:20px;color:var(--text-muted)">No items. Click ➕ Add Item.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- TOTALS -->
+          <div style="display:flex;justify-content:flex-end;margin-top:12px">
+            <table style="width:320px;font-size:.88rem">
+              <tr><td class="text-muted">Subtotal</td><td class="text-right" id="tot_subtotal">₹0</td></tr>
+              <tr><td class="text-muted">CGST (1.5%)</td><td class="text-right" id="tot_cgst">₹0</td></tr>
+              <tr><td class="text-muted">SGST (1.5%)</td><td class="text-right" id="tot_sgst">₹0</td></tr>
+              <tr><td class="text-muted">Item Discount</td><td class="text-right text-success" id="tot_item_disc">- ₹0</td></tr>
+              <tr><td class="text-muted">Coupon / Voucher</td><td class="text-right text-success" id="tot_coupon">- ₹0</td></tr>
+              <tr><td class="text-muted">Old Gold Exchange</td><td class="text-right text-success" id="tot_exchange">- ₹0</td></tr>
+              <tr><td class="text-muted">TCS (1% if &gt;₹2L)</td><td class="text-right" id="tot_tcs">₹0</td></tr>
+              <tr style="border-top:2px solid var(--accent);font-size:1.05rem">
+                <td class="fw-bold text-gold" style="padding-top:10px">Grand Total</td>
+                <td class="text-right fw-bold text-gold" style="padding-top:10px" id="bill-grand-total">₹0</td>
+              </tr>
+              <tr><td colspan="2" style="font-size:.72rem;color:var(--text-muted);padding-top:4px" id="tot_words">Amount in words: Zero</td></tr>
+            </table>
+          </div>
+        </div>
+
+        <!-- DISCOUNT & COUPON -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><div class="card-title">🎟️ Discount, Coupon &amp; Gift Voucher</div></div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Additional Discount (%)</label>
+              <input class="form-control" type="number" id="bill_disc_pct" value="0" min="0" max="30" oninput="recalcBillTotal()">
+            </div>
+            <div class="form-group">
+              <label>Discount Amount (₹)</label>
+              <input class="form-control" type="number" id="bill_disc_amt" value="0" min="0" oninput="recalcBillTotal()">
+            </div>
+            <div class="form-group">
+              <label>Coupon Code</label>
+              <div style="display:flex;gap:8px">
+                <input class="form-control" id="coupon_code" placeholder="e.g. DIWALI10">
+                <button class="btn btn-outline btn-sm" onclick="applyCoupon()">Apply</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Gift Voucher No.</label>
+              <div style="display:flex;gap:8px">
+                <input class="form-control" id="gift_voucher" placeholder="GV-XXXX-XXXX">
+                <button class="btn btn-outline btn-sm" onclick="applyGiftVoucher()">Apply</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Old Gold Exchange Value (₹)</label>
+              <input class="form-control" type="number" id="bill_exchange" value="0" oninput="recalcBillTotal()">
+            </div>
+          </div>
+          <div id="coupon_msg" style="display:none;margin-top:8px;padding:8px 12px;border-radius:8px;font-size:.82rem"></div>
+        </div>
+
+        <!-- PAYMENT MODE -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">💳 Payment Mode</div>
+            <button class="btn btn-outline btn-sm" onclick="openModal('splitPayModal')">⚡ Split Payment</button>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px" id="payModePills">
+            <button class="pay-pill active" onclick="selectPayMode(this,'cash')">💵 Cash</button>
+            <button class="pay-pill" onclick="selectPayMode(this,'card')">💳 Card</button>
+            <button class="pay-pill" onclick="selectPayMode(this,'upi')">📱 UPI</button>
+            <button class="pay-pill" onclick="selectPayMode(this,'neft')">🏦 Bank Transfer</button>
+            <button class="pay-pill" onclick="selectPayMode(this,'wallet')">👛 Wallet</button>
+            <button class="pay-pill" onclick="selectPayMode(this,'emi')">🗓️ EMI</button>
+            <button class="pay-pill" onclick="selectPayMode(this,'cheque')">📄 Cheque</button>
+            <button class="pay-pill" onclick="selectPayMode(this,'exchange')">🔄 Exchange+Cash</button>
+            <button class="pay-pill" onclick="selectPayMode(this,'credit')">📒 Credit</button>
+          </div>
+
+          <!-- Cash fields -->
+          <div id="pay_cash" class="pay-fields">
+            <div class="form-grid">
+              <div class="form-group"><label>Amount Received (₹)</label><input class="form-control" type="number" id="pay_cash_amt" placeholder="0.00" oninput="calcChange()"></div>
+              <div class="form-group"><label>Change / Balance (₹)</label><input class="form-control" id="pay_change" value="₹0" readonly style="color:var(--success);font-weight:700"></div>
+            </div>
+          </div>
+
+          <!-- Card fields -->
+          <div id="pay_card" class="pay-fields" style="display:none">
+            <div class="form-grid">
+              <div class="form-group"><label>Card Type</label><select class="form-control"><option>Visa</option><option>Mastercard</option><option>Rupay</option><option>Amex</option></select></div>
+              <div class="form-group"><label>Last 4 Digits</label><input class="form-control" placeholder="XXXX" maxlength="4"></div>
+              <div class="form-group"><label>Bank Name</label><input class="form-control" placeholder="e.g. HDFC Bank"></div>
+              <div class="form-group"><label>Approval Code</label><input class="form-control" placeholder="Transaction ref"></div>
+            </div>
+          </div>
+
+          <!-- UPI fields -->
+          <div id="pay_upi" class="pay-fields" style="display:none">
+            <div class="form-grid">
+              <div class="form-group"><label>UPI App</label><select class="form-control"><option>Google Pay</option><option>PhonePe</option><option>Paytm</option><option>BHIM</option><option>Amazon Pay</option><option>Other</option></select></div>
+              <div class="form-group"><label>UPI Transaction ID</label><input class="form-control" placeholder="12-digit UTR/TXN ID"></div>
+            </div>
+          </div>
+
+          <!-- NEFT/Bank fields -->
+          <div id="pay_neft" class="pay-fields" style="display:none">
+            <div class="form-grid">
+              <div class="form-group"><label>Bank Name</label><input class="form-control" placeholder="e.g. SBI"></div>
+              <div class="form-group"><label>Transfer Mode</label><select class="form-control"><option>NEFT</option><option>RTGS</option><option>IMPS</option><option>Wire Transfer</option></select></div>
+              <div class="form-group"><label>UTR / Reference No.</label><input class="form-control" placeholder="UTR number"></div>
+              <div class="form-group"><label>Transfer Date</label><input class="form-control" type="date" value="2026-08-20"></div>
+            </div>
+          </div>
+
+          <!-- Wallet fields -->
+          <div id="pay_wallet" class="pay-fields" style="display:none">
+            <div class="form-grid">
+              <div class="form-group"><label>Wallet Provider</label><select class="form-control"><option>Paytm</option><option>Amazon Pay</option><option>Mobikwik</option><option>Freecharge</option><option>Other</option></select></div>
+              <div class="form-group"><label>Transaction ID</label><input class="form-control" placeholder="Wallet txn ID"></div>
+            </div>
+          </div>
+
+          <!-- EMI fields -->
+          <div id="pay_emi" class="pay-fields" style="display:none">
+            <div class="form-grid">
+              <div class="form-group"><label>Down Payment (₹)</label><input class="form-control" type="number" placeholder="0.00" id="emi_down"></div>
+              <div class="form-group"><label>No. of Installments</label><select class="form-control" id="emi_months"><option>3</option><option>6</option><option>9</option><option>12</option><option>18</option><option>24</option></select></div>
+              <div class="form-group"><label>Interest Rate (%)</label><input class="form-control" type="number" value="0" id="emi_int" placeholder="0 for 0%"></div>
+              <div class="form-group"><label>Monthly EMI (₹)</label><input class="form-control" id="emi_amount" readonly style="color:var(--accent);font-weight:700"></div>
+              <div class="form-group"><label>First Due Date</label><input class="form-control" type="date" value="2026-09-20"></div>
+              <div class="form-group"><label>Finance Partner</label><select class="form-control"><option>In-House</option><option>Bajaj Finserv</option><option>HDFC Bank</option><option>Tata Capital</option></select></div>
+            </div>
+          </div>
+
+          <!-- Cheque fields -->
+          <div id="pay_cheque" class="pay-fields" style="display:none">
+            <div class="form-grid">
+              <div class="form-group"><label>Cheque No.</label><input class="form-control" placeholder="6-digit cheque no."></div>
+              <div class="form-group"><label>Bank Name</label><input class="form-control" placeholder="e.g. ICICI Bank"></div>
+              <div class="form-group"><label>Cheque Date</label><input class="form-control" type="date" value="2026-08-20"></div>
+              <div class="form-group"><label>Branch</label><input class="form-control" placeholder="Bank branch name"></div>
+            </div>
+          </div>
+
+          <!-- Exchange+Cash -->
+          <div id="pay_exchange" class="pay-fields" style="display:none">
+            <div class="form-grid">
+              <div class="form-group"><label>Old Gold Value (₹)</label><input class="form-control" type="number" placeholder="0.00"></div>
+              <div class="form-group"><label>Cash Paid Extra (₹)</label><input class="form-control" type="number" placeholder="0.00"></div>
+            </div>
+          </div>
+
+          <!-- Credit -->
+          <div id="pay_credit" class="pay-fields" style="display:none">
+            <div class="form-grid">
+              <div class="form-group"><label>Credit Days</label><select class="form-control"><option>7</option><option>15</option><option>30</option><option>45</option><option>60</option><option>90</option></select></div>
+              <div class="form-group"><label>Due Date</label><input class="form-control" type="date" value="2026-09-19"></div>
+            </div>
+            <div style="padding:8px 12px;background:rgba(231,76,60,.1);border-radius:8px;font-size:.82rem;color:#e74c3c;border-left:3px solid #e74c3c">
+              ⚠️ Customer outstanding will increase by Grand Total amount.
+            </div>
+          </div>
+
+          <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-outline" onclick="showToast('Draft saved!','success')">💾 Save Draft</button>
+            <button class="btn btn-outline" onclick="showBillPreview()">👁️ Preview</button>
+            <button class="btn btn-outline" onclick="showToast('Sent to printer preview','info')">🖨️ Print Preview</button>
+            <button class="btn btn-gold" onclick="finalizeBill()" style="margin-left:auto">✅ Finalize &amp; Print</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: LIVE PREVIEW -->
+      <div>
+        <div class="card" style="position:sticky;top:80px">
+          <div class="card-header"><div class="card-title">👁️ Live Preview</div><span id="inv_type_badge" class="badge badge-gold" style="font-size:.72rem">RETAIL INVOICE</span></div>
+          <div style="background:#fff;border-radius:8px;padding:18px;color:#333;font-size:.78rem;border:1px solid #e0d8cc">
+            <div style="text-align:center;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #b8860b">
+              <div style="font-size:1.1rem;font-weight:800;color:#b8860b">💎 CERITAGE JEWELRY</div>
+              <div style="font-size:.68rem;color:#777">Shop No. 12, Gold Market, Mumbai · GSTIN: 27AABCC1234B1Z5</div>
+              <div style="font-size:.68rem;color:#777">Ph: +91 98765 43210 · ceritage@gmail.com</div>
+            </div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+              <div><b id="prev_type_label">TAX INVOICE</b><br><span style="color:#b8860b;font-size:.72rem" id="prev_invno">INV-2026-8842</span></div>
+              <div style="text-align:right;font-size:.72rem"><span id="prev_date">20-Aug-2026</span></div>
+            </div>
+            <div style="background:#f9f6f0;padding:7px;border-radius:6px;margin-bottom:8px;font-size:.72rem">
+              <b>Bill To:</b> <span id="prev_customer">—</span>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:.68rem;margin-bottom:8px">
+              <thead><tr style="background:#b8860b;color:#fff"><th style="padding:4px">Item</th><th>Wt</th><th>Rate</th><th>Amt</th></tr></thead>
+              <tbody id="prev_items"><tr><td colspan="4" style="text-align:center;padding:8px;color:#aaa">No items added</td></tr></tbody>
+            </table>
+            <div style="text-align:right;border-top:1px solid #eee;padding-top:6px">
+              <div style="font-size:.72rem;color:#888">CGST: <span id="prev_cgst">₹0</span> · SGST: <span id="prev_sgst">₹0</span></div>
+              <div style="font-weight:800;font-size:.95rem;color:#b8860b;margin-top:4px">Total: <span id="prev_total">₹0</span></div>
+            </div>
+            <div style="text-align:center;margin-top:10px;font-size:.65rem;color:#aaa;border-top:1px solid #eee;padding-top:6px">
+              Thank you for shopping at Ceritage Jewelry 💎<br>Exchange &amp; returns within 7 days with original bill.
+            </div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button class="btn btn-outline btn-sm" style="flex:1" onclick="showToast('WhatsApp share coming in full version','info')">📱 WhatsApp</button>
+            <button class="btn btn-outline btn-sm" style="flex:1" onclick="showToast('Email sent!','success')">📧 Email</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TAB 2: ALL BILLS ===== -->
+  <div class="tab-content" id="bill-list">
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap;gap:10px">
+        <div class="card-title">All Invoices</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <div class="search-bar"><span class="icon">🔍</span><input type="text" placeholder="Search invoice, customer..."></div>
+          <input type="date" class="form-control" style="width:140px" value="2026-08-20">
+          <select class="form-control" style="width:150px">
+            <option>All Types</option>
+            <option>Retail Invoice</option><option>Wholesale Invoice</option><option>Tax Invoice</option>
+            <option>Estimate</option><option>Quotation</option><option>Credit Note</option>
+            <option>Debit Note</option><option>Exchange Billing</option><option>Return Invoice</option><option>Refund Invoice</option>
+          </select>
+          <select class="form-control" style="width:130px">
+            <option>All Status</option><option>Paid</option><option>Partial</option><option>Credit</option><option>Draft</option>
+          </select>
+          <select class="form-control" style="width:140px">
+            <option>All Payment</option><option>Cash</option><option>UPI</option><option>Card</option>
+            <option>NEFT</option><option>EMI</option><option>Credit</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Invoice No</th><th>Type</th><th>Date</th><th>Customer</th>
+              <th>Items</th><th>Subtotal</th><th>GST</th><th>Discount</th>
+              <th>Grand Total</th><th>Payment</th><th>Paid</th><th>Balance</th><th>Status</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-gold fw-bold">INV-2026-8841</td>
+              <td><span class="badge badge-gold" style="font-size:.68rem">Retail</span></td>
+              <td>20-Aug-2026</td><td>Priya Sharma</td><td>1</td>
+              <td>₹2,00,000</td><td>₹6,000</td><td>—</td>
+              <td class="fw-bold">₹2,06,000</td><td>UPI</td><td>₹2,06,000</td><td style="color:var(--success)">₹0</td>
+              <td><span class="badge badge-green">Paid</span></td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-outline btn-xs" onclick="showTab('bill-receipt',document.querySelectorAll('#billing .tab')[2],document.getElementById('billing'))">🧾</button>
+                <button class="btn btn-outline btn-xs">✏️</button>
+                <button class="btn btn-outline btn-xs">📱</button>
+              </td>
+            </tr>
+            <tr>
+              <td class="text-gold fw-bold">INV-2026-8840</td>
+              <td><span class="badge badge-blue" style="font-size:.68rem">Tax Inv</span></td>
+              <td>20-Aug-2026</td><td>Rajesh Patel</td><td>2</td>
+              <td>₹55,340</td><td>₹1,660</td><td>₹2,000</td>
+              <td class="fw-bold">₹55,000</td><td>Cash</td><td>₹55,000</td><td style="color:var(--success)">₹0</td>
+              <td><span class="badge badge-green">Paid</span></td>
+              <td style="white-space:nowrap"><button class="btn btn-outline btn-xs">🧾</button><button class="btn btn-outline btn-xs">✏️</button><button class="btn btn-outline btn-xs">📱</button></td>
+            </tr>
+            <tr>
+              <td class="text-gold fw-bold">INV-2026-8839</td>
+              <td><span class="badge badge-purple" style="font-size:.68rem">EMI</span></td>
+              <td>19-Aug-2026</td><td>Sunita Verma</td><td>1</td>
+              <td>₹2,53,400</td><td>₹7,602</td><td>—</td>
+              <td class="fw-bold">₹2,61,002</td><td>EMI (12m)</td><td>₹21,750</td><td style="color:#e74c3c">₹2,39,252</td>
+              <td><span class="badge badge-orange">EMI Active</span></td>
+              <td style="white-space:nowrap"><button class="btn btn-outline btn-xs">🧾</button><button class="btn btn-outline btn-xs">✏️</button><button class="btn btn-outline btn-xs">📱</button></td>
+            </tr>
+            <tr>
+              <td class="text-gold fw-bold">CN-2026-0012</td>
+              <td><span class="badge" style="background:rgba(46,204,113,.15);color:#2ecc71;font-size:.68rem">Credit Note</span></td>
+              <td>18-Aug-2026</td><td>Meena Singh</td><td>1</td>
+              <td>₹4,020</td><td>₹120</td><td>—</td>
+              <td class="fw-bold" style="color:#2ecc71">-₹4,140</td><td>Adjustment</td><td>—</td><td>—</td>
+              <td><span class="badge badge-green">Adjusted</span></td>
+              <td style="white-space:nowrap"><button class="btn btn-outline btn-xs">🧾</button><button class="btn btn-outline btn-xs">📱</button></td>
+            </tr>
+            <tr>
+              <td class="text-gold fw-bold">EST-2026-0088</td>
+              <td><span class="badge badge-grey" style="font-size:.68rem">Estimate</span></td>
+              <td>17-Aug-2026</td><td>Vikram Malhotra</td><td>3</td>
+              <td>₹12,15,000</td><td>₹36,450</td><td>₹25,000</td>
+              <td class="fw-bold">₹12,26,450</td><td>—</td><td>—</td><td>—</td>
+              <td><span class="badge badge-grey">Estimate</span></td>
+              <td style="white-space:nowrap"><button class="btn btn-outline btn-xs" onclick="showToast('Converting to Tax Invoice...','info')">→ Convert</button><button class="btn btn-outline btn-xs">📱</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;flex-wrap:wrap;gap:8px">
+        <div style="font-size:.82rem;color:var(--text-muted)">Showing 5 of 847 invoices</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="showToast('Exporting to Excel...','success')">📊 Export Excel</button>
+          <button class="btn btn-outline btn-sm" onclick="showToast('Generating PDF...','success')">📄 Export PDF</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TAB 3: RECEIPT / PRINT ===== -->
+  <div class="tab-content" id="bill-receipt">
+    <div class="invoice-box" id="printable-invoice">
+      <div class="invoice-header">
+        <div class="inv-company">
+          <h2>💎 CERITAGE JEWELRY</h2>
+          <p>Shop No. 12, Gold Market, Fort, Mumbai – 400 001</p>
+          <p>GSTIN: 27AABCC1234B1Z5 &bull; State: Maharashtra (27)</p>
+          <p>Ph: +91 98765 43210 &bull; ceritage@gmail.com</p>
+        </div>
+        <div class="inv-meta">
+          <h3 style="color:#b8860b">TAX INVOICE</h3>
+          <p><strong>Invoice No:</strong> INV-2026-8841</p>
+          <p><strong>Date:</strong> 20 August 2026</p>
+          <p><strong>HSN Code:</strong> 7113</p>
+          <p><strong>Place of Supply:</strong> Maharashtra (27)</p>
+        </div>
+      </div>
+      <div class="inv-details">
+        <div class="inv-section">
+          <h4>Bill To</h4>
+          <p><strong>Priya Sharma</strong></p>
+          <p>Ph: 9876543210 &bull; Mumbai, Maharashtra</p>
+          <p>PAN: ABCPS1234F</p>
+          <p>Loyalty: Gold Member &bull; 1,240 pts</p>
+        </div>
+        <div class="inv-section">
+          <h4>Payment Info</h4>
+          <p><strong>Mode:</strong> UPI (Google Pay)</p>
+          <p><strong>UTR:</strong> 324567890123</p>
+          <p><strong>Salesperson:</strong> Karan Mehta</p>
+          <p><strong>Branch:</strong> Mumbai HQ</p>
+        </div>
+      </div>
+      <table class="invoice-table">
+        <thead>
+          <tr><th>#</th><th>Description</th><th>HSN</th><th>Purity</th><th>Wt(g)</th><th>Rate/g</th><th>Making</th><th>Stone</th><th>Subtotal</th><th>GST%</th><th>GST Amt</th><th>Total</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td><td>Kundan Necklace Set</td><td>7113</td><td>22K</td>
+            <td>28.5g</td><td>₹7,240</td><td>₹450/g</td><td>—</td>
+            <td>₹2,00,000</td><td>3%</td><td>₹6,000</td><td>₹2,06,000</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="inv-totals">
+        <table>
+          <tr><td>Subtotal (Taxable Value)</td><td class="text-right">₹2,00,000</td></tr>
+          <tr><td>CGST @ 1.5%</td><td class="text-right">₹3,000</td></tr>
+          <tr><td>SGST @ 1.5%</td><td class="text-right">₹3,000</td></tr>
+          <tr><td>Discount</td><td class="text-right" style="color:#2ecc71">— ₹0</td></tr>
+          <tr><td>Old Gold Exchange</td><td class="text-right" style="color:#2ecc71">— ₹0</td></tr>
+          <tr class="inv-grand"><td>Grand Total</td><td class="text-right">₹2,06,000</td></tr>
+          <tr><td colspan="2" style="font-size:.75rem;color:#888;padding-top:4px"><em>Two Lakh Six Thousand Rupees Only</em></td></tr>
+        </table>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:12px 0;font-size:.78rem;border-top:1px solid #e0d8cc;padding-top:12px">
+        <div>
+          <strong>HSN Summary:</strong>
+          <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:.72rem">
+            <tr style="background:#f0ece4"><th style="padding:3px">HSN</th><th>Taxable Val</th><th>CGST</th><th>SGST</th><th>Total Tax</th></tr>
+            <tr style="border-bottom:1px solid #e0d8cc"><td style="padding:3px">7113</td><td>₹2,00,000</td><td>₹3,000</td><td>₹3,000</td><td>₹6,000</td></tr>
+          </table>
+        </div>
+        <div>
+          <strong>Payment Details:</strong><br>
+          Mode: UPI — Google Pay<br>
+          UTR: 324567890123<br>
+          Status: <span style="color:#2ecc71;font-weight:700">✅ Paid</span>
+        </div>
+      </div>
+      <div class="inv-footer">
+        <p>✅ This is a computer-generated GST invoice. Valid without signature.</p>
+        <p>All items carry BIS Hallmark. Exchange within 7 days with original invoice.</p>
+        <p>For queries: +91 98765 43210 &bull; ceritage@gmail.com</p>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+      <button class="btn btn-gold" onclick="printInvoice()">🖨️ Print Invoice</button>
+      <button class="btn btn-outline" onclick="showToast('PDF downloaded!','success')">📄 Download PDF</button>
+      <button class="btn btn-outline" onclick="showToast('Sent via Email!','success')">📧 Email</button>
+      <button class="btn btn-outline" onclick="showToast('Sent via WhatsApp!','success')">📱 WhatsApp</button>
+    </div>
+  </div>
+
+  <!-- ===== TAB 4: CREDIT / DEBIT NOTES ===== -->
+  <div class="tab-content" id="bill-notes">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" class="notes-grid">
+
+      <!-- Credit Note Form -->
+      <div class="card">
+        <div class="card-header"><div class="card-title" style="color:#2ecc71">📋 New Credit Note</div></div>
+        <div class="form-grid">
+          <div class="form-group"><label>Credit Note No.</label><input class="form-control" value="CN-2026-0013" readonly style="color:#2ecc71;font-weight:700"></div>
+          <div class="form-group"><label>Against Invoice</label><input class="form-control" placeholder="INV-2026-XXXX"></div>
+          <div class="form-group"><label>Customer *</label><select class="form-control"><option>-- Select --</option><option>Priya Sharma (C001)</option><option>Rajesh Patel (C002)</option></select></div>
+          <div class="form-group"><label>Date</label><input class="form-control" type="date" value="2026-08-20"></div>
+          <div class="form-group"><label>Reason</label><select class="form-control"><option>Return of Goods</option><option>Price Correction</option><option>Discount Adjustment</option><option>Defective Product</option><option>Other</option></select></div>
+          <div class="form-group"><label>Credit Amount (₹)</label><input class="form-control" type="number" placeholder="0.00"></div>
+        </div>
+        <div class="form-group"><label>Description</label><textarea class="form-control" rows="2" placeholder="Reason for credit note..."></textarea></div>
+        <div class="modal-footer" style="padding:12px 0 0;border-top:1px solid var(--border);margin-top:8px">
+          <button class="btn btn-gold" style="background:#2ecc71;border-color:#2ecc71" onclick="showToast('Credit Note CN-2026-0013 created!','success')">✅ Issue Credit Note</button>
+        </div>
+      </div>
+
+      <!-- Debit Note Form -->
+      <div class="card">
+        <div class="card-header"><div class="card-title" style="color:#e74c3c">📄 New Debit Note</div></div>
+        <div class="form-grid">
+          <div class="form-group"><label>Debit Note No.</label><input class="form-control" value="DN-2026-0007" readonly style="color:#e74c3c;font-weight:700"></div>
+          <div class="form-group"><label>Against Invoice</label><input class="form-control" placeholder="INV-2026-XXXX"></div>
+          <div class="form-group"><label>Customer *</label><select class="form-control"><option>-- Select --</option><option>Priya Sharma (C001)</option><option>Rajesh Patel (C002)</option></select></div>
+          <div class="form-group"><label>Date</label><input class="form-control" type="date" value="2026-08-20"></div>
+          <div class="form-group"><label>Reason</label><select class="form-control"><option>Price Increase</option><option>Short Payment</option><option>Additional Charges</option><option>Making Charge Revision</option><option>Other</option></select></div>
+          <div class="form-group"><label>Debit Amount (₹)</label><input class="form-control" type="number" placeholder="0.00"></div>
+        </div>
+        <div class="form-group"><label>Description</label><textarea class="form-control" rows="2" placeholder="Reason for debit note..."></textarea></div>
+        <div class="modal-footer" style="padding:12px 0 0;border-top:1px solid var(--border);margin-top:8px">
+          <button class="btn btn-gold" style="background:#e74c3c;border-color:#e74c3c" onclick="showToast('Debit Note DN-2026-0007 created!','success')">✅ Issue Debit Note</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes History -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-header"><div class="card-title">📜 Credit / Debit Note History</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Note No.</th><th>Type</th><th>Date</th><th>Customer</th><th>Against Invoice</th><th>Reason</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="text-gold">CN-2026-0012</td><td><span class="badge badge-green">Credit</span></td><td>18-Aug-2026</td><td>Meena Singh</td><td>INV-2026-8836</td><td>Return of Goods</td><td style="color:#2ecc71">-₹4,140</td><td><span class="badge badge-green">Adjusted</span></td></tr>
+            <tr><td class="text-gold">DN-2026-0006</td><td><span class="badge badge-red">Debit</span></td><td>15-Aug-2026</td><td>Rajesh Patel</td><td>INV-2026-8831</td><td>Making Charge Revision</td><td style="color:#e74c3c">+₹1,200</td><td><span class="badge badge-green">Adjusted</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TAB 5: RETURNS & REFUNDS ===== -->
+  <div class="tab-content" id="bill-returns">
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">↩️ New Return / Refund</div></div>
+      <div class="form-grid">
+        <div class="form-group"><label>Return / Refund No.</label><input class="form-control" value="RET-2026-0019" readonly style="color:var(--accent);font-weight:700"></div>
+        <div class="form-group"><label>Type</label><select class="form-control"><option>Return Invoice</option><option>Refund Invoice</option></select></div>
+        <div class="form-group"><label>Original Invoice No. *</label><input class="form-control" placeholder="INV-2026-XXXX"></div>
+        <div class="form-group"><label>Customer *</label><select class="form-control"><option>-- Select --</option><option>Priya Sharma (C001)</option><option>Rajesh Patel (C002)</option></select></div>
+        <div class="form-group"><label>Return Date</label><input class="form-control" type="date" value="2026-08-20"></div>
+        <div class="form-group"><label>Return Reason</label><select class="form-control"><option>Defective Product</option><option>Size Issue</option><option>Customer Changed Mind</option><option>Wrong Item Delivered</option><option>Quality Issue</option></select></div>
+        <div class="form-group"><label>Refund Mode</label><select class="form-control"><option>Cash Refund</option><option>Store Credit</option><option>Exchange</option><option>UPI Refund</option><option>Bank Transfer</option></select></div>
+        <div class="form-group"><label>Refund Amount (₹)</label><input class="form-control" type="number" placeholder="0.00"></div>
+      </div>
+      <div class="form-group"><label>Condition of Returned Item</label><select class="form-control"><option>Good Condition</option><option>Minor Damage</option><option>Major Damage</option><option>Melted / Remade</option></select></div>
+      <div class="modal-footer" style="padding:12px 0 0;border-top:1px solid var(--border);margin-top:8px">
+        <button class="btn btn-gold" onclick="showToast('Return RET-2026-0019 processed!','success')">↩️ Process Return</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📜 Returns &amp; Refund History</div></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Return No.</th><th>Type</th><th>Date</th><th>Customer</th><th>Orig. Invoice</th><th>Reason</th><th>Refund Amt</th><th>Mode</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="text-gold">RET-2026-0018</td><td><span class="badge badge-orange">Return</span></td><td>18-Aug-2026</td><td>Priya Sharma</td><td>INV-2026-8820</td><td>Size Issue</td><td style="color:#e74c3c">₹4,140</td><td>Exchange</td><td><span class="badge badge-green">Done</span></td></tr>
+            <tr><td class="text-gold">RET-2026-0017</td><td><span class="badge badge-red">Refund</span></td><td>14-Aug-2026</td><td>Vikram Malhotra</td><td>INV-2026-8810</td><td>Defective Product</td><td style="color:#e74c3c">₹58,000</td><td>Bank Transfer</td><td><span class="badge badge-green">Done</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+'@
+
+$content = [System.IO.File]::ReadAllText("d:\Personal_Project\Certitiage_jeweley_system\prototype\index.html", [System.Text.Encoding]::UTF8)
+$newContent = $content.Replace("BILLING_PLACEHOLDER`n`n", $billingHTML)
+if ($newContent -eq $content) { Write-Host "ERROR: placeholder not found" }
+else {
+  [System.IO.File]::WriteAllText("d:\Personal_Project\Certitiage_jeweley_system\prototype\index.html", $newContent, [System.Text.Encoding]::UTF8)
+  Write-Host "Injected OK. Lines: $(($newContent -split "`n").Count)"
+}

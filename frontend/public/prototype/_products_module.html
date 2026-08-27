@@ -1,0 +1,268 @@
+<div id="products" class="module-page hidden fade-in">
+
+  <!-- PAGE HEADER -->
+  <div class="page-header">
+    <div class="page-title">
+      <h2>💍 Product &amp; Inventory Management</h2>
+      <p>Catalog, pricing, stone info, barcode &amp; QR management</p>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-outline" onclick="openModal('barcodeModal')">🔍 Scan / Print Barcode</button>
+      <button class="btn btn-outline" onclick="openModal('addStoneModal')">💎 Add Stone</button>
+      <button class="btn btn-gold" onclick="openModal('addProductModal')">➕ Add Product</button>
+    </div>
+  </div>
+
+  <!-- STATS ROW -->
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-icon gold">💍</div><div class="stat-value">342</div><div class="stat-label">Total Products</div></div>
+    <div class="stat-card green"><div class="stat-icon green">✅</div><div class="stat-value">298</div><div class="stat-label">In Stock</div></div>
+    <div class="stat-card red"><div class="stat-icon red">⚠️</div><div class="stat-value">12</div><div class="stat-label">Low Stock</div></div>
+    <div class="stat-card blue"><div class="stat-icon blue">⚖️</div><div class="stat-value">4.2 kg</div><div class="stat-label">Total Gold Wt.</div></div>
+    <div class="stat-card purple"><div class="stat-icon" style="background:rgba(155,89,182,.15);color:#9b59b6">💎</div><div class="stat-value">284</div><div class="stat-label">Stone Stock (pcs)</div></div>
+    <div class="stat-card"><div class="stat-icon" style="background:rgba(52,152,219,.15);color:#3498db">🏷️</div><div class="stat-value">318</div><div class="stat-label">Barcodes Generated</div></div>
+  </div>
+
+  <!-- JEWELLERY CATEGORY QUICK FILTER -->
+  <div class="card" style="margin-bottom:18px">
+    <div class="card-header"><div class="card-title">🏅 Jewellery Category</div></div>
+    <div id="jwl-cat-pills" style="display:flex;flex-wrap:wrap;gap:8px;padding:4px 0">
+      <button class="pill-btn active" onclick="filterJwlCat(this,'all')">All</button>
+      <button class="pill-btn" onclick="filterJwlCat(this,'gold')">🟡 Gold Jewellery</button>
+      <button class="pill-btn" onclick="filterJwlCat(this,'silver')">⚪ Silver Jewellery</button>
+      <button class="pill-btn" onclick="filterJwlCat(this,'diamond')">💎 Diamond Jewellery</button>
+      <button class="pill-btn" onclick="filterJwlCat(this,'platinum')">⬜ Platinum Jewellery</button>
+      <button class="pill-btn" onclick="filterJwlCat(this,'gemstone')">🔴 Gemstone Jewellery</button>
+      <button class="pill-btn" onclick="filterJwlCat(this,'loose_gold')">🔶 Loose Gold</button>
+      <button class="pill-btn" onclick="filterJwlCat(this,'loose_silver')">🔷 Loose Silver</button>
+      <button class="pill-btn" onclick="filterJwlCat(this,'loose_diamond')">🔹 Loose Diamonds</button>
+      <button class="pill-btn" onclick="filterJwlCat(this,'loose_gemstone')">🔸 Loose Gemstones</button>
+    </div>
+  </div>
+
+  <!-- MAIN TABS CARD -->
+  <div class="card">
+    <div class="card-header" style="flex-wrap:wrap;gap:10px">
+      <div class="tabs" style="margin:0;border:none;flex-wrap:wrap">
+        <div class="tab active" onclick="showTab('prod-grid-tab',this,this.closest('.card'))">🔲 Grid View</div>
+        <div class="tab" onclick="showTab('prod-list-tab',this,this.closest('.card'))">📋 List View</div>
+        <div class="tab" onclick="showTab('prod-cat-tab',this,this.closest('.card'))">🏷️ Categories</div>
+        <div class="tab" onclick="showTab('prod-stone-tab',this,this.closest('.card'))">💎 Stones</div>
+        <div class="tab" onclick="showTab('prod-barcode-tab',this,this.closest('.card'))">📊 Barcode &amp; QR</div>
+      </div>
+      <div class="search-bar" style="min-width:200px;max-width:300px">
+        <span class="icon">🔍</span>
+        <input type="text" id="prodSearchInput" placeholder="Search SKU, name, HUID..." oninput="filterProductTable(this.value)">
+      </div>
+    </div>
+
+    <!-- TAB 1: GRID VIEW -->
+    <div class="tab-content active" id="prod-grid-tab">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
+        <select class="form-control" style="width:160px" id="gridCatFilter" onchange="renderProductGrid()">
+          <option value="">All Categories</option>
+          <option>Ring</option><option>Earrings</option><option>Bangles</option>
+          <option>Bracelet</option><option>Chain</option><option>Necklace</option>
+          <option>Pendant</option><option>Mangalsutra</option><option>Nose Pin</option>
+          <option>Anklet</option><option>Toe Ring</option><option>Kada</option>
+          <option>Coin</option><option>Idol</option><option>Waist Belt</option>
+          <option>Brooch</option><option>Cufflinks</option><option>Custom Jewellery</option>
+        </select>
+        <select class="form-control" style="width:130px" id="gridPurityFilter" onchange="renderProductGrid()">
+          <option value="">All Purity</option>
+          <option>24K</option><option>22K</option><option>18K</option><option>14K</option>
+          <option>Silver 925</option><option>Silver</option><option>Platinum</option>
+        </select>
+        <select class="form-control" style="width:130px" id="gridSortFilter" onchange="renderProductGrid()">
+          <option value="latest">Sort: Latest</option>
+          <option value="price_asc">Price ↑</option>
+          <option value="price_desc">Price ↓</option>
+          <option value="weight_asc">Weight ↑</option>
+        </select>
+        <span id="gridCount" class="text-muted" style="font-size:.82rem;margin-left:auto"></span>
+      </div>
+      <div class="product-grid" id="product-grid"></div>
+    </div>
+
+    <!-- TAB 2: LIST VIEW -->
+    <div class="tab-content" id="prod-list-tab">
+      <div class="table-wrap">
+        <table id="prodListTable">
+          <thead>
+            <tr>
+              <th>Product Code</th><th>SKU</th><th>Name</th><th>Category</th>
+              <th>Sub-Cat</th><th>Purity</th><th>Gross Wt (g)</th><th>Net Wt (g)</th>
+              <th>Stone Wt</th><th>Wastage%</th><th>Making (₹/g)</th>
+              <th>Purchase ₹</th><th>MRP ₹</th><th>Discount%</th>
+              <th>Stock</th><th>HUID</th><th>HSN</th><th>Gender</th>
+              <th>Occasion</th><th>Hallmark</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="prodListBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 3: CATEGORIES -->
+    <div class="tab-content" id="prod-cat-tab">
+      <!-- Jewellery Type Section -->
+      <div class="form-section-title" style="margin-top:0">🏅 Jewellery Types</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:24px">
+        <div class="cat-card" onclick="filterByCat('gold')"><div class="cat-icon" style="background:rgba(255,193,7,.15)">🥇</div><div class="cat-name">Gold</div><div class="cat-count">148 items</div></div>
+        <div class="cat-card" onclick="filterByCat('silver')"><div class="cat-icon" style="background:rgba(149,165,166,.15)">🥈</div><div class="cat-name">Silver</div><div class="cat-count">62 items</div></div>
+        <div class="cat-card" onclick="filterByCat('diamond')"><div class="cat-icon" style="background:rgba(52,152,219,.15)">💎</div><div class="cat-name">Diamond</div><div class="cat-count">54 items</div></div>
+        <div class="cat-card" onclick="filterByCat('platinum')"><div class="cat-icon" style="background:rgba(189,195,199,.15)">⬜</div><div class="cat-name">Platinum</div><div class="cat-count">18 items</div></div>
+        <div class="cat-card" onclick="filterByCat('gemstone')"><div class="cat-icon" style="background:rgba(231,76,60,.15)">💠</div><div class="cat-name">Gemstone</div><div class="cat-count">32 items</div></div>
+        <div class="cat-card" onclick="filterByCat('loose_gold')"><div class="cat-icon" style="background:rgba(241,196,15,.15)">🔶</div><div class="cat-name">Loose Gold</div><div class="cat-count">8 items</div></div>
+        <div class="cat-card" onclick="filterByCat('loose_silver')"><div class="cat-icon" style="background:rgba(189,195,199,.15)">🔷</div><div class="cat-name">Loose Silver</div><div class="cat-count">5 items</div></div>
+        <div class="cat-card" onclick="filterByCat('loose_diamond')"><div class="cat-icon" style="background:rgba(52,152,219,.2)">🔹</div><div class="cat-name">Loose Diamond</div><div class="cat-count">12 items</div></div>
+        <div class="cat-card" onclick="filterByCat('loose_gemstone')"><div class="cat-icon" style="background:rgba(155,89,182,.15)">🔸</div><div class="cat-name">Loose Gemstone</div><div class="cat-count">9 items</div></div>
+      </div>
+      <!-- Product Category Section -->
+      <div class="form-section-title">💍 Product Categories</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px">
+        <div class="cat-card"><div class="cat-icon">💍</div><div class="cat-name">Ring</div><div class="cat-count">67 items</div></div>
+        <div class="cat-card"><div class="cat-icon">👂</div><div class="cat-name">Earrings</div><div class="cat-count">72 items</div></div>
+        <div class="cat-card"><div class="cat-icon">✨</div><div class="cat-name">Bangles</div><div class="cat-count">53 items</div></div>
+        <div class="cat-card"><div class="cat-icon">📿</div><div class="cat-name">Bracelet</div><div class="cat-count">28 items</div></div>
+        <div class="cat-card"><div class="cat-icon">⛓️</div><div class="cat-name">Chain</div><div class="cat-count">41 items</div></div>
+        <div class="cat-card"><div class="cat-icon">📿</div><div class="cat-name">Necklace</div><div class="cat-count">48 items</div></div>
+        <div class="cat-card"><div class="cat-icon">🙏</div><div class="cat-name">Pendant</div><div class="cat-count">29 items</div></div>
+        <div class="cat-card"><div class="cat-icon">🔴</div><div class="cat-name">Mangalsutra</div><div class="cat-count">19 items</div></div>
+        <div class="cat-card"><div class="cat-icon">👃</div><div class="cat-name">Nose Pin</div><div class="cat-count">15 items</div></div>
+        <div class="cat-card"><div class="cat-icon">🦶</div><div class="cat-name">Anklet</div><div class="cat-count">34 items</div></div>
+        <div class="cat-card"><div class="cat-icon">🦶</div><div class="cat-name">Toe Ring</div><div class="cat-count">22 items</div></div>
+        <div class="cat-card"><div class="cat-icon">⭕</div><div class="cat-name">Kada</div><div class="cat-count">17 items</div></div>
+        <div class="cat-card"><div class="cat-icon">🪙</div><div class="cat-name">Coin</div><div class="cat-count">11 items</div></div>
+        <div class="cat-card"><div class="cat-icon">🗿</div><div class="cat-name">Idol</div><div class="cat-count">6 items</div></div>
+        <div class="cat-card"><div class="cat-icon">🔗</div><div class="cat-name">Waist Belt</div><div class="cat-count">4 items</div></div>
+        <div class="cat-card"><div class="cat-icon">📌</div><div class="cat-name">Brooch</div><div class="cat-count">5 items</div></div>
+        <div class="cat-card"><div class="cat-icon">🎩</div><div class="cat-name">Cufflinks</div><div class="cat-count">8 items</div></div>
+        <div class="cat-card"><div class="cat-icon">✏️</div><div class="cat-name">Custom</div><div class="cat-count">14 items</div></div>
+      </div>
+    </div>
+
+    <!-- TAB 4: STONES -->
+    <div class="tab-content" id="prod-stone-tab">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="stoneCatPills">
+          <button class="pill-btn active" onclick="filterStoneCat(this,'all')">All</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Diamond')">💎 Diamond</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Ruby')">🔴 Ruby</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Emerald')">🟢 Emerald</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Sapphire')">🔵 Sapphire</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Pearl')">⚪ Pearl</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Opal')">🌈 Opal</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Topaz')">🟡 Topaz</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Garnet')">🟤 Garnet</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Zircon')">🔷 Zircon</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Cubic Zirconia')">✨ CZ</button>
+          <button class="pill-btn" onclick="filterStoneCat(this,'Moissanite')">🌟 Moissanite</button>
+        </div>
+        <button class="btn btn-gold btn-sm" onclick="openModal('addStoneModal')">➕ Add Stone</button>
+      </div>
+      <div class="table-wrap">
+        <table id="stoneListTable">
+          <thead>
+            <tr>
+              <th>Stone Name</th><th>Type</th><th>Color</th><th>Shape</th>
+              <th>Size</th><th>Clarity</th><th>Cut</th><th>Ratti</th>
+              <th>Carat</th><th>Weight (g)</th><th>Pieces</th>
+              <th>Purchase ₹</th><th>Selling ₹</th>
+              <th>Certificate No.</th><th>Supplier</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="stoneListBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 5: BARCODE & QR -->
+    <div class="tab-content" id="prod-barcode-tab">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px" class="barcode-qr-grid">
+
+        <!-- Barcode Generator -->
+        <div class="card" style="margin:0">
+          <div class="card-header"><div class="card-title">📊 Barcode Generator</div></div>
+          <div class="form-group"><label>Select Product / Enter SKU</label>
+            <input class="form-control" id="barcodeSkuInput" placeholder="e.g. NK-KND-001" oninput="previewBarcode(this.value)">
+          </div>
+          <div style="text-align:center;padding:20px;background:var(--bg-card);border-radius:var(--radius);border:1px solid var(--border);margin-bottom:14px;min-height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+            <canvas id="barcodeCanvas" width="260" height="80"></canvas>
+            <div id="barcodeSkuLabel" style="font-size:.78rem;margin-top:6px;color:var(--text-muted);font-family:monospace">—</div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-outline" style="flex:1" onclick="previewBarcode(document.getElementById('barcodeSkuInput').value)">🔄 Generate</button>
+            <button class="btn btn-gold" style="flex:1" onclick="printBarcode()">🖨️ Print Barcode</button>
+          </div>
+        </div>
+
+        <!-- QR Code Generator -->
+        <div class="card" style="margin:0">
+          <div class="card-header"><div class="card-title">📱 QR Code Generator</div></div>
+          <div class="form-group"><label>Select Product / Enter SKU</label>
+            <input class="form-control" id="qrSkuInput" placeholder="e.g. RG-DIA-001" oninput="previewQR(this.value)">
+          </div>
+          <div style="text-align:center;padding:20px;background:var(--bg-card);border-radius:var(--radius);border:1px solid var(--border);margin-bottom:14px;min-height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+            <canvas id="qrCanvas" width="120" height="120"></canvas>
+            <div id="qrSkuLabel" style="font-size:.78rem;margin-top:6px;color:var(--text-muted);font-family:monospace">—</div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-outline" style="flex:1" onclick="previewQR(document.getElementById('qrSkuInput').value)">🔄 Generate</button>
+            <button class="btn btn-gold" style="flex:1" onclick="printQR()">🖨️ Print QR Code</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bulk Print Section -->
+      <div class="card" style="margin-top:18px">
+        <div class="card-header"><div class="card-title">🖨️ Bulk Label Printing</div></div>
+        <div class="form-grid">
+          <div class="form-group"><label>Category Filter</label>
+            <select class="form-control" id="bulkCatFilter">
+              <option value="">All Categories</option>
+              <option>Ring</option><option>Necklace</option><option>Bangles</option><option>Earrings</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Label Type</label>
+            <select class="form-control" id="bulkLabelType">
+              <option>Barcode Label</option><option>QR Code Label</option><option>Both (Barcode + QR)</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Label Size</label>
+            <select class="form-control">
+              <option>38mm x 25mm</option><option>50mm x 30mm</option><option>60mm x 40mm</option><option>Custom</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Copies per Item</label>
+            <input class="form-control" type="number" value="1" min="1">
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+          <button class="btn btn-outline" onclick="showToast('Selecting all items in category...','info')">☑️ Select All</button>
+          <button class="btn btn-gold" onclick="showToast('Sending to printer...','success')">🖨️ Print All Labels</button>
+          <button class="btn btn-outline" onclick="showToast('PDF generated!','success')">📄 Export PDF</button>
+        </div>
+      </div>
+
+      <!-- Scanner Log -->
+      <div class="card" style="margin-top:18px">
+        <div class="card-header">
+          <div class="card-title">📡 Scanner Activity Log</div>
+          <button class="btn btn-outline btn-sm" onclick="openModal('barcodeModal')">📷 Open Scanner</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Scanned Code</th><th>Product</th><th>Type</th><th>Action Taken</th></tr></thead>
+            <tbody>
+              <tr><td>09:14 AM</td><td><code>NK-KND-001</code></td><td>Kundan Necklace</td><td><span class="badge" style="background:#2ecc71;color:#fff">Barcode</span></td><td>Added to Bill</td></tr>
+              <tr><td>09:08 AM</td><td><code>RG-DIA-001</code></td><td>Diamond Ring</td><td><span class="badge badge-blue">QR Code</span></td><td>Product Detail Opened</td></tr>
+              <tr><td>08:52 AM</td><td><code>BG-GLD-002</code></td><td>Gold Bangles (Pair)</td><td><span class="badge" style="background:#2ecc71;color:#fff">Barcode</span></td><td>Stock Updated</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+

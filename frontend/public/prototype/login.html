@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Certitiage Jewellery — Login</title>
+<style>
+  :root {
+    --gold: #b8860b;
+    --gold-light: #d4a017;
+    --gold-dark: #8b6914;
+    --gold-shine: #f0c040;
+    --bg: #f5f0e8;
+    --panel-bg: #ffffff;
+    --text: #1a1a1a;
+    --text-sub: #555;
+    --input-bg: #f9f6f0;
+    --input-border: #d4b896;
+    --input-focus: #b8860b;
+    --role-bg: #faf6ee;
+    --role-border: #e0c898;
+    --role-hover: #fff8e8;
+    --role-active: #b8860b;
+    --chip-bg: #f0e8d0;
+    --shadow: rgba(184,134,11,0.15);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d0d0d;
+      --panel-bg: #1a1a1a;
+      --text: #f0e8d0;
+      --text-sub: #999;
+      --input-bg: #232323;
+      --input-border: #3a3020;
+      --input-focus: #d4a017;
+      --role-bg: #1e1e1e;
+      --role-border: #2e2a1e;
+      --role-hover: #242010;
+      --chip-bg: #1e1c14;
+      --shadow: rgba(184,134,11,0.25);
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%; width: 100%;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  /* ── WRAPPER ── */
+  .wrapper {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* ── LEFT BRAND PANEL ── */
+  .brand {
+    flex: 0 0 38%;
+    background: linear-gradient(160deg, #0a0a0a 0%, #1a1208 50%, #0d0d0d 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .brand::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 40%, rgba(184,134,11,0.18) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .brand-ring {
+    width: 110px; height: 110px;
+    border-radius: 50%;
+    border: 2px solid rgba(184,134,11,0.4);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 1.2rem;
+    position: relative;
+    box-shadow: 0 0 40px rgba(184,134,11,0.2);
+  }
+  .brand-ring::before {
+    content: '';
+    position: absolute;
+    inset: 6px;
+    border-radius: 50%;
+    border: 1px solid rgba(184,134,11,0.25);
+  }
+  .brand-icon { font-size: 2.8rem; }
+  .brand h1 {
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold-light);
+    text-align: center;
+    line-height: 1.3;
+    margin-bottom: 0.35rem;
+  }
+  .brand-tagline {
+    font-size: 0.7rem;
+    color: rgba(212,160,23,0.6);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  .brand-divider {
+    width: 50px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    margin-bottom: 2rem;
+  }
+  .brand-features { list-style: none; width: 100%; }
+  .brand-features li {
+    display: flex; align-items: center; gap: 0.6rem;
+    font-size: 0.72rem;
+    color: rgba(212,160,23,0.7);
+    padding: 0.3rem 0;
+    letter-spacing: 0.04em;
+  }
+  .brand-features li span.dot {
+    width: 5px; height: 5px;
+    background: var(--gold);
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .brand-copy {
+    position: absolute;
+    bottom: 1rem;
+    font-size: 0.6rem;
+    color: rgba(184,134,11,0.35);
+    letter-spacing: 0.06em;
+  }
+
+  /* ── RIGHT LOGIN PANEL ── */
+  .login-panel {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--panel-bg);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 1.5rem 2.2rem;
+    position: relative;
+  }
+
+  .panel-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 0.15rem;
+    letter-spacing: 0.02em;
+  }
+  .panel-sub {
+    font-size: 0.72rem;
+    color: var(--text-sub);
+    margin-bottom: 1rem;
+  }
+  .gold-line {
+    width: 36px; height: 2px;
+    background: linear-gradient(90deg, var(--gold), var(--gold-shine));
+    border-radius: 2px;
+    margin-bottom: 1rem;
+  }
+
+  /* ── ROLE GRID ── */
+  .section-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--gold);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
+  }
+  .role-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.4rem;
+    margin-bottom: 0.85rem;
+  }
+  .role-btn {
+    background: var(--role-bg);
+    border: 1px solid var(--role-border);
+    border-radius: 6px;
+    padding: 0.42rem 0.3rem;
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: var(--text-sub);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.18s ease;
+    display: flex; flex-direction: column;
+    align-items: center; gap: 0.15rem;
+    line-height: 1.2;
+  }
+  .role-btn .role-icon { font-size: 1rem; }
+  .role-btn:hover {
+    background: var(--role-hover);
+    border-color: var(--gold);
+    color: var(--gold);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px var(--shadow);
+  }
+  .role-btn.active {
+    background: linear-gradient(135deg, rgba(184,134,11,0.15), rgba(184,134,11,0.08));
+    border-color: var(--gold);
+    color: var(--gold);
+    box-shadow: 0 2px 8px var(--shadow);
+  }
+
+  /* ── FORM FIELDS ── */
+  .field-row { display: flex; gap: 0.6rem; margin-bottom: 0.55rem; }
+  .field { display: flex; flex-direction: column; flex: 1; }
+  .field label {
+    font-size: 0.63rem;
+    font-weight: 600;
+    color: var(--gold);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.25rem;
+  }
+  .field select, .field input {
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    padding: 0.45rem 0.7rem;
+    font-size: 0.78rem;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.18s, box-shadow 0.18s;
+    width: 100%;
+    font-family: inherit;
+  }
+  .field select:focus, .field input:focus {
+    border-color: var(--input-focus);
+    box-shadow: 0 0 0 2px rgba(184,134,11,0.15);
+  }
+  .field select option { background: var(--panel-bg); }
+
+  /* ── LOGIN BUTTON ── */
+  .login-btn {
+    width: 100%;
+    padding: 0.75rem;
+    background: linear-gradient(135deg, var(--gold-dark) 0%, var(--gold) 40%, var(--gold-shine) 70%, var(--gold-light) 100%);
+    color: #fff;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-top: 0.7rem;
+    margin-bottom: 0.65rem;
+    box-shadow: 0 4px 18px rgba(184,134,11,0.45), 0 1px 4px rgba(0,0,0,0.2);
+    transition: all 0.22s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .login-btn::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 60%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+    transition: left 0.4s ease;
+  }
+  .login-btn:hover {
+    box-shadow: 0 6px 24px rgba(184,134,11,0.6), 0 2px 6px rgba(0,0,0,0.25);
+    transform: translateY(-1px);
+  }
+  .login-btn:hover::after { left: 160%; }
+  .login-btn:active { transform: translateY(0); box-shadow: 0 2px 10px rgba(184,134,11,0.4); }
+
+  /* ── DEMO CHIPS ── */
+  .chips-label {
+    font-size: 0.6rem;
+    color: var(--text-sub);
+    letter-spacing: 0.05em;
+    margin-bottom: 0.3rem;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.6rem; }
+  .chip {
+    background: var(--chip-bg);
+    border: 1px solid var(--role-border);
+    border-radius: 20px;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.63rem;
+    color: var(--text-sub);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+  .chip:hover {
+    background: rgba(184,134,11,0.12);
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+
+  /* ── TOGGLE LINK ── */
+  .toggle-link {
+    text-align: center;
+    font-size: 0.68rem;
+    color: var(--text-sub);
+  }
+  .toggle-link a {
+    color: var(--gold);
+    text-decoration: none;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.15s;
+  }
+  .toggle-link a:hover { color: var(--gold-shine); text-decoration: underline; }
+
+  /* ── ERROR MSG ── */
+  .error-msg {
+    font-size: 0.68rem;
+    color: #e74c3c;
+    background: rgba(231,76,60,0.08);
+    border: 1px solid rgba(231,76,60,0.2);
+    border-radius: 5px;
+    padding: 0.35rem 0.65rem;
+    margin-top: 0.3rem;
+    display: none;
+  }
+  .error-msg.show { display: block; }
+
+  /* ── CUSTOMER PORTAL ── */
+  #customerView {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    height: 100%;
+  }
+  .customer-header {
+    display: flex; align-items: center; gap: 0.5rem;
+    margin-bottom: 0.8rem;
+  }
+  .back-btn {
+    background: none;
+    border: 1px solid var(--role-border);
+    border-radius: 5px;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.7rem;
+    color: var(--text-sub);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .back-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+  /* ── SCROLLBAR hidden ── */
+  ::-webkit-scrollbar { display: none; }
+</style>
+</head>
+<body>
+
+<div class="wrapper">
+
+  <!-- ═══════════════ LEFT BRAND PANEL ═══════════════ -->
+  <div class="brand">
+    <div class="brand-ring">
+      <span class="brand-icon">💎</span>
+    </div>
+    <h1>Certitiage<br>Jewellery</h1>
+    <p class="brand-tagline">Certified Excellence</p>
+    <div class="brand-divider"></div>
+    <ul class="brand-features">
+      <li><span class="dot"></span>BIS Hallmark Certified</li>
+      <li><span class="dot"></span>GIA Diamond Grading</li>
+      <li><span class="dot"></span>Real-time Inventory Sync</li>
+      <li><span class="dot"></span>Multi-branch Management</li>
+      <li><span class="dot"></span>Customer Loyalty Portal</li>
+    </ul>
+    <span class="brand-copy">© 2024 Certitiage Jewellery Systems</span>
+  </div>
+
+  <!-- ═══════════════ RIGHT LOGIN PANEL ═══════════════ -->
+  <div class="login-panel">
+
+    <!-- STAFF VIEW -->
+    <div id="staffView">
+      <div class="panel-title">Staff Portal</div>
+      <div class="panel-sub">Select your role and sign in to continue</div>
+      <div class="gold-line"></div>
+
+      <div class="section-label">Select Role</div>
+      <div class="role-grid">
+        <button class="role-btn active" data-role="admin"            onclick="selectRole(this)"><span class="role-icon">👑</span>Admin</button>
+        <button class="role-btn"        data-role="branch_manager"   onclick="selectRole(this)"><span class="role-icon">🏢</span>Branch Mgr</button>
+        <button class="role-btn"        data-role="sales"            onclick="selectRole(this)"><span class="role-icon">💼</span>Sales</button>
+        <button class="role-btn"        data-role="accounts"         onclick="selectRole(this)"><span class="role-icon">📊</span>Accountant</button>
+        <button class="role-btn"        data-role="cashier"          onclick="selectRole(this)"><span class="role-icon">💰</span>Cashier</button>
+        <button class="role-btn"        data-role="inventory"        onclick="selectRole(this)"><span class="role-icon">📦</span>Inventory</button>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Branch</label>
+          <select id="branchSelect">
+            <option value="HQ">Head Office – Delhi</option>
+            <option value="MUM">Mumbai Branch</option>
+            <option value="BLR">Bangalore Branch</option>
+            <option value="CHN">Chennai Branch</option>
+            <option value="HYD">Hyderabad Branch</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="username" placeholder="Enter username" autocomplete="username" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+      </div>
+
+      <div class="error-msg" id="staffError">Invalid username or password. Please try again.</div>
+
+      <button class="login-btn" onclick="staffLogin()">🔐 Sign In</button>
+
+      <div class="chips-label">Quick Demo Login</div>
+      <div class="chips">
+        <span class="chip" onclick="fillDemo('admin','ceritage123','admin')">👑 Admin</span>
+        <span class="chip" onclick="fillDemo('manager','ceritage123','branch_manager')">🏢 Manager</span>
+        <span class="chip" onclick="fillDemo('karan','ceritage123','sales')">💼 Sales</span>
+        <span class="chip" onclick="fillDemo('pooja','ceritage123','accounts')">📊 Accounts</span>
+        <span class="chip" onclick="fillDemo('deepika','ceritage123','cashier')">💰 Cashier</span>
+      </div>
+
+      <div class="toggle-link">
+        Customer? <a onclick="togglePortal(true)">Access Customer Portal →</a>
+      </div>
+    </div>
+
+    <!-- CUSTOMER VIEW -->
+    <div id="customerView">
+      <div class="customer-header">
+        <button class="back-btn" onclick="togglePortal(false)">← Back</button>
+        <div>
+          <div class="panel-title">Customer Portal</div>
+          <div class="panel-sub">Track orders, loyalty points & certificates</div>
+        </div>
+      </div>
+      <div class="gold-line"></div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Mobile Number</label>
+          <input type="tel" id="custMobile" placeholder="10-digit mobile" maxlength="10" />
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>PIN / OTP</label>
+          <input type="password" id="custPin" placeholder="4-digit PIN" maxlength="4" />
+        </div>
+      </div>
+
+      <div class="error-msg" id="custError">Mobile number or PIN not found.</div>
+
+      <button class="login-btn" onclick="customerLogin()">✨ Access My Account</button>
+
+      <div class="chips-label">Demo Accounts</div>
+      <div class="chips">
+        <span class="chip" onclick="fillCust('9876543210','1234')">Priya Sharma</span>
+        <span class="chip" onclick="fillCust('9712345678','5678')">Amit Kumar</span>
+      </div>
+
+      <div class="toggle-link">
+        Staff member? <a onclick="togglePortal(false)">← Staff Login</a>
+      </div>
+    </div>
+
+  </div><!-- /login-panel -->
+</div><!-- /wrapper -->
+
+<script>
+// ── DEMO CREDENTIALS ──────────────────────────────────────────
+const STAFF_CREDS = {
+  admin:    { pass: 'ceritage123', role: 'admin',          name: 'Ravi Sharma' },
+  manager:  { pass: 'ceritage123', role: 'branch_manager', name: 'Sunil Agarwal' },
+  karan:    { pass: 'ceritage123', role: 'sales',           name: 'Karan Mehta' },
+  pooja:    { pass: 'ceritage123', role: 'accounts',        name: 'Pooja Jain' },
+  deepika:  { pass: 'ceritage123', role: 'cashier',         name: 'Deepika Singh' },
+};
+const CUST_CREDS = {
+  '9876543210': { pin: '1234', name: 'Priya Sharma', id: 'CUST001' },
+  '9712345678': { pin: '5678', name: 'Amit Kumar',   id: 'CUST002' },
+};
+
+let selectedRole = 'admin';
+
+// ── ROLE SELECTION ────────────────────────────────────────────
+function selectRole(btn) {
+  document.querySelectorAll('.role-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  selectedRole = btn.dataset.role;
+}
+
+// ── DEMO FILL ─────────────────────────────────────────────────
+function fillDemo(user, pass, role) {
+  document.getElementById('username').value = user;
+  document.getElementById('password').value = pass;
+  const btn = document.querySelector(`.role-btn[data-role="${role}"]`);
+  if (btn) selectRole(btn);
+  hideErr('staffError');
+}
+function fillCust(mobile, pin) {
+  document.getElementById('custMobile').value = mobile;
+  document.getElementById('custPin').value = pin;
+  hideErr('custError');
+}
+
+// ── TOGGLE PORTAL ─────────────────────────────────────────────
+function togglePortal(showCustomer) {
+  const sv = document.getElementById('staffView');
+  const cv = document.getElementById('customerView');
+  if (showCustomer) {
+    sv.style.display = 'none';
+    cv.style.display = 'flex';
+  } else {
+    sv.style.display = 'block';
+    cv.style.display = 'none';
+  }
+}
+
+// ── STAFF LOGIN ───────────────────────────────────────────────
+function staffLogin() {
+  const user   = document.getElementById('username').value.trim() || 'admin';
+  const pass   = document.getElementById('password').value;
+  const branch = document.getElementById('branchSelect').value;
+  const cred   = STAFF_CREDS[user] || { role: selectedRole, name: user || 'User' };
+
+  // No validation — any input logs in with selected role
+  const role = cred.role || selectedRole;
+  sessionStorage.setItem('ceritage_user', JSON.stringify({
+    role, name: cred.name || user, branch,
+    username: user
+  }));
+  window.location.href = 'index.html';
+}
+
+// ── CUSTOMER LOGIN ────────────────────────────────────────────
+function customerLogin() {
+  const mobile = document.getElementById('custMobile').value.trim() || '9876543210';
+  const pin    = document.getElementById('custPin').value;
+  const cred   = CUST_CREDS[mobile] || { name: 'Customer', id: 'C000' };
+
+  // No validation — any input works
+  sessionStorage.setItem('ceritage_user', JSON.stringify({
+    role: 'customer', name: cred.name, id: cred.id, branch: 'Mumbai HQ'
+  }));
+  window.location.href = 'customer.html';
+}
+
+// ── HELPERS ───────────────────────────────────────────────────
+function showErr(id) {
+  document.getElementById(id).classList.add('show');
+  setTimeout(() => hideErr(id), 3500);
+}
+function hideErr(id) {
+  document.getElementById(id).classList.remove('show');
+}
+
+// ── ENTER KEY ─────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const cv = document.getElementById('customerView');
+  if (cv.style.display === 'flex') customerLogin();
+  else staffLogin();
+});
+</script>
+</body>
+</html>

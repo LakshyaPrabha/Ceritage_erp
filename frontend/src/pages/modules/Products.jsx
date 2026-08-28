@@ -75,7 +75,7 @@ export default function Products({ t }) {
             </>} />
           <div style={{ textAlign:"center", padding:"40px 16px",
             color:t.textFaint, fontSize:13, border:`1px dashed ${t.borderDash}`, borderRadius:9 }}>
-            products will load from backend — grid view mein dikhenge
+            Products will load from backend — grid view will appear here
           </div>
         </Card>
       )}
@@ -140,7 +140,7 @@ export default function Products({ t }) {
             <div style={{ textAlign:"center", padding:"28px",
               background:t.card2 || t.card, borderRadius:9,
               border:`1px solid ${t.borderDash}`, marginBottom:14 }}>
-              <div style={{ fontSize:12, color:t.textFaint }}>Barcode preview yahan dikhega</div>
+              <div style={{ fontSize:12, color:t.textFaint }}>Barcode preview will appear here</div>
             </div>
             <div style={{ display:"flex", gap:10 }}>
               <BtnOutline t={t} style={{ flex:1 }}>Generate</BtnOutline>
@@ -155,7 +155,7 @@ export default function Products({ t }) {
             <div style={{ textAlign:"center", padding:"28px",
               background:t.card2 || t.card, borderRadius:9,
               border:`1px solid ${t.borderDash}`, marginBottom:14 }}>
-              <div style={{ fontSize:12, color:t.textFaint }}>QR Code preview yahan dikhega</div>
+              <div style={{ fontSize:12, color:t.textFaint }}>QR Code preview will appear here</div>
             </div>
             <div style={{ display:"flex", gap:10 }}>
               <BtnOutline t={t} style={{ flex:1 }}>Generate</BtnOutline>

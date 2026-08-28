@@ -155,7 +155,7 @@ export function Tabs({ tabs, active, onChange, t }) {
 }
 
 // ── DataTable ──────────────────────────────────────────────
-export function DataTable({ columns, rows = [], emptyMsg = "Backend se data load hoga", t }) {
+export function DataTable({ columns, rows = [], emptyMsg = "Data will load from backend", t }) {
   return (
     <div style={{ overflowX:"auto" }}>
       <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
@@ -185,7 +185,7 @@ export function DataTable({ columns, rows = [], emptyMsg = "Backend se data load
               <tr key={i} style={{ borderBottom:`1px solid ${t.borderDash}` }}>
                 {columns.map((col) => (
                   <td key={col} style={{ padding:"10px 12px", color:t.textSub }}>
-                    {row[col] ?? "—"}
+                    {row[col] !== undefined && row[col] !== null ? row[col] : "—"}
                   </td>
                 ))}
               </tr>

@@ -3,18 +3,18 @@ import { BRAND } from "../../theme.js";
 import { PageHeader, Card, CardHeader, DataTable, BtnPrimary, BtnOutline, BtnSm,
          Modal, FormGroup, FormGrid, Input, Select, Tabs, SectionTitle } from "../../components/ui";
 
-// ── Roles defined ──────────────────────────────────────────
+// ── Roles ──────────────────────────────────────────────────
 const ROLES = [
-  { id:"admin",           label:"Admin",           desc:"Full access to everything" },
-  { id:"branch_manager",  label:"Branch Manager",  desc:"Full access to assigned branch" },
-  { id:"accountant",      label:"Accountant",      desc:"Finance & reports access" },
-  { id:"sales",           label:"Sales Executive", desc:"Billing, customers, products" },
-  { id:"inventory",       label:"Inventory Manager",desc:"Stock & inventory access" },
-  { id:"cashier",         label:"Cashier",         desc:"Billing & payments only" },
-  { id:"readonly",        label:"Read Only",       desc:"View only — no edits" },
+  { id:"admin",          label:"Admin",            desc:"Full access to everything" },
+  { id:"branch_manager", label:"Branch Manager",   desc:"Full access to assigned branch" },
+  { id:"accountant",     label:"Accountant",       desc:"Finance & reports access" },
+  { id:"sales",          label:"Sales Executive",  desc:"Billing, customers, products" },
+  { id:"inventory",      label:"Inventory Manager",desc:"Stock & inventory access" },
+  { id:"cashier",        label:"Cashier",          desc:"Billing & payments only" },
+  { id:"readonly",       label:"Read Only",        desc:"View only — no edits" },
 ];
 
-// ── All modules with default permissions per role ──────────
+// ── All modules ────────────────────────────────────────────
 const MODULES = [
   { id:"dashboard",     label:"Dashboard" },
   { id:"analytics",     label:"Analytics" },
@@ -49,32 +49,32 @@ const MODULES = [
   { id:"communication", label:"Communication" },
 ];
 
-// Default permissions for each role
+// ── Default permissions per role ───────────────────────────
 const DEFAULT_PERMISSIONS = {
   admin: Object.fromEntries(MODULES.map(m => [m.id, { view:true, edit:true, delete:true }])),
   branch_manager: Object.fromEntries(MODULES.map(m => [m.id, {
-    view: !["users","security","branch"].includes(m.id),
-    edit: !["users","security","branch","compliance","gst","accounting"].includes(m.id),
+    view:   !["users","security","branch"].includes(m.id),
+    edit:   !["users","security","branch","compliance","gst","accounting"].includes(m.id),
     delete: false,
   }])),
   accountant: Object.fromEntries(MODULES.map(m => [m.id, {
-    view: ["dashboard","accounting","payments","emi","gst","tunch","compliance","reports","billing","sales","purchase"].includes(m.id),
-    edit: ["accounting","payments","emi","gst","tunch","compliance"].includes(m.id),
+    view:   ["dashboard","accounting","payments","emi","gst","tunch","compliance","reports","billing","sales"].includes(m.id),
+    edit:   ["accounting","payments","emi","gst","tunch","compliance"].includes(m.id),
     delete: false,
   }])),
   sales: Object.fromEntries(MODULES.map(m => [m.id, {
-    view: ["dashboard","customers","products","billing","sales","gold-exchange","repair","orders","rates","inventory"].includes(m.id),
-    edit: ["customers","billing","sales","repair","orders"].includes(m.id),
+    view:   ["dashboard","customers","products","billing","sales","gold-exchange","repair","orders","rates","inventory"].includes(m.id),
+    edit:   ["customers","billing","sales","repair","orders"].includes(m.id),
     delete: false,
   }])),
   inventory: Object.fromEntries(MODULES.map(m => [m.id, {
-    view: ["dashboard","products","inventory","hallmark","rfid","rates","purchase","karigar"].includes(m.id),
-    edit: ["products","inventory","hallmark","rfid","rates","karigar"].includes(m.id),
+    view:   ["dashboard","products","inventory","hallmark","rfid","rates","purchase","karigar"].includes(m.id),
+    edit:   ["products","inventory","hallmark","rfid","rates","karigar"].includes(m.id),
     delete: false,
   }])),
   cashier: Object.fromEntries(MODULES.map(m => [m.id, {
-    view: ["dashboard","billing","payments","customers"].includes(m.id),
-    edit: ["billing","payments"].includes(m.id),
+    view:   ["dashboard","billing","payments","customers"].includes(m.id),
+    edit:   ["billing","payments"].includes(m.id),
     delete: false,
   }])),
   readonly: Object.fromEntries(MODULES.map(m => [m.id, { view:true, edit:false, delete:false }])),
@@ -86,17 +86,16 @@ const PAGE_TABS = [
   { id:"permissions", label:"Permission Matrix" },
 ];
 
+const BRANCHES = ["Mumbai HQ","Delhi","Jaipur","All Branches"];
+
 export default function Users({ t }) {
-  const [tab,        setTab]        = useState("users");
-  const [editModal,  setEditModal]  = useState(false);
-  const [permModal,  setPermModal]  = useState(false);
+  const [tab,          setTab]          = useState("users");
   const [selectedRole, setSelectedRole] = useState("branch_manager");
   const [permissions,  setPermissions]  = useState(DEFAULT_PERMISSIONS);
   const [newUser, setNewUser] = useState({
-    name:"", username:"", password:"", role:"sales", branch:"Mumbai HQ", status:"Active"
+    name:"", username:"", password:"", role:"sales", branch:"Mumbai HQ",
   });
 
-  // Toggle a single permission
   function togglePerm(role, moduleId, type) {
     setPermissions(prev => ({
       ...prev,
@@ -105,22 +104,27 @@ export default function Users({ t }) {
         [moduleId]: {
           ...prev[role][moduleId],
           [type]: !prev[role][moduleId][type],
-        }
-      }
+        },
+      },
     }));
   }
 
-  // Apply role defaults
   function resetRolePerms(role) {
     setPermissions(prev => ({ ...prev, [role]: DEFAULT_PERMISSIONS[role] }));
   }
 
+  const visibleModules = MODULES.filter(
+    m => permissions[newUser.role]?.[m.id]?.view
+  );
+
   return (
     <div>
-      <PageHeader title="Users & Roles"
+      <PageHeader
+        title="Users & Roles"
         subtitle="Create user accounts · Assign roles · Set module-level permissions"
         t={t}
-        actions={<BtnPrimary onClick={() => setTab("add")}>+ Add User</BtnPrimary>} />
+        actions={<BtnPrimary onClick={() => setTab("add")}>+ Add User</BtnPrimary>}
+      />
 
       <Tabs tabs={PAGE_TABS} active={tab} onChange={setTab} t={t} />
 
@@ -128,11 +132,13 @@ export default function Users({ t }) {
       {tab === "users" && (
         <Card t={t}>
           <CardHeader title="System Users" t={t}
-            actions={<BtnSm t={t} primary onClick={() => setTab("add")}>+ Add User</BtnSm>} />
+            actions={
+              <BtnSm t={t} primary onClick={() => setTab("add")}>+ Add User</BtnSm>
+            } />
           <DataTable
             columns={["User","Username","Role","Branch","Status","Last Login","Actions"]}
             t={t}
-            emptyMsg="No users found. Use + Add User to create the first user.
+            emptyMsg="No users found. Use + Add User to create the first user." />
         </Card>
       )}
 
@@ -141,49 +147,59 @@ export default function Users({ t }) {
         <Card t={t}>
           <CardHeader title="Create New User" t={t} />
 
-          {/* Role cards */}
-          <SectionTitle t={t}>Step 1 — Role Select Karo</SectionTitle>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",
-            gap:12, marginBottom:22 }}>
-            {ROLES.map((role) => (
-              <div key={role.id}
-                onClick={() => setNewUser(u => ({ ...u, role: role.id }))}
-                style={{
-                  background: newUser.role === role.id
-                    ? `linear-gradient(135deg,${BRAND.blue}22,${BRAND.purple}15)`
-                    : t.card2 || t.card,
-                  border: newUser.role === role.id
-                    ? `2px solid ${BRAND.purple}`
-                    : `1px solid ${t.borderDash}`,
-                  borderRadius:10, padding:"14px 16px", cursor:"pointer",
-                  transition:"all 0.15s",
-                }}>
-                <div style={{ fontSize:13, fontWeight:700,
-                  color: newUser.role === role.id ? BRAND.purple : t.text,
-                  marginBottom:4 }}>
-                  {role.label}
+          {/* Step 1 — Role */}
+          <SectionTitle t={t}>Step 1 — Select a Role</SectionTitle>
+          <div style={{
+            display:"grid",
+            gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",
+            gap:12, marginBottom:22,
+          }}>
+            {ROLES.map((role) => {
+              const active = newUser.role === role.id;
+              return (
+                <div
+                  key={role.id}
+                  onClick={() => setNewUser(u => ({ ...u, role: role.id }))}
+                  style={{
+                    background: active
+                      ? `linear-gradient(135deg,${BRAND.blue}22,${BRAND.purple}15)`
+                      : t.card2 || t.card,
+                    border: active
+                      ? `2px solid ${BRAND.purple}`
+                      : `1px solid ${t.borderDash}`,
+                    borderRadius:10, padding:"14px 16px",
+                    cursor:"pointer", transition:"all 0.15s",
+                  }}>
+                  <div style={{
+                    fontSize:13, fontWeight:700,
+                    color: active ? BRAND.purple : t.text,
+                    marginBottom:4,
+                  }}>
+                    {role.label}
+                  </div>
+                  <div style={{ fontSize:11, color:t.textFaint, lineHeight:1.5 }}>
+                    {role.desc}
+                  </div>
                 </div>
-                <div style={{ fontSize:11, color:t.textFaint, lineHeight:1.5 }}>
-                  {role.desc}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
+          {/* Step 2 — Details */}
           <SectionTitle t={t}>Step 2 — User Details</SectionTitle>
           <FormGrid>
-            <FormGroup label="Full Name *"  t={t} half>
+            <FormGroup label="Full Name *" t={t} half>
               <Input t={t} placeholder="e.g. Rahul Sharma"
                 value={newUser.name}
                 onChange={e => setNewUser(u => ({ ...u, name: e.target.value }))} />
             </FormGroup>
-            <FormGroup label="Username *"   t={t} half>
+            <FormGroup label="Username *" t={t} half>
               <Input t={t} placeholder="e.g. rahul.sharma"
                 value={newUser.username}
                 onChange={e => setNewUser(u => ({ ...u, username: e.target.value }))} />
             </FormGroup>
-            <FormGroup label="Password *"   t={t} half>
-              <Input t={t} type="password" placeholder="Set password"
+            <FormGroup label="Password *" t={t} half>
+              <Input t={t} type="password" placeholder="Set a strong password"
                 value={newUser.password}
                 onChange={e => setNewUser(u => ({ ...u, password: e.target.value }))} />
             </FormGroup>
@@ -191,31 +207,40 @@ export default function Users({ t }) {
               <Select t={t}
                 value={newUser.branch}
                 onChange={e => setNewUser(u => ({ ...u, branch: e.target.value }))}>
-                <option>Mumbai HQ</option>
-                <option>Delhi</option>
-                <option>Jaipur</option>
-                <option>All Branches</option>
+                {BRANCHES.map(b => <option key={b}>{b}</option>)}
               </Select>
             </FormGroup>
           </FormGrid>
 
-          {/* Permission preview for selected role */}
-          <SectionTitle t={t}>Step 3 — Permissions Preview ({ROLES.find(r => r.id === newUser.role)?.label})</SectionTitle>
-          <div style={{ background: t.card2 || t.card,
-            border:`1px solid ${t.borderDash}`, borderRadius:10,
-            padding:"12px 16px", marginBottom:18 }}>
-            <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-              {MODULES.filter(m => permissions[newUser.role]?.[m.id]?.view).map(m => (
-                <span key={m.id} style={{
-                  background:`${BRAND.blue}18`, color:BRAND.blue,
-                  border:`1px solid ${BRAND.blue}33`,
-                  borderRadius:6, padding:"3px 10px", fontSize:11, fontWeight:600 }}>
-                  {m.label}
-                </span>
-              ))}
-            </div>
+          {/* Step 3 — Permissions preview */}
+          <SectionTitle t={t}>
+            Step 3 — Permissions Preview ({ROLES.find(r => r.id === newUser.role)?.label})
+          </SectionTitle>
+          <div style={{
+            background: t.card2 || t.card,
+            border:`1px solid ${t.borderDash}`,
+            borderRadius:10, padding:"12px 16px", marginBottom:18,
+          }}>
+            {visibleModules.length === 0 ? (
+              <div style={{ fontSize:12, color:t.textFaint }}>
+                No modules assigned to this role.
+              </div>
+            ) : (
+              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                {visibleModules.map(m => (
+                  <span key={m.id} style={{
+                    background:`${BRAND.blue}18`, color:BRAND.blue,
+                    border:`1px solid ${BRAND.blue}33`,
+                    borderRadius:6, padding:"3px 10px",
+                    fontSize:11, fontWeight:600,
+                  }}>
+                    {m.label}
+                  </span>
+                ))}
+              </div>
+            )}
             <div style={{ marginTop:10, fontSize:11, color:t.textFaint }}>
-              Sirf yahi modules is user ko dikhenge. Fine-tune karne ke liye "Permission Matrix" tab mein jao.
+              Only these modules will be visible to this user. Go to the "Permission Matrix" tab to fine-tune access.
             </div>
           </div>
 
@@ -225,7 +250,7 @@ export default function Users({ t }) {
             </BtnOutline>
             <BtnPrimary onClick={() => {
               setTab("users");
-              setNewUser({ name:"", username:"", password:"", role:"sales", branch:"Mumbai HQ", status:"Active" });
+              setNewUser({ name:"", username:"", password:"", role:"sales", branch:"Mumbai HQ" });
             }}>
               Create User
             </BtnPrimary>
@@ -255,21 +280,20 @@ export default function Users({ t }) {
 
           {/* Legend */}
           <div style={{ display:"flex", gap:16, marginBottom:16, fontSize:12, color:t.textMuted }}>
+            {[
+              { color:BRAND.gradBtn, label:"View" },
+              { color:"#2ecc71",     label:"Edit" },
+              { color:BRAND.pink,    label:"Delete" },
+            ].map(({ color, label }) => (
+              <span key={label} style={{ display:"flex", alignItems:"center", gap:6 }}>
+                <div style={{ width:14, height:14, borderRadius:3, background:color }} />
+                {label}
+              </span>
+            ))}
             <span style={{ display:"flex", alignItems:"center", gap:6 }}>
               <div style={{ width:14, height:14, borderRadius:3,
-                background:BRAND.gradBtn }} /> View
-            </span>
-            <span style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <div style={{ width:14, height:14, borderRadius:3,
-                background:"#2ecc71" }} /> Edit
-            </span>
-            <span style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <div style={{ width:14, height:14, borderRadius:3,
-                background:BRAND.pink }} /> Delete
-            </span>
-            <span style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <div style={{ width:14, height:14, borderRadius:3,
-                background:t.borderDash, border:`1px solid ${t.borderDash}` }} /> No Access
+                background:t.borderDash, border:`1px solid ${t.border}` }} />
+              No Access
             </span>
           </div>
 
@@ -277,17 +301,21 @@ export default function Users({ t }) {
             <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
               <thead>
                 <tr>
-                  <th style={{ textAlign:"left", padding:"10px 14px",
+                  <th style={{
+                    textAlign:"left", padding:"10px 14px",
                     color:t.textMuted, fontWeight:600, fontSize:11,
                     textTransform:"uppercase", letterSpacing:"0.5px",
-                    borderBottom:`1px solid ${t.borderDash}`, width:220 }}>
+                    borderBottom:`1px solid ${t.borderDash}`, width:220,
+                  }}>
                     Module
                   </th>
                   {["View","Edit","Delete"].map(col => (
-                    <th key={col} style={{ textAlign:"center", padding:"10px 14px",
+                    <th key={col} style={{
+                      textAlign:"center", padding:"10px 14px",
                       color:t.textMuted, fontWeight:600, fontSize:11,
                       textTransform:"uppercase", letterSpacing:"0.5px",
-                      borderBottom:`1px solid ${t.borderDash}`, width:90 }}>
+                      borderBottom:`1px solid ${t.borderDash}`, width:90,
+                    }}>
                       {col}
                     </th>
                   ))}
@@ -295,54 +323,65 @@ export default function Users({ t }) {
               </thead>
               <tbody>
                 {MODULES.map((mod, i) => {
-                  const perms = permissions[selectedRole]?.[mod.id] || { view:false, edit:false, delete:false };
+                  const perms = permissions[selectedRole]?.[mod.id]
+                    || { view:false, edit:false, delete:false };
                   return (
-                    <tr key={mod.id}
-                      style={{ background: i % 2 === 0 ? "transparent" : (t.card2 || t.card),
-                        borderBottom:`1px solid ${t.borderDash}` }}>
+                    <tr key={mod.id} style={{
+                      background: i % 2 === 0 ? "transparent" : (t.card2 || t.card),
+                      borderBottom:`1px solid ${t.borderDash}`,
+                    }}>
                       <td style={{ padding:"10px 14px", color:t.textSub, fontWeight:500 }}>
                         {mod.label}
                       </td>
+
                       {/* View */}
                       <td style={{ textAlign:"center", padding:"10px 14px" }}>
                         <button
                           onClick={() => togglePerm(selectedRole, mod.id, "view")}
-                          style={{ width:28, height:28, borderRadius:6, cursor:"pointer",
+                          style={{
+                            width:28, height:28, borderRadius:6, cursor:"pointer",
                             border:"none", fontFamily:"inherit",
                             background: perms.view ? BRAND.gradBtn : t.borderDash,
                             color: perms.view ? "#fff" : t.textFaint,
                             fontSize:14, display:"inline-flex",
-                            alignItems:"center", justifyContent:"center" }}>
+                            alignItems:"center", justifyContent:"center",
+                          }}>
                           {perms.view ? "✓" : "–"}
                         </button>
                       </td>
+
                       {/* Edit */}
                       <td style={{ textAlign:"center", padding:"10px 14px" }}>
                         <button
                           onClick={() => togglePerm(selectedRole, mod.id, "edit")}
                           disabled={!perms.view}
-                          style={{ width:28, height:28, borderRadius:6,
+                          style={{
+                            width:28, height:28, borderRadius:6,
                             cursor: perms.view ? "pointer" : "not-allowed",
                             border:"none", fontFamily:"inherit",
                             background: perms.edit ? "#2ecc71" : t.borderDash,
                             color: perms.edit ? "#fff" : t.textFaint,
                             fontSize:14, opacity: perms.view ? 1 : 0.4,
-                            display:"inline-flex", alignItems:"center", justifyContent:"center" }}>
+                            display:"inline-flex", alignItems:"center", justifyContent:"center",
+                          }}>
                           {perms.edit ? "✓" : "–"}
                         </button>
                       </td>
+
                       {/* Delete */}
                       <td style={{ textAlign:"center", padding:"10px 14px" }}>
                         <button
                           onClick={() => togglePerm(selectedRole, mod.id, "delete")}
                           disabled={!perms.edit}
-                          style={{ width:28, height:28, borderRadius:6,
+                          style={{
+                            width:28, height:28, borderRadius:6,
                             cursor: perms.edit ? "pointer" : "not-allowed",
                             border:"none", fontFamily:"inherit",
                             background: perms.delete ? BRAND.pink : t.borderDash,
                             color: perms.delete ? "#fff" : t.textFaint,
                             fontSize:14, opacity: perms.edit ? 1 : 0.4,
-                            display:"inline-flex", alignItems:"center", justifyContent:"center" }}>
+                            display:"inline-flex", alignItems:"center", justifyContent:"center",
+                          }}>
                           {perms.delete ? "✓" : "–"}
                         </button>
                       </td>
@@ -354,7 +393,9 @@ export default function Users({ t }) {
           </div>
 
           <div style={{ display:"flex", justifyContent:"flex-end", gap:10, marginTop:16 }}>
-            <BtnOutline t={t} onClick={() => resetRolePerms(selectedRole)}>Reset Defaults</BtnOutline>
+            <BtnOutline t={t} onClick={() => resetRolePerms(selectedRole)}>
+              Reset Defaults
+            </BtnOutline>
             <BtnPrimary>Save Permissions</BtnPrimary>
           </div>
         </Card>

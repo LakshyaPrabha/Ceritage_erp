@@ -10,12 +10,18 @@ const app = express();
 
 // ── Middleware ─────────────────────────────────────────────
 app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:3000"],
-  credentials: true,
+  origin: "*",
+  credentials: false,
 }));
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(morgan("dev"));
 app.use(express.json());
+
+// Disable 304 caching for API routes
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
 
 // ── Health check ───────────────────────────────────────────
 app.get("/", (req, res) => {

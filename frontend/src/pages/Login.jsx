@@ -1,19 +1,7 @@
 import { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import ceritageLogoSvg from "../assets/ceritage-logo.svg";
-
-// ── Credentials (backend se replace hoga) ──────────────────
-const ADMIN_USERNAME = "admin";
-const ADMIN_PASSWORD = "ceritage123";
-
-// ── Brand colors from logo ─────────────────────────────────
-const BRAND = {
-  blue:   "#3B55E6",
-  purple: "#8B3BC8",
-  pink:   "#E63B8A",
-  grad:   "linear-gradient(135deg, #3B55E6 0%, #8B3BC8 50%, #E63B8A 100%)",
-  gradBtn:"linear-gradient(135deg, #3B55E6, #8B3BC8)",
-  gradBg: "linear-gradient(135deg, rgba(59,85,230,0.08) 0%, rgba(139,59,200,0.06) 50%, rgba(230,59,138,0.06) 100%)",
-};
+import { BRAND } from "../theme.js";
 
 // ── Theme tokens ───────────────────────────────────────────
 function getTheme(dark) {
@@ -82,27 +70,47 @@ export default function Login() {
 
   const t = getTheme(dark);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+
     if (!username.trim() || !password.trim()) {
-      setError("Username aur password dono required hain.");
+      setError("Username and password are required.");
       return;
     }
+
     setLoading(true);
-    setTimeout(() => {
-      if (
-        username.trim().toLowerCase() === ADMIN_USERNAME &&
-        password === ADMIN_PASSWORD
-      ) {
-        sessionStorage.setItem("ceritage_auth", "true");
-        sessionStorage.setItem("ceritage_user", username.trim());
-        window.location.href = "/dashboard";
-      } else {
+
+    try {
+      const res = await fetch("http://localhost:5000/api/auth/login", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: username.trim().toLowerCase(),
+          password: password,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
         setLoading(false);
-        setError("Username ya password galat hai. Dobara try karein.");
+        setError(data.message || "Invalid username or password.");
+        return;
       }
-    }, 600);
+
+      // Save token and user info
+      sessionStorage.setItem("ceritage_auth",  "true");
+      sessionStorage.setItem("ceritage_user",  data.user.full_name || data.user.username);
+      sessionStorage.setItem("ceritage_token", data.token);
+      sessionStorage.setItem("ceritage_role",  data.user.role);
+
+      navigate("/dashboard");
+
+    } catch (err) {
+      setLoading(false);
+      setError("Cannot connect to server. Make sure the backend is running on port 5000.");
+    }
   }
 
   return (
@@ -307,20 +315,13 @@ export default function Login() {
           </button>
         </form>
 
-        {/* Hint */}
-        <p style={{ marginTop:22, fontSize:12, color: t.hintText, textAlign:"center" }}>
-          Default: &nbsp;
-          <span style={{
-            background: t.hintCodeBg, color: t.hintCode,
-            borderRadius:5, padding:"2px 7px",
-            fontFamily:"monospace", fontSize:12,
-          }}>admin</span>
-          &nbsp;/&nbsp;
-          <span style={{
-            background: t.hintCodeBg, color: t.hintCode,
-            borderRadius:5, padding:"2px 7px",
-            fontFamily:"monospace", fontSize:12,
-          }}>ceritage123</span>
+        <p style={{ marginTop:14, fontSize:12, color: t.hintText, textAlign:"center" }}>
+          New to Ceritage ERP?{" "}
+          <Link to="/register" style={{
+            color: t.hintCode, fontWeight:600, textDecoration:"none",
+          }}>
+            Create an account
+          </Link>
         </p>
       </div>
 

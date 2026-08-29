@@ -62,7 +62,8 @@ async function create(req, res) {
     invoice_type, customer_id, invoice_date, salesperson_id,
     hsn_code, payment_mode, discount_pct, discount_amt,
     coupon_code, gift_voucher, old_gold_exchange,
-    cgst, sgst, igst, tcs, grand_total, notes, items = [],
+    cgst, sgst, igst, tcs, grand_total, paid_amount,
+    notes, status, items = [],
   } = req.body;
 
   const conn = await db.getConnection();
@@ -80,14 +81,15 @@ async function create(req, res) {
        (invoice_no, invoice_type, customer_id, invoice_date, salesperson_id,
         hsn_code, payment_mode, discount_pct, discount_amt, coupon_code,
         gift_voucher, old_gold_exchange, cgst, sgst, igst, tcs,
-        grand_total, notes, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        grand_total, paid_amount, notes, status)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [invoice_no, invoice_type || "Retail Invoice", customer_id, invoice_date,
        salesperson_id || null, hsn_code || "7113", payment_mode,
        discount_pct || 0, discount_amt || 0, coupon_code || null,
        gift_voucher || null, old_gold_exchange || 0,
        cgst || 0, sgst || 0, igst || 0, tcs || 0,
-       grand_total, notes || null, "Paid"]
+       grand_total, paid_amount || 0, notes || null,
+       status || "Paid"]
     );
 
     const invoiceId = invResult.insertId;

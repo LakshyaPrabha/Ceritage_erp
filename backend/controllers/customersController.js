@@ -90,7 +90,9 @@ async function getKpis(req, res) {
 }
 
 // GET /api/customers
+// ─────────────────────────────────────────────────────────────
 async function getAll(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const { search, tier, city, status = "active", page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
@@ -109,8 +111,11 @@ async function getAll(req, res) {
       const s = `%${search}%`;
       params.push(s, s, s, s, `%${cleanPhoneSearch}%`);
     }
-    if (tier) { where += " AND c.tier = ?"; params.push(tier); }
-    if (city) { where += " AND c.city = ?"; params.push(city); }
+    if (tier)       { where.push("c.tier = ?");       params.push(tier); }
+    if (city)       { where.push("c.city = ?");        params.push(city); }
+    if (kyc_status) { where.push("c.kyc_status = ?");  params.push(kyc_status); }
+
+    const whereClause = "WHERE " + where.join(" AND ");
 
     const [rows] = await db.query(
       `SELECT c.*,
@@ -122,11 +127,12 @@ async function getAll(req, res) {
        GROUP BY c.id
        ORDER BY c.created_at DESC
        LIMIT ? OFFSET ?`,
-      [...params, parseInt(limit), parseInt(offset)]
+      [...params, parseInt(limit), offset]
     );
 
     const [[{ total }]] = await db.query(
-      `SELECT COUNT(*) AS total FROM customers c ${where}`, params
+      `SELECT COUNT(*) AS total FROM customers c ${whereClause}`,
+      params
     );
 
     const sanitizedRows = rows.map(r => ({
@@ -141,8 +147,11 @@ async function getAll(req, res) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
 // GET /api/customers/:id
+// ─────────────────────────────────────────────────────────────
 async function getById(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const [rows] = await db.query(
       `SELECT c.*,
@@ -181,7 +190,9 @@ async function getById(req, res) {
   }
 }
 
-// POST /api/customers
+// ─────────────────────────────────────────────────────────────
+// POST /api/customers  (create)
+// ─────────────────────────────────────────────────────────────
 async function create(req, res) {
   const {
     full_name, phone, email, date_of_birth, anniversary,
@@ -287,8 +298,11 @@ async function create(req, res) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
 // PUT /api/customers/:id
+// ─────────────────────────────────────────────────────────────
 async function update(req, res) {
+  const branch_id = req.user.branch_id;
   const {
     full_name, phone, email, date_of_birth, anniversary,
     tier, city, state, pan, aadhaar, gst_number, credit_limit,
@@ -915,7 +929,15 @@ async function getCustomerReturns(req, res) {
        ORDER BY r.return_date DESC, r.id DESC`,
       [customerId]
     );
-    res.json({ success: true, data: rows });
+
+    // Running balance
+    let balance = 0;
+    const ledger = rows.map((row) => {
+      balance = balance + (row.debit || 0) - (row.credit || 0);
+      return { ...row, running_balance: balance };
+    });
+
+    res.json({ success: true, data: ledger });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -984,6 +1006,15 @@ async function getPurchasesAndReturns(req, res) {
 // GET /api/customers/:id/purchase-history (Backward-compatible)
 async function getPurchaseHistory(req, res) {
   try {
+    // invoices table exists check — graceful fallback
+    const [tables] = await db.query(
+      "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'invoices'"
+    );
+
+    if (tables.length === 0) {
+      return res.json({ success: true, data: [], message: "Invoices table not yet created" });
+    }
+
     const [rows] = await db.query(
       `SELECT i.id, i.invoice_no, i.invoice_date, i.grand_total, i.paid_amount,
               i.payment_mode, i.status,
@@ -1434,7 +1465,10 @@ async function getKycReport(req, res) {
     }));
     res.json({ success: true, data: sanitized });
   } catch (err) {
+    await conn.rollback();
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    conn.release();
   }
 }
 

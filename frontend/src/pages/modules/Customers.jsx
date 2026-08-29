@@ -5,6 +5,13 @@ import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
          Input, Select, SectionTitle } from "../../components/ui";
 import { apiRequest, formatCurrency } from "../../lib/api";
 
+const API = window.__CERITAGE_API__ || "/api";
+
+function authHeaders() {
+  const token = sessionStorage.getItem("ceritage_token");
+  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+}
+
 const TABS = [
   { id:"list",       label:"All Customers" },
   { id:"membership", label:"Membership & VIP Tiers" },
@@ -18,6 +25,214 @@ const TABS = [
   { id:"kyc",        label:"KYC" },
 ];
 
+const EMPTY_FORM = {
+  full_name:"", phone:"", alt_phone:"", email:"",
+  date_of_birth:"", anniversary:"", gender:"",
+  tier:"Regular", city:"", state:"",
+  pan:"", aadhaar:"", gst_number:"", credit_limit:"0", notes:"",
+};
+
+const STATES = ["Maharashtra","Gujarat","Rajasthan","Delhi","Karnataka",
+  "Tamil Nadu","West Bengal","Uttar Pradesh","Punjab","Madhya Pradesh",
+  "Haryana","Andhra Pradesh","Telangana","Kerala","Odisha","Bihar","Other"];
+
+function validateForm(form) {
+  const errors = {};
+  if (!form.full_name.trim())                                               errors.full_name    = "Full name is required.";
+  else if (form.full_name.trim().length < 2)                               errors.full_name    = "Full name must be at least 2 characters.";
+  if (!form.phone.trim())                                                   errors.phone        = "Phone number is required.";
+  else if (!/^[6-9]\d{9}$/.test(form.phone.trim()))                        errors.phone        = "Enter a valid 10-digit Indian mobile number (starts with 6-9).";
+  if (form.alt_phone.trim() && !/^[6-9]\d{9}$/.test(form.alt_phone.trim())) errors.alt_phone   = "Enter a valid 10-digit mobile number.";
+  if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) errors.email = "Enter a valid email address.";
+  if (!form.city.trim())                                                    errors.city         = "City is required.";
+  if (!form.state)                                                          errors.state        = "State is required.";
+  if (!form.gender)                                                         errors.gender       = "Gender is required.";
+  if (form.pan.trim() && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan.trim().toUpperCase())) errors.pan = "PAN must be in format: ABCDE1234F.";
+  const ac = form.aadhaar.replace(/\s/g,"");
+  if (form.aadhaar.trim() && !/^\d{12}$/.test(ac))                          errors.aadhaar     = "Aadhaar must be exactly 12 digits.";
+  if (form.gst_number.trim() && !/^\d{2}[A-Z]{5}\d{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(form.gst_number.trim().toUpperCase())) errors.gst_number = "Enter a valid 15-character GST number.";
+  if (form.credit_limit !== "" && (isNaN(form.credit_limit) || parseFloat(form.credit_limit) < 0)) errors.credit_limit = "Credit limit must be a valid non-negative amount.";
+  return errors;
+}
+
+// ── CustomerForm component (outside to prevent re-mount) ───
+function CustomerForm({ form, onChange, errors, t }) {
+  const fs = (key) => errors[key] ? { borderColor:"rgba(230,59,138,0.7)" } : {};
+  const em = (key) => errors[key]  ? <div style={{ color:BRAND.pink, fontSize:11, marginTop:4 }}>{errors[key]}</div> : null;
+  return (
+    <>
+      <SectionTitle t={t}>Personal Information</SectionTitle>
+      <FormGrid>
+        <FormGroup label="Full Name *"         t={t} half><Input t={t} placeholder="Customer full name"            value={form.full_name}    onChange={onChange("full_name")}    style={fs("full_name")}    />{em("full_name")}</FormGroup>
+        <FormGroup label="Mobile Number *"     t={t} half><Input t={t} placeholder="10-digit (e.g. 9876543210)"   value={form.phone}         onChange={onChange("phone")}        style={fs("phone")}        maxLength={10} />{em("phone")}</FormGroup>
+        <FormGroup label="Alternate Mobile"    t={t} half><Input t={t} placeholder="Optional alternate number"    value={form.alt_phone}    onChange={onChange("alt_phone")}   style={fs("alt_phone")}    maxLength={10} />{em("alt_phone")}</FormGroup>
+        <FormGroup label="Email Address"       t={t} half><Input t={t} type="email" placeholder="customer@email.com" value={form.email}      onChange={onChange("email")}       style={fs("email")}        />{em("email")}</FormGroup>
+        <FormGroup label="Gender *"            t={t} half>
+          <Select t={t} value={form.gender} onChange={onChange("gender")} style={fs("gender")}>
+            <option value="">-- Select Gender --</option>
+            <option>Male</option><option>Female</option><option>Other</option>
+          </Select>{em("gender")}
+        </FormGroup>
+        <FormGroup label="Customer Tier"       t={t} half>
+          <Select t={t} value={form.tier} onChange={onChange("tier")}>
+            <option>Regular</option><option>Silver</option><option>Gold</option><option>Platinum</option>
+          </Select>
+        </FormGroup>
+        <FormGroup label="Date of Birth"       t={t} half><Input t={t} type="date" value={form.date_of_birth} onChange={onChange("date_of_birth")} /></FormGroup>
+        <FormGroup label="Wedding Anniversary" t={t} half><Input t={t} type="date" value={form.anniversary}   onChange={onChange("anniversary")}   /></FormGroup>
+        <FormGroup label="City *"              t={t} half><Input t={t} placeholder="City name" value={form.city}  onChange={onChange("city")}  style={fs("city")}  />{em("city")}</FormGroup>
+        <FormGroup label="State *"             t={t} half>
+          <Select t={t} value={form.state} onChange={onChange("state")} style={fs("state")}>
+            <option value="">-- Select State --</option>
+            {STATES.map(s => <option key={s}>{s}</option>)}
+          </Select>{em("state")}
+        </FormGroup>
+      </FormGrid>
+      <SectionTitle t={t}>KYC & Identity Verification</SectionTitle>
+      <div style={{ background:`rgba(59,85,230,0.06)`, border:`1px solid rgba(59,85,230,0.15)`, borderRadius:9, padding:"10px 14px", marginBottom:14, fontSize:12, color:t.textSub }}>
+        KYC documents are mandatory for purchases above Rs.2,00,000 as per PMLA regulations.
+      </div>
+      <FormGrid>
+        <FormGroup label="PAN Card Number"          t={t} half>
+          <Input t={t} placeholder="e.g. ABCDE1234F" value={form.pan} maxLength={10}
+            onChange={e => onChange("pan")({ target:{ value: e.target.value.toUpperCase() }})}
+            style={{ ...fs("pan"), textTransform:"uppercase", fontFamily:"monospace", letterSpacing:"1px" }} />
+          {em("pan")}<div style={{ fontSize:10, color:t.textFaint, marginTop:3 }}>Format: 5 letters + 4 digits + 1 letter</div>
+        </FormGroup>
+        <FormGroup label="Aadhaar Card Number"      t={t} half>
+          <Input t={t} placeholder="e.g. 1234 5678 9012" value={form.aadhaar} maxLength={14}
+            onChange={onChange("aadhaar")} style={{ ...fs("aadhaar"), fontFamily:"monospace", letterSpacing:"1px" }} />
+          {em("aadhaar")}<div style={{ fontSize:10, color:t.textFaint, marginTop:3 }}>12-digit Aadhaar number</div>
+        </FormGroup>
+        <FormGroup label="GST Number (B2B only)"    t={t} half>
+          <Input t={t} placeholder="e.g. 27AAPFU0939F1ZV" value={form.gst_number} maxLength={15}
+            onChange={e => onChange("gst_number")({ target:{ value: e.target.value.toUpperCase() }})}
+            style={{ ...fs("gst_number"), textTransform:"uppercase", fontFamily:"monospace", letterSpacing:"0.5px" }} />
+          {em("gst_number")}
+        </FormGroup>
+        <FormGroup label="Credit Limit (?)"         t={t} half>
+          <Input t={t} type="number" placeholder="0" min="0" value={form.credit_limit} onChange={onChange("credit_limit")} style={fs("credit_limit")} />
+          {em("credit_limit")}<div style={{ fontSize:10, color:t.textFaint, marginTop:3 }}>Maximum credit allowed</div>
+        </FormGroup>
+      </FormGrid>
+      <SectionTitle t={t}>Additional Notes</SectionTitle>
+      <FormGrid>
+        <FormGroup label="Notes" t={t}>
+          <textarea rows={3} placeholder="Any special preferences or notes about this customer..."
+            value={form.notes} onChange={onChange("notes")}
+            style={{ width:"100%", background:t.inputBg, border:`1.5px solid ${t.inputBorder}`, borderRadius:9, padding:"10px 13px", fontSize:13, color:t.inputColor, outline:"none", boxSizing:"border-box", fontFamily:"inherit", resize:"vertical" }} />
+        </FormGroup>
+      </FormGrid>
+    </>
+  );
+}
+
+// ── Wallet Credit Modal ─────────────────────────────────────
+function WalletCreditModal({ open, onClose, customerId, customerName, t, onSuccess }) {
+  const [amount, setAmount]   = useState("");
+  const [desc,   setDesc]     = useState("");
+  const [saving, setSaving]   = useState(false);
+  const [error,  setError]    = useState("");
+
+  async function handleCredit() {
+    if (!amount || parseFloat(amount) <= 0) { setError("Enter a valid amount."); return; }
+    setSaving(true);
+    try {
+      const r = await fetch(`${API}/customers/${customerId}/wallet/credit`, {
+        method:"POST", headers: authHeaders(),
+        body: JSON.stringify({ amount: parseFloat(amount), description: desc || "Wallet credit" }),
+      });
+      const d = await r.json();
+      if (d.success) { onSuccess(); onClose(); setAmount(""); setDesc(""); }
+      else setError(d.message || "Failed to credit wallet.");
+    } catch { setError("Cannot connect to server."); }
+    setSaving(false);
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Add Wallet Credit  ? ${customerName}`} t={t}
+      footer={<>
+        <BtnOutline t={t} onClick={onClose}>Cancel</BtnOutline>
+        <BtnPrimary onClick={handleCredit} disabled={saving}>{saving ? "Processing..." : "Add Credit"}</BtnPrimary>
+      </>}>
+      <FormGrid>
+        <FormGroup label="Amount *" t={t}>
+          <Input t={t} type="number" placeholder="e.g. 500" value={amount} onChange={e => { setAmount(e.target.value); setError(""); }} />
+        </FormGroup>
+        <FormGroup label="Description" t={t}>
+          <Input t={t} placeholder="e.g. Diwali gift, Loyalty bonus" value={desc} onChange={e => setDesc(e.target.value)} />
+        </FormGroup>
+      </FormGrid>
+      {error && <div style={{ color:BRAND.pink, fontSize:13, marginTop:8 }}>{error}</div>}
+    </Modal>
+  );
+}
+
+// ── KYC Update Modal ────────────────────────────────────────
+function KycModal({ open, onClose, customer, t, onSuccess }) {
+  const [kyc, setKyc] = useState({ pan:"", aadhaar:"", gst_number:"", kyc_status:"Pending" });
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState("");
+
+  useEffect(() => {
+    if (customer) setKyc({
+      pan:        customer.pan          || "",
+      aadhaar:    customer.aadhaar      || "",
+      gst_number: customer.gst_number   || "",
+      kyc_status: customer.kyc_status   || "Pending",
+    });
+  }, [customer]);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const r = await fetch(`${API}/customers/${customer.id}/kyc`, {
+        method:"PUT", headers: authHeaders(), body: JSON.stringify(kyc),
+      });
+      const d = await r.json();
+      if (d.success) { onSuccess(); onClose(); }
+      else setError(d.message || "Failed to update KYC.");
+    } catch { setError("Cannot connect to server."); }
+    setSaving(false);
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Update KYC   ${customer?.full_name || ""}`} t={t}
+      footer={<>
+        <BtnOutline t={t} onClick={onClose}>Cancel</BtnOutline>
+        <BtnPrimary onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save KYC"}</BtnPrimary>
+      </>}>
+      <FormGrid>
+        <FormGroup label="PAN Card Number" t={t} half>
+          <Input t={t} placeholder="ABCDE1234F" maxLength={10}
+            value={kyc.pan}
+            onChange={e => setKyc(k => ({ ...k, pan: e.target.value.toUpperCase() }))}
+            style={{ fontFamily:"monospace", letterSpacing:"1px" }} />
+        </FormGroup>
+        <FormGroup label="Aadhaar Number" t={t} half>
+          <Input t={t} placeholder="12-digit Aadhaar" maxLength={14}
+            value={kyc.aadhaar}
+            onChange={e => setKyc(k => ({ ...k, aadhaar: e.target.value }))}
+            style={{ fontFamily:"monospace" }} />
+        </FormGroup>
+        <FormGroup label="GST Number (optional)" t={t} half>
+          <Input t={t} placeholder="15-char GST number" maxLength={15}
+            value={kyc.gst_number}
+            onChange={e => setKyc(k => ({ ...k, gst_number: e.target.value.toUpperCase() }))}
+            style={{ fontFamily:"monospace" }} />
+        </FormGroup>
+        <FormGroup label="KYC Status" t={t} half>
+          <Select t={t} value={kyc.kyc_status} onChange={e => setKyc(k => ({ ...k, kyc_status: e.target.value }))}>
+            <option>Pending</option><option>Incomplete</option><option>Complete</option>
+          </Select>
+        </FormGroup>
+      </FormGrid>
+      {error && <div style={{ color:BRAND.pink, fontSize:13, marginTop:8 }}>{error}</div>}
+    </Modal>
+  );
+}
+
+// ── Main Customers component ───────────────────────────────
 export default function Customers({ t }) {
   const [tab, setTab] = useState("list");
 

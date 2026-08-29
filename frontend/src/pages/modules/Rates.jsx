@@ -214,6 +214,17 @@ export default function Rates({ t }) {
   const mcx = ratesData?.mcxReference || {};
   const lbma = ratesData?.lbmaReference || {};
 
+  const METAL_CARDS = current ? [
+    { label: "22K Gold /g",   value: fmt(current.rate_22k),      color: BRAND.blue   },
+    { label: "24K Gold /g",   value: fmt(current.rate_24k),      color: BRAND.purple },
+    { label: "18K Gold /g",   value: fmt(current.rate_18k),      color: "#3498db"    },
+    { label: "14K Gold /g",   value: fmt(current.rate_14k),      color: BRAND.pink   },
+    { label: "Silver /g",     value: fmt(current.silver_rate),   color: "#95a5a6"    },
+    { label: "Platinum /g",   value: fmt(current.platinum_rate), color: "#bdc3c7"    },
+    { label: "USD / INR",     value: fmt(current.usd_inr),       color: "#2ecc71"    },
+  ] : [];
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div>
       <PageHeader
@@ -412,6 +423,18 @@ export default function Rates({ t }) {
                 <span style={{ color:t.textMuted }}>MCX Silver PM:</span>
                 <span>{mcx.silverPM ? `₹${fmt(mcx.silverPM)} / g` : "—"}</span>
               </div>
+            )}
+            {saveError && (
+              <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(230,59,138,0.1)", border: "1px solid rgba(230,59,138,0.3)", borderRadius: 8, color: BRAND.pink, fontSize: 13 }}>
+                {saveError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <BtnOutline t={t} onClick={() => setForm(EMPTY_RATES)}>Reset</BtnOutline>
+              <BtnPrimary onClick={handleSave} disabled={saving} style={{ flex: 1 }}>
+                {saving ? "Updating..." : "Update All Rates"}
+              </BtnPrimary>
             </div>
           </div>
         </Card>
@@ -596,6 +619,18 @@ export default function Rates({ t }) {
                   </div>
                 </div>
               ))}
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", background: `linear-gradient(135deg,${BRAND.blue}15,${BRAND.purple}10)`, borderRadius: 10, border: `1px solid ${BRAND.purple}44` }}>
+                <span style={{ fontSize: 15, fontWeight: 700, color: t.text }}>Total (incl. GST)</span>
+                <span style={{ fontSize: 20, fontWeight: 900, color: BRAND.purple, fontFamily: "monospace" }}>
+                  Rs.{calc.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              {current && calcWeight && (
+                <div style={{ fontSize: 11, color: t.textFaint, textAlign: "center", marginTop: 4 }}>
+                  Based on {calcPurity} rate: Rs.{current.rate_22k}/g (22K)
+                </div>
+              )}
             </div>
           </div>
           <BtnPrimary style={{ marginTop:8 }}>Save Alert Settings</BtnPrimary>

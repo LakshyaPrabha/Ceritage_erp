@@ -1,4 +1,4 @@
-﻿import { BRAND } from "../../theme.js";
+﻿﻿import { BRAND } from "../../theme.js";
 import { useState } from "react";
 import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable, BtnPrimary, BtnOutline, BtnSm, Select, Input } from "../../components/ui";
 
@@ -63,7 +63,7 @@ export default function Reports({ t }) {
           ["GST","gst"],["Profit","profit"],["Daily","daily"],
           ["Gold Rates","gold"],["Yearly","yearly"]].map(([label, id]) => (
           <button key={id} onClick={() => setTab(id)}
-            style={{ background: tab === id ? BRAND.gradBtn : t.card,
+            style={{ background: tab === id  ? BRAND.gradBtn : t.card,
               border:`1px solid ${t.borderDash}`,
               borderRadius:10, padding:"14px 10px", textAlign:"center",
               cursor:"pointer", fontFamily:"inherit",

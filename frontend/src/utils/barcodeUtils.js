@@ -1,4 +1,4 @@
-// ─── Ceritage ERP — Barcode & QR Utilities ───────────────────────────────────
+﻿// ─── Ceritage ERP — Barcode & QR Utilities ───────────────────────────────────
 // Uses: jsbarcode (Code128) + qrcode (QR Code)
 // Both are industry-standard libraries used in production ERPs worldwide.
 
@@ -174,7 +174,7 @@ export function skuToBarcode(sku) {
 
   // EAN-13 check digit
   let sum = 0;
-  for (let i = 0; i < 11; i++) sum += parseInt(base11[i]) * (i % 2 === 0 ? 1 : 3);
+  for (let i = 0; i < 11; i++) sum += parseInt(base11[i]) * (i % 2 === 0  ? 1 : 3);
   const check = (10 - (sum % 10)) % 10;
 
   return base11 + check;
@@ -190,16 +190,16 @@ export function buildQRContent(product) {
     `Name: ${product.name || ""}`,
     `SKU: ${product.sku || ""}`,
     product.product_code
-      ? `Code: ${product.product_code}` : "",
+       ? `Code: ${product.product_code}` : "",
     `Metal: ${product.metal_type || ""} ${product.purity || ""}`,
     `Wt: ${parseFloat(product.gross_weight || 0).toFixed(3)}g`,
     `MRP: Rs.${parseFloat(product.mrp || 0).toLocaleString("en-IN")}`,
     product.huid
-      ? `HUID: ${product.huid}` : "",
+       ? `HUID: ${product.huid}` : "",
     product.hallmark_status && product.hallmark_status !== "Not Hallmarked"
-      ? `HM: ${product.hallmark_status}` : "",
+       ? `HM: ${product.hallmark_status}` : "",
     product.hsn_code
-      ? `HSN: ${product.hsn_code}` : "",
+       ? `HSN: ${product.hsn_code}` : "",
   ].filter(Boolean);
 
   return lines.join("\n");

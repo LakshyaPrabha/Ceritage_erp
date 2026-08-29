@@ -165,7 +165,7 @@ export default function Karigar({ t }) {
           <Card t={t}>
             <div style={{ textAlign:"center", padding:"40px 16px",
               color:t.textFaint, fontSize:13, border:`1px dashed ${t.borderDash}`, borderRadius:9 }}>
-              karigar performance data will load from backend — cards mein dikhega
+              Artisan performance data will load from backend — cards will appear here
             </div>
           </Card>
         </div>

@@ -1,4 +1,4 @@
-﻿import { BRAND } from "../../theme.js";
+﻿﻿import { BRAND } from "../../theme.js";
 import { PageHeader, Card, CardHeader, StatCard, DataTable, BtnPrimary, BtnOutline } from "../../components/ui";
 
 const TRAYS = [
@@ -26,10 +26,10 @@ export default function Rfid({ t }) {
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:12 }}>
           {TRAYS.map((tray) => (
             <div key={tray.name} style={{
-              background:t.card2||t.card, border:`1px solid ${tray.ok ? t.borderDash : "rgba(230,59,138,0.3)"}`,
+              background:t.card2||t.card, border:`1px solid ${tray.ok  ? t.borderDash : "rgba(230,59,138,0.3)"}`,
               borderRadius:10, padding:"14px", textAlign:"center" }}>
               <div style={{ fontSize:14, fontWeight:700,
-                color: tray.ok ? BRAND.blue : BRAND.pink, marginBottom:4 }}>
+                color: tray.ok  ? BRAND.blue : BRAND.pink, marginBottom:4 }}>
                 {tray.name}
               </div>
               <div style={{ fontSize:11, color:t.textMuted, marginBottom:8 }}>{tray.category}</div>
@@ -39,7 +39,7 @@ export default function Rfid({ t }) {
                 color: tray.ok ? "#2ecc71" : BRAND.pink,
                 border:`1px solid ${tray.ok ? "rgba(46,204,113,0.3)" : "rgba(230,59,138,0.3)"}`,
               }}>
-                {tray.ok ? `${tray.items} items OK` : "Missing item"}
+                {tray.ok  ? `${tray.items} items OK` : "Missing item"}
               </div>
             </div>
           ))}

@@ -503,7 +503,7 @@ export default function Products({ t }) {
       });
       const svgB64 = btoa(unescape(encodeURIComponent(barcodeSVG)));
 
-      // Generate QR as data URL (async — proper qrcode library)
+      // Generate QR as data URL (async  ? proper qrcode library)
       const qrDataURL = await qrCodeToDataURL(qrContent, qrSize);
 
       const metal = product.metal_type || "";

@@ -351,8 +351,8 @@ export default function Suppliers({ t }) {
               </div>
               <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
                 style={{ background: t.inputBg, border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "7px 12px", fontSize: 13, color: t.inputColor, outline: "none", fontFamily: "inherit" }}>
-                <option value="">All Types</option>
-                {SUPPLY_TYPES.map(s => <option key={s}>{s}</option>)}
+                <option value="" selected>All Types</option>
+                {SUPPLY_TYPES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </>} />
           {loading

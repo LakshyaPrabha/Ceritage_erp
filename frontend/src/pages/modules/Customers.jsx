@@ -1,10 +1,10 @@
-﻿import { BRAND } from "../../theme.js";
+﻿﻿import { BRAND } from "../../theme.js";
 import { useState, useEffect } from "react";
 import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
          BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid,
          Input, Select, SectionTitle } from "../../components/ui";
 
-const API = "http://localhost:5000/api";
+const API = window.__CERITAGE_API__ || "/api";
 
 function authHeaders() {
   const token = sessionStorage.getItem("ceritage_token");
@@ -56,7 +56,7 @@ function validateForm(form) {
 // ── CustomerForm component (outside to prevent re-mount) ───
 function CustomerForm({ form, onChange, errors, t }) {
   const fs = (key) => errors[key] ? { borderColor:"rgba(230,59,138,0.7)" } : {};
-  const em = (key) => errors[key] ? <div style={{ color:BRAND.pink, fontSize:11, marginTop:4 }}>{errors[key]}</div> : null;
+  const em = (key) => errors[key]  ? <div style={{ color:BRAND.pink, fontSize:11, marginTop:4 }}>{errors[key]}</div> : null;
   return (
     <>
       <SectionTitle t={t}>Personal Information</SectionTitle>
@@ -88,7 +88,7 @@ function CustomerForm({ form, onChange, errors, t }) {
       </FormGrid>
       <SectionTitle t={t}>KYC & Identity Verification</SectionTitle>
       <div style={{ background:`rgba(59,85,230,0.06)`, border:`1px solid rgba(59,85,230,0.15)`, borderRadius:9, padding:"10px 14px", marginBottom:14, fontSize:12, color:t.textSub }}>
-        KYC documents are mandatory for purchases above ₹2,00,000 as per PMLA regulations.
+        KYC documents are mandatory for purchases above Rs.2,00,000 as per PMLA regulations.
       </div>
       <FormGrid>
         <FormGroup label="PAN Card Number"          t={t} half>
@@ -108,7 +108,7 @@ function CustomerForm({ form, onChange, errors, t }) {
             style={{ ...fs("gst_number"), textTransform:"uppercase", fontFamily:"monospace", letterSpacing:"0.5px" }} />
           {em("gst_number")}
         </FormGroup>
-        <FormGroup label="Credit Limit (₹)"         t={t} half>
+        <FormGroup label="Credit Limit (?)"         t={t} half>
           <Input t={t} type="number" placeholder="0" min="0" value={form.credit_limit} onChange={onChange("credit_limit")} style={fs("credit_limit")} />
           {em("credit_limit")}<div style={{ fontSize:10, color:t.textFaint, marginTop:3 }}>Maximum credit allowed</div>
         </FormGroup>
@@ -148,13 +148,13 @@ function WalletCreditModal({ open, onClose, customerId, customerName, t, onSucce
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={`Add Wallet Credit — ${customerName}`} t={t}
+    <Modal open={open} onClose={onClose} title={`Add Wallet Credit  ? ${customerName}`} t={t}
       footer={<>
         <BtnOutline t={t} onClick={onClose}>Cancel</BtnOutline>
         <BtnPrimary onClick={handleCredit} disabled={saving}>{saving ? "Processing..." : "Add Credit"}</BtnPrimary>
       </>}>
       <FormGrid>
-        <FormGroup label="Amount (₹) *" t={t}>
+        <FormGroup label="Amount *" t={t}>
           <Input t={t} type="number" placeholder="e.g. 500" value={amount} onChange={e => { setAmount(e.target.value); setError(""); }} />
         </FormGroup>
         <FormGroup label="Description" t={t}>
@@ -195,7 +195,7 @@ function KycModal({ open, onClose, customer, t, onSuccess }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={`Update KYC — ${customer?.full_name || ""}`} t={t}
+    <Modal open={open} onClose={onClose} title={`Update KYC   ${customer?.full_name || ""}`} t={t}
       footer={<>
         <BtnOutline t={t} onClick={onClose}>Cancel</BtnOutline>
         <BtnPrimary onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Save KYC"}</BtnPrimary>
@@ -351,7 +351,7 @@ export default function Customers({ t }) {
     } catch {}
   }
 
-  // ── Effects ──────────────────────────────────────────────
+  // -- Effects ----------------------------------------------
   useEffect(() => { fetchKpis(); fetchCustomers(); }, []); // eslint-disable-line
 
   useEffect(() => {
@@ -386,7 +386,7 @@ export default function Customers({ t }) {
     setSaving(true);
     setFormError("");
     try {
-      const url    = editId ? `${API}/customers/${editId}` : `${API}/customers`;
+      const url    = editId  ? `${API}/customers/${editId}` : `${API}/customers`;
       const method = editId ? "PUT" : "POST";
       const r = await fetch(url, { method, headers: authHeaders(), body: JSON.stringify(form) });
       const d = await r.json();
@@ -403,8 +403,8 @@ export default function Customers({ t }) {
     setEditId(c.id);
     setForm({
       full_name: c.full_name||"", phone: c.phone||"", alt_phone: c.alt_phone||"",
-      email: c.email||"", date_of_birth: c.date_of_birth ? c.date_of_birth.split("T")[0] : "",
-      anniversary: c.anniversary ? c.anniversary.split("T")[0] : "",
+      email: c.email||"", date_of_birth: c.date_of_birth  ? c.date_of_birth.split("T")[0] : "",
+      anniversary: c.anniversary  ? c.anniversary.split("T")[0] : "",
       gender: c.gender||"", tier: c.tier||"Regular", city: c.city||"", state: c.state||"",
       pan: c.pan||"", aadhaar: c.aadhaar||"", gst_number: c.gst_number||"",
       credit_limit: c.credit_limit||"0", notes: c.notes||"",
@@ -555,7 +555,7 @@ export default function Customers({ t }) {
               </select>
             </>} />
           {loading
-            ? <div style={{ textAlign:"center", padding:32, color:t.textFaint }}>Loading...</div>
+             ? <div style={{ textAlign:"center", padding:32, color:t.textFaint }}>Loading...</div>
             : <DataTable
                 columns={["Customer","Code","Phone","Tier","KYC","Balance Due","Total Purchase","Points","Actions"]}
                 rows={customerRows} t={t} emptyMsg="No customers found." />}
@@ -734,7 +734,7 @@ export default function Customers({ t }) {
                   });
                 }}
                 style={{ background:"none", border:`1px solid ${BRAND.pink}`, borderRadius:7, color:BRAND.pink, fontSize:12, fontWeight:600, padding:"6px 14px", cursor:"pointer", fontFamily:"inherit" }}>
-                💬 Send Bulk Reminder
+                 Send Bulk Reminder
               </button>
             } />
           {due.length === 0 ? (
@@ -870,7 +870,7 @@ export default function Customers({ t }) {
                     <a href={`https://wa.me/91${r.phone}?text=${encodeURIComponent(`Dear ${r.full_name}, wishing you a very Happy ${r.reminder_type || "Birthday"}! 🎉 From Ceritage Jewellers`)}`}
                       target="_blank" rel="noreferrer"
                       style={{ background:BRAND.gradBtn, border:"none", borderRadius:6, color:"#fff", fontSize:11, padding:"4px 10px", cursor:"pointer", textDecoration:"none", display:"inline-block" }}>
-                      💬 WhatsApp
+                       WhatsApp
                     </a>
                   ),
                 }))} t={t} emptyMsg="No upcoming reminders." />

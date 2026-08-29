@@ -1,4 +1,4 @@
-﻿import { BRAND } from "../../theme.js";
+﻿﻿import { BRAND } from "../../theme.js";
 import { useState } from "react";
 import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable, BtnPrimary, BtnOutline, BtnSm, Select } from "../../components/ui";
 
@@ -55,17 +55,17 @@ export default function Analytics({ t }) {
         </div>
         <DataTable
           columns={tab === "daily"
-            ? ["Date","Bills","Revenue","Returns","Net Sales","Cash","UPI","Card","Share"]
+             ? ["Date","Bills","Revenue","Returns","Net Sales","Cash","UPI","Card","Share"]
             : tab === "monthly"
-            ? ["Month","Revenue","Cost","Profit","Margin","Bills","MoM Growth","Share"]
+             ? ["Month","Revenue","Cost","Profit","Margin","Bills","MoM Growth","Share"]
             : tab === "best"
-            ? ["#","Product","Units Sold","Revenue","Margin","Revenue Share"]
+             ? ["#","Product","Units Sold","Revenue","Margin","Revenue Share"]
             : tab === "customers"
-            ? ["#","Customer","Tier","Total Spent","Visits","Avg/Visit"]
+             ? ["#","Customer","Tier","Total Spent","Visits","Avg/Visit"]
             : tab === "branch"
-            ? ["Branch","Sales","Bills","Customers","Stock Value","Staff"]
+             ? ["Branch","Sales","Bills","Customers","Stock Value","Staff"]
             : tab === "employee"
-            ? ["#","Employee","Sales Achieved","Target","Bills","Customers","Avg Ticket","Rating"]
+             ? ["#","Employee","Sales Achieved","Target","Bills","Customers","Avg Ticket","Rating"]
             : ["Month","Revenue","COGS","Gross Profit","OpEx","Net Profit","Margin"]}
           t={t} emptyMsg="analytics data will load from backend" />
       </Card>

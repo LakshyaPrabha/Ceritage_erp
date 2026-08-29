@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 
@@ -309,7 +309,7 @@ const Contact = () => {
                 "
               />
 
-              {submitted ? (
+              {submitted  ? (
                 <SuccessMessage onReset={() => setSubmitted(false)} />
               ) : (
                 <form
@@ -391,7 +391,7 @@ const Contact = () => {
                     <textarea
                       required
                       rows={6}
-                      placeholder="How can we help?"
+                      placeholder="Write your message here..."
                       className="
                         mt-2
                         w-full

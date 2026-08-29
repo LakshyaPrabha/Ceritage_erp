@@ -62,6 +62,7 @@ function getTheme(dark) {
 
 // ── Component ──────────────────────────────────────────────
 export default function Login() {
+  const navigate = useNavigate();
   const [username,     setUsername]     = useState("");
   const [password,     setPassword]     = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -83,8 +84,9 @@ export default function Login() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+
     if (!username.trim() || !password.trim()) {
-      setError("Username aur password dono required hain.");
+      setError("Username and password are required.");
       return;
     }
     setLoading(true);
@@ -310,20 +312,13 @@ export default function Login() {
           </button>
         </form>
 
-        {/* Hint */}
-        <p style={{ marginTop:22, fontSize:12, color: t.hintText, textAlign:"center" }}>
-          Default: &nbsp;
-          <span style={{
-            background: t.hintCodeBg, color: t.hintCode,
-            borderRadius:5, padding:"2px 7px",
-            fontFamily:"monospace", fontSize:12,
-          }}>admin</span>
-          &nbsp;/&nbsp;
-          <span style={{
-            background: t.hintCodeBg, color: t.hintCode,
-            borderRadius:5, padding:"2px 7px",
-            fontFamily:"monospace", fontSize:12,
-          }}>ceritage123</span>
+        <p style={{ marginTop:14, fontSize:12, color: t.hintText, textAlign:"center" }}>
+          New to Ceritage ERP?{" "}
+          <Link to="/register" style={{
+            color: t.hintCode, fontWeight:600, textDecoration:"none",
+          }}>
+            Create an account
+          </Link>
         </p>
       </div>
 

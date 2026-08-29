@@ -295,7 +295,7 @@ export default function DashboardHome({ t, onNavigate }) {
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
             {QUICK_ACTIONS.map((a) => (
               a.primary
-                ? <BtnPrimary key={a.module} onClick={() => onNavigate(a.module)}>{a.label}</BtnPrimary>
+                 ? <BtnPrimary key={a.module} onClick={() => onNavigate(a.module)}>{a.label}</BtnPrimary>
                 : <BtnOutline key={a.module} t={t} onClick={() => onNavigate(a.module)}>{a.label}</BtnOutline>
             ))}
           </div>

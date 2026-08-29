@@ -29,7 +29,8 @@ function adminOnly(req, res, next) {
 // Check module permission
 function checkPermission(module, action = "view") {
   return (req, res, next) => {
-    if (req.user.role === "admin") return next(); // admin always has access
+    // Admin always has full access
+    if (req.user.role === "admin") return next();
 
     const perms = req.user.permissions || {};
     if (!perms[module] || !perms[module][action]) {

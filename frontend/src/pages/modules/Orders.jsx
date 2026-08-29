@@ -1,4 +1,4 @@
-﻿import { BRAND } from "../../theme.js";
+﻿﻿import { BRAND } from "../../theme.js";
 import { useState } from "react";
 import { PageHeader, Card, CardHeader, StatCard, DataTable,
          BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid,
@@ -35,7 +35,7 @@ export default function Orders({ t }) {
           <button key={type} onClick={() => setFilter(type)}
             style={{ padding:"6px 16px", borderRadius:20, cursor:"pointer",
               fontSize:12, fontWeight:600, fontFamily:"inherit",
-              background: filter === type ? BRAND.gradBtn : "none",
+              background: filter === type  ? BRAND.gradBtn : "none",
               color: filter === type ? "#fff" : t.textSub,
               border: filter === type ? "none" : `1px solid ${t.borderDash}` }}>
             {type}

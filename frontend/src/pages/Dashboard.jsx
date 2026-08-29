@@ -327,7 +327,7 @@ export default function Dashboard() {
 
       {/* ── Sidebar ── */}
       <aside style={{ position:"fixed", top:0, left:0, bottom:0,
-        width: sidebarOpen ? 260 : 0,
+        width: sidebarOpen  ? 260 : 0,
         background:t.sidebar, borderRight:`1px solid ${t.border}`,
         display:"flex", flexDirection:"column",
         zIndex:200, transition:"width 0.22s",
@@ -355,13 +355,13 @@ export default function Dashboard() {
                 <button key={item.id} onClick={() => setActive(item.id)}
                   style={{ display:"flex", alignItems:"center", width:"100%",
                     padding:"8px 18px",
-                    background: isActive ? t.navActive : "none",
+                    background: isActive  ? t.navActive : "none",
                     border:"none",
-                    borderLeft: isActive ? `3px solid ${t.navActiveBorder}` : "3px solid transparent",
-                    color: isActive ? t.navActiveColor : t.navColor,
+                    borderLeft: isActive  ? `3px solid ${t.navActiveBorder}` : "3px solid transparent",
+                    color: isActive  ? t.navActiveColor : t.navColor,
                     fontSize:13, textAlign:"left", cursor:"pointer",
                     transition:"all 0.15s", fontFamily:"inherit",
-                    fontWeight: isActive ? 600 : 400 }}>
+                    fontWeight: isActive  ? 600 : 400 }}>
                   <span style={{ flex:1, whiteSpace:"nowrap",
                     overflow:"hidden", textOverflow:"ellipsis" }}>
                     {item.label}
@@ -400,7 +400,7 @@ export default function Dashboard() {
 
       {/* ── Main ── */}
       <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:"100vh",
-        marginLeft: sidebarOpen ? 260 : 0, transition:"margin-left 0.22s" }}>
+        marginLeft: sidebarOpen  ? 260 : 0, transition:"margin-left 0.22s" }}>
 
         <header style={{ position:"sticky", top:0, height:60,
           background:t.topbar, borderBottom:`1px solid ${t.border}`,

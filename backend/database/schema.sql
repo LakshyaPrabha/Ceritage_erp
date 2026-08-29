@@ -60,7 +60,161 @@ CREATE TABLE IF NOT EXISTS customers (
   loyalty_points INT DEFAULT 0,
   wallet_balance DECIMAL(12,2) DEFAULT 0,
   kyc_status    ENUM('Complete','Pending','Incomplete') DEFAULT 'Pending',
-  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  opt_in_whatsapp BOOLEAN NOT NULL DEFAULT TRUE,
+  opt_in_sms    BOOLEAN NOT NULL DEFAULT TRUE,
+  opt_in_marketing BOOLEAN NOT NULL DEFAULT FALSE,
+  preferred_channel ENUM('WHATSAPP','SMS','BOTH','NONE') NOT NULL DEFAULT 'WHATSAPP',
+  status        ENUM('ACTIVE','ARCHIVED') NOT NULL DEFAULT 'ACTIVE',
+  created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_status_phone (status, phone)
+);
+
+-- Customer Occasion Reminders
+CREATE TABLE IF NOT EXISTS customer_occasion_reminders (
+  id                  INT AUTO_INCREMENT PRIMARY KEY,
+  customer_id         INT NOT NULL,
+  occasion_type       ENUM('BIRTHDAY','ANNIVERSARY') NOT NULL,
+  occasion_date       DATE NOT NULL,
+  occasion_year       INT NOT NULL,
+  days_until_event    INT NOT NULL,
+  status              ENUM('PENDING','ACKNOWLEDGED','SENT','SKIPPED') DEFAULT 'PENDING',
+  acknowledged_by     VARCHAR(100) NULL,
+  acknowledged_at     TIMESTAMP NULL,
+  greeting_generated  BOOLEAN DEFAULT FALSE,
+  coupon_code         VARCHAR(50) NULL,
+  bonus_points        INT DEFAULT 0,
+  notes               VARCHAR(255) NULL,
+  created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_cust_occasion_yr (customer_id, occasion_type, occasion_year),
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
+  INDEX idx_occ_status_date (occasion_type, status, occasion_date)
+);
+
+-- Customer Audit Logs
+CREATE TABLE IF NOT EXISTS customer_audit_logs (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  customer_id  INT NOT NULL,
+  action       VARCHAR(50) NOT NULL, -- 'CREATED', 'UPDATED', 'ARCHIVED', 'RESTORED', 'KYC_UPDATED'
+  performed_by VARCHAR(100) DEFAULT 'System',
+  details      TEXT,
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_customer_audit (customer_id, action, created_at),
+  INDEX idx_cust_audit_date (customer_id, created_at)
+);
+
+-- Message Templates (SMS / WhatsApp)
+CREATE TABLE IF NOT EXISTS message_templates (
+  id                    INT AUTO_INCREMENT PRIMARY KEY,
+  template_code         VARCHAR(50) UNIQUE NOT NULL,
+  name                  VARCHAR(150) NOT NULL,
+  channel               ENUM('SMS','WHATSAPP') NOT NULL,
+  provider              VARCHAR(50) NOT NULL DEFAULT 'MSG91',
+  provider_template_id  VARCHAR(100) NULL,
+  language              VARCHAR(10) DEFAULT 'en',
+  category              ENUM('BIRTHDAY','ANNIVERSARY','EMI_REMINDER','PAYMENT_REMINDER','REPAIR_READY','ORDER_READY','GENERAL') NOT NULL,
+  content               TEXT NOT NULL,
+  variables             JSON NULL,
+  is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by            VARCHAR(100) DEFAULT 'System',
+  created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_tpl_channel_cat (channel, category, is_active)
+);
+
+-- Communication Logs
+CREATE TABLE IF NOT EXISTS communication_logs (
+  id                    INT AUTO_INCREMENT PRIMARY KEY,
+  customer_id           INT NOT NULL,
+  channel               ENUM('SMS','WHATSAPP') NOT NULL,
+  provider              VARCHAR(50) NOT NULL,
+  template_id           INT NULL,
+  template_code         VARCHAR(50) NULL,
+  recipient             VARCHAR(30) NOT NULL,
+  message_preview       TEXT NULL,
+  provider_message_id   VARCHAR(150) NULL,
+  status                ENUM('QUEUED','SENDING','SENT','DELIVERED','FAILED','SKIPPED','CANCELLED') NOT NULL DEFAULT 'QUEUED',
+  error_code            VARCHAR(50) NULL,
+  error_message         TEXT NULL,
+  retry_count           INT DEFAULT 0,
+  is_test               BOOLEAN DEFAULT FALSE,
+  sent_at               TIMESTAMP NULL,
+  delivered_at          TIMESTAMP NULL,
+  failed_at             TIMESTAMP NULL,
+  created_by            VARCHAR(100) DEFAULT 'System',
+  created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
+  INDEX idx_cust_comm (customer_id, created_at),
+  INDEX idx_status_channel (status, channel, created_at)
+);
+
+-- Message Dispatches
+CREATE TABLE IF NOT EXISTS message_dispatches (
+  id                    INT AUTO_INCREMENT PRIMARY KEY,
+  customer_id           INT NOT NULL,
+  event_type            VARCHAR(50) NOT NULL,
+  event_reference       VARCHAR(100) NOT NULL,
+  channel               ENUM('SMS','WHATSAPP') NOT NULL,
+  template_code         VARCHAR(50) NOT NULL,
+  scheduled_for         DATE NULL,
+  status                ENUM('PENDING','SENT','SKIPPED','FAILED') NOT NULL DEFAULT 'PENDING',
+  communication_log_id  INT NULL,
+  created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_dispatch_event (customer_id, event_type, event_reference, channel, template_code),
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
+  FOREIGN KEY (communication_log_id) REFERENCES communication_logs(id) ON DELETE SET NULL
+);
+
+-- Customer Notes & CRM Interactions
+CREATE TABLE IF NOT EXISTS customer_notes (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  customer_id  INT NOT NULL,
+  category     ENUM('General', 'Preference', 'Follow-up', 'Complaint', 'Special Request', 'VIP') NOT NULL DEFAULT 'General',
+  note_text    TEXT NOT NULL,
+  is_pinned    BOOLEAN NOT NULL DEFAULT FALSE,
+  created_by   VARCHAR(100) DEFAULT 'Staff',
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
+  INDEX idx_cust_notes (customer_id, is_pinned, created_at)
+);
+
+-- Membership Plans
+CREATE TABLE IF NOT EXISTS membership_plans (
+  id                    INT AUTO_INCREMENT PRIMARY KEY,
+  name                  VARCHAR(50) UNIQUE NOT NULL,
+  min_spend             DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  annual_fee            DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  loyalty_multiplier    DECIMAL(3,2) NOT NULL DEFAULT 1.00,
+  making_discount_pct   DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+  perks_description     TEXT NULL,
+  validity_days         INT NOT NULL DEFAULT 365,
+  badge_color           VARCHAR(20) DEFAULT '#9b59b6',
+  is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Customer Memberships
+CREATE TABLE IF NOT EXISTS customer_memberships (
+  id              INT AUTO_INCREMENT PRIMARY KEY,
+  customer_id     INT NOT NULL,
+  plan_id         INT NOT NULL,
+  plan_name       VARCHAR(50) NOT NULL,
+  start_date      DATE NOT NULL,
+  expiry_date     DATE NOT NULL,
+  fee_paid        DECIMAL(12,2) DEFAULT 0.00,
+  payment_ref     VARCHAR(50) NULL,
+  status          ENUM('ACTIVE', 'EXPIRED', 'UPGRADED', 'CANCELLED') NOT NULL DEFAULT 'ACTIVE',
+  enrolled_by     VARCHAR(100) DEFAULT 'System',
+  notes           VARCHAR(255) NULL,
+  created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
+  FOREIGN KEY (plan_id) REFERENCES membership_plans(id) ON DELETE RESTRICT,
+  INDEX idx_cust_member (customer_id, status, expiry_date)
 );
 
 -- Customer Ledger
@@ -74,7 +228,43 @@ CREATE TABLE IF NOT EXISTS customer_ledger (
   balance      DECIMAL(12,2) DEFAULT 0,
   reference    VARCHAR(50),
   created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (customer_id) REFERENCES customers(id)
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  INDEX idx_cust_ledger (customer_id, date, id),
+  INDEX idx_ref (reference)
+);
+
+-- Customer Wallet Transactions
+CREATE TABLE IF NOT EXISTS customer_wallet_transactions (
+  id               INT AUTO_INCREMENT PRIMARY KEY,
+  customer_id      INT NOT NULL,
+  transaction_type ENUM('CREDIT', 'DEBIT', 'REFUND', 'ADJUSTMENT', 'OPENING_BALANCE') NOT NULL,
+  amount           DECIMAL(12,2) NOT NULL,
+  balance_after    DECIMAL(12,2) NOT NULL,
+  reference_type   VARCHAR(50) DEFAULT 'MANUAL',
+  reference_id     VARCHAR(100) NULL,
+  description      VARCHAR(255) NULL,
+  performed_by     VARCHAR(100) DEFAULT 'System',
+  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  INDEX idx_wallet_cust (customer_id, created_at, id),
+  INDEX idx_wallet_ref (reference_type, reference_id)
+);
+
+-- Customer Loyalty Transactions
+CREATE TABLE IF NOT EXISTS customer_loyalty_transactions (
+  id               INT AUTO_INCREMENT PRIMARY KEY,
+  customer_id      INT NOT NULL,
+  transaction_type ENUM('EARN', 'REDEEM', 'REVERSAL', 'ADJUSTMENT', 'OPENING_BALANCE') NOT NULL,
+  points           INT NOT NULL,
+  balance_after    INT NOT NULL,
+  reference_type   VARCHAR(50) DEFAULT 'MANUAL',
+  reference_id     VARCHAR(100) NULL,
+  description      VARCHAR(255) NULL,
+  performed_by     VARCHAR(100) DEFAULT 'System',
+  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  INDEX idx_loyalty_cust (customer_id, created_at, id),
+  INDEX idx_loyalty_ref (reference_type, reference_id)
 );
 
 -- Suppliers
@@ -158,10 +348,13 @@ CREATE TABLE IF NOT EXISTS invoices (
   invoice_no       VARCHAR(30) UNIQUE NOT NULL,
   invoice_type     VARCHAR(50) DEFAULT 'Retail Invoice',
   customer_id      INT,
+  branch_id        INT DEFAULT 1,
   invoice_date     DATE NOT NULL,
   salesperson_id   INT,
   hsn_code         VARCHAR(10) DEFAULT '7113',
   payment_mode     VARCHAR(50),
+  credit_days      INT DEFAULT 0,
+  credit_due_date  DATE,
   discount_pct     DECIMAL(5,2) DEFAULT 0,
   discount_amt     DECIMAL(12,2) DEFAULT 0,
   coupon_code      VARCHAR(30),
@@ -174,6 +367,10 @@ CREATE TABLE IF NOT EXISTS invoices (
   grand_total      DECIMAL(14,2) NOT NULL,
   paid_amount      DECIMAL(14,2) DEFAULT 0,
   status           ENUM('Paid','Partial','Credit','EMI Active','Draft','Returned') DEFAULT 'Paid',
+  membership_tier  VARCHAR(50) DEFAULT 'Regular',
+  loyalty_multiplier DECIMAL(3,2) DEFAULT 1.00,
+  making_discount_pct DECIMAL(5,2) DEFAULT 0.00,
+  making_discount_amt DECIMAL(12,2) DEFAULT 0.00,
   notes            TEXT,
   created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL
@@ -538,7 +735,7 @@ CREATE TABLE IF NOT EXISTS leaves (
   FOREIGN KEY (employee_id) REFERENCES employees(id)
 );
 
--- Gold Rates
+-- Gold Rates (Legacy Table maintained for backward compatibility)
 CREATE TABLE IF NOT EXISTS gold_rates (
   id             INT AUTO_INCREMENT PRIMARY KEY,
   rate_22k       DECIMAL(10,2) NOT NULL,
@@ -552,6 +749,44 @@ CREATE TABLE IF NOT EXISTS gold_rates (
   updated_by     VARCHAR(100),
   remarks        TEXT,
   created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Metal Rates (Metals.Dev Live Market, MCX Reference, LBMA Reference, and Manual Audit Records)
+CREATE TABLE IF NOT EXISTS metal_benchmark_rates (
+  id               INT AUTO_INCREMENT PRIMARY KEY,
+  metal            VARCHAR(20) NOT NULL,          -- 'GOLD', 'SILVER', 'PLATINUM', 'PALLADIUM'
+  purity           VARCHAR(20) NOT NULL,          -- '999', '916', '750', '585', 'MCX', 'LBMA_AM', 'LBMA_PM'
+  source           VARCHAR(50) NOT NULL DEFAULT 'Metals.Dev', -- 'Metals.Dev', 'MANUAL'
+  source_price     DECIMAL(14,2) NOT NULL,        -- Raw source price
+  source_unit      VARCHAR(20) NOT NULL DEFAULT '1G', -- '1G', '10G', '1KG'
+  price_per_gram   DECIMAL(12,2) NOT NULL,        -- Price in ₹ / gram
+  rate_type        VARCHAR(30) NOT NULL DEFAULT 'LIVE_MARKET', -- 'LIVE_MARKET', 'MCX_REFERENCE', 'LBMA_REFERENCE'
+  source_timestamp DATETIME,                      -- Timestamp from provider
+  fetched_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+  created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_metal_purity_date (metal, purity, rate_type, created_at)
+);
+
+-- Shop Metal Adjustments (Ceritage Shop Selling Margin / Premium / Discount)
+CREATE TABLE IF NOT EXISTS shop_metal_adjustments (
+  id                  INT AUTO_INCREMENT PRIMARY KEY,
+  metal               VARCHAR(20) NOT NULL,
+  purity              VARCHAR(20) NOT NULL,
+  adjustment_per_gram DECIMAL(10,2) DEFAULT 0.00,  -- Margin added to benchmark (e.g. +100.00 / gram)
+  updated_by          VARCHAR(100) DEFAULT 'Admin',
+  updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_metal_purity (metal, purity)
+);
+
+-- Metal API Sync Logs (Enforces 2 requests/day limit and tracks scheduled day/evening syncs)
+CREATE TABLE IF NOT EXISTS api_sync_logs (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  provider   VARCHAR(50) NOT NULL DEFAULT 'Metals.Dev',
+  slot       VARCHAR(20) NOT NULL DEFAULT 'MANUAL', -- 'DAY', 'EVENING', 'MANUAL'
+  status     VARCHAR(20) NOT NULL DEFAULT 'SUCCESS',
+  message    TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_created_at (created_at)
 );
 
 -- EMI Plans
@@ -575,6 +810,47 @@ CREATE TABLE IF NOT EXISTS emi_plans (
   status          ENUM('Active','Closed','Overdue','On Track') DEFAULT 'Active',
   created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (customer_id) REFERENCES customers(id)
+);
+
+-- EMI Installment Schedule
+CREATE TABLE IF NOT EXISTS emi_installments (
+  id             INT AUTO_INCREMENT PRIMARY KEY,
+  plan_id        INT NOT NULL,
+  customer_id    INT NOT NULL,
+  installment_no INT NOT NULL,
+  due_date       DATE NOT NULL,
+  amount_due     DECIMAL(12,2) NOT NULL,
+  amount_paid    DECIMAL(12,2) DEFAULT 0,
+  status         ENUM('PENDING', 'PARTIAL', 'PAID', 'OVERDUE') NOT NULL DEFAULT 'PENDING',
+  paid_at        TIMESTAMP NULL,
+  payment_mode   VARCHAR(50) NULL,
+  receipt_no     VARCHAR(30) NULL,
+  reference      VARCHAR(100) NULL,
+  created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (plan_id) REFERENCES emi_plans(id) ON DELETE CASCADE,
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  INDEX idx_plan_inst (plan_id, installment_no),
+  INDEX idx_inst_due (status, due_date)
+);
+
+-- EMI Payment Receipts
+CREATE TABLE IF NOT EXISTS emi_payments (
+  id             INT AUTO_INCREMENT PRIMARY KEY,
+  receipt_no     VARCHAR(30) UNIQUE NOT NULL,
+  plan_id        INT NOT NULL,
+  customer_id    INT NOT NULL,
+  installment_no INT NOT NULL,
+  amount         DECIMAL(12,2) NOT NULL,
+  payment_mode   VARCHAR(50) NOT NULL DEFAULT 'Cash',
+  payment_date   DATE NOT NULL,
+  reference      VARCHAR(100) NULL,
+  notes          VARCHAR(255) NULL,
+  performed_by   VARCHAR(100) DEFAULT 'System',
+  created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (plan_id) REFERENCES emi_plans(id) ON DELETE RESTRICT,
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  INDEX idx_emi_pay (plan_id, customer_id, payment_date),
+  INDEX idx_emi_rcp (receipt_no)
 );
 
 -- Stock Transfers

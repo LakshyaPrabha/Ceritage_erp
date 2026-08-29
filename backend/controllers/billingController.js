@@ -2,11 +2,12 @@ const db = require("../config/db");
 
 // GET /api/billing — all invoices
 async function getAll(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const { search, type, status, payment_mode, page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
-    let where = "WHERE 1=1";
-    const params = [];
+    let where = "WHERE i.branch_id = ?";
+    const params = [branch_id];
 
     if (search) {
       where += " AND (i.invoice_no LIKE ? OR c.full_name LIKE ?)";
@@ -70,20 +71,21 @@ async function create(req, res) {
   try {
     await conn.beginTransaction();
 
-    // Generate invoice number
+    // Generate invoice number — unique within branch
     const [[{ count }]] = await conn.query(
-      "SELECT COUNT(*) AS count FROM invoices WHERE YEAR(invoice_date) = YEAR(NOW())"
+      "SELECT COUNT(*) AS count FROM invoices WHERE branch_id = ? AND YEAR(invoice_date) = YEAR(NOW())",
+      [req.user.branch_id]
     );
     const invoice_no = `INV-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 
     const [invResult] = await conn.query(
       `INSERT INTO invoices
-       (invoice_no, invoice_type, customer_id, invoice_date, salesperson_id,
+       (branch_id, invoice_no, invoice_type, customer_id, invoice_date, salesperson_id,
         hsn_code, payment_mode, discount_pct, discount_amt, coupon_code,
         gift_voucher, old_gold_exchange, cgst, sgst, igst, tcs,
         grand_total, paid_amount, notes, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [invoice_no, invoice_type || "Retail Invoice", customer_id, invoice_date,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [req.user.branch_id, invoice_no, invoice_type || "Retail Invoice", customer_id, invoice_date,
        salesperson_id || null, hsn_code || "7113", payment_mode,
        discount_pct || 0, discount_amt || 0, coupon_code || null,
        gift_voucher || null, old_gold_exchange || 0,
@@ -136,6 +138,7 @@ async function create(req, res) {
 
 // GET /api/billing/kpis
 async function getKpis(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const today = new Date().toISOString().split("T")[0];
     const [[kpis]] = await db.query(
@@ -144,8 +147,9 @@ async function getKpis(req, res) {
          SUM(CASE WHEN DATE(invoice_date) = ? THEN 1 ELSE 0 END) AS bills_today,
          SUM(CASE WHEN status='Partial' OR status='Credit' THEN grand_total - COALESCE(paid_amount,0) ELSE 0 END) AS pending_payments,
          SUM(CASE WHEN invoice_type='Return Invoice' AND DATE(invoice_date) = ? THEN 1 ELSE 0 END) AS returns_today
-       FROM invoices`,
-      [today, today, today]
+       FROM invoices
+       WHERE branch_id = ?`,
+      [today, today, today, branch_id]
     );
     res.json({ success: true, data: kpis });
   } catch (err) {
@@ -155,11 +159,14 @@ async function getKpis(req, res) {
 
 // Credit/Debit notes
 async function getCreditDebitNotes(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const [rows] = await db.query(
       `SELECT n.*, c.full_name AS customer_name FROM credit_debit_notes n
        LEFT JOIN customers c ON n.customer_id = c.id
-       ORDER BY n.created_at DESC`
+       WHERE n.branch_id = ?
+       ORDER BY n.created_at DESC`,
+      [branch_id]
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -168,18 +175,20 @@ async function getCreditDebitNotes(req, res) {
 }
 
 async function createCreditDebitNote(req, res) {
+  const branch_id = req.user.branch_id;
   const { note_type, customer_id, against_invoice, reason, amount, description } = req.body;
   try {
     const prefix = note_type === "Credit" ? "CN" : "DN";
     const [[{ count }]] = await db.query(
-      "SELECT COUNT(*) AS count FROM credit_debit_notes WHERE note_type = ?", [note_type]
+      "SELECT COUNT(*) AS count FROM credit_debit_notes WHERE note_type = ? AND branch_id = ?",
+      [note_type, branch_id]
     );
     const note_no = `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 
     const [result] = await db.query(
-      `INSERT INTO credit_debit_notes (note_no, note_type, customer_id, against_invoice, reason, amount, description)
-       VALUES (?,?,?,?,?,?,?)`,
-      [note_no, note_type, customer_id, against_invoice || null, reason, amount, description || null]
+      `INSERT INTO credit_debit_notes (branch_id, note_no, note_type, customer_id, against_invoice, reason, amount, description)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [branch_id, note_no, note_type, customer_id, against_invoice || null, reason, amount, description || null]
     );
     res.status(201).json({ success: true, data: { id: result.insertId, note_no } });
   } catch (err) {
@@ -189,11 +198,14 @@ async function createCreditDebitNote(req, res) {
 
 // Returns
 async function getReturns(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const [rows] = await db.query(
       `SELECT r.*, c.full_name AS customer_name FROM returns r
        LEFT JOIN customers c ON r.customer_id = c.id
-       ORDER BY r.return_date DESC`
+       WHERE r.branch_id = ?
+       ORDER BY r.return_date DESC`,
+      [branch_id]
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -202,15 +214,18 @@ async function getReturns(req, res) {
 }
 
 async function createReturn(req, res) {
+  const branch_id = req.user.branch_id;
   const { customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, item_condition } = req.body;
   try {
-    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM returns");
+    const [[{ count }]] = await db.query(
+      "SELECT COUNT(*) AS count FROM returns WHERE branch_id = ?", [branch_id]
+    );
     const return_no = `RET-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 
     const [result] = await db.query(
-      `INSERT INTO returns (return_no, customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, item_condition)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [return_no, customer_id, invoice_ref || null, item_description, reason, refund_amount, refund_mode, item_condition || null]
+      `INSERT INTO returns (branch_id, return_no, customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, item_condition)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [branch_id, return_no, customer_id, invoice_ref || null, item_description, reason, refund_amount, refund_mode, item_condition || null]
     );
     res.status(201).json({ success: true, data: { id: result.insertId, return_no } });
   } catch (err) {

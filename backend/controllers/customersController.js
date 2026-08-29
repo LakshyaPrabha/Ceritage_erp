@@ -22,6 +22,7 @@ function calculateTier(totalPurchase) {
 // GET /api/customers/kpis
 // ─────────────────────────────────────────────────────────────
 async function getKpis(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const [[totals]] = await db.query(`
       SELECT
@@ -39,8 +40,8 @@ async function getKpis(req, res) {
              AND MONTH(anniversary) = MONTH(NOW())
              THEN 1 ELSE 0 END)                                       AS anniversaries_this_month
       FROM customers
-      WHERE status != 'Blocked'
-    `);
+      WHERE status != 'Blocked' AND branch_id = ?
+    `, [branch_id]);
     res.json({ success: true, data: totals });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -48,9 +49,10 @@ async function getKpis(req, res) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GET /api/customers  (with search, filter, pagination)
+// GET /api/customers
 // ─────────────────────────────────────────────────────────────
 async function getAll(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const {
       search, tier, city, kyc_status,
@@ -58,8 +60,8 @@ async function getAll(req, res) {
     } = req.query;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    const where  = ["c.status != 'Blocked'"];
-    const params = [];
+    const where  = ["c.status != 'Blocked'", "c.branch_id = ?"];
+    const params = [branch_id];
 
     if (search) {
       where.push(
@@ -112,13 +114,14 @@ async function getAll(req, res) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GET /api/customers/:id  (full profile)
+// GET /api/customers/:id
 // ─────────────────────────────────────────────────────────────
 async function getById(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const [rows] = await db.query(
-      "SELECT * FROM customers WHERE id = ?",
-      [req.params.id]
+      "SELECT * FROM customers WHERE id = ? AND branch_id = ?",
+      [req.params.id, branch_id]
     );
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: "Customer not found" });
@@ -174,10 +177,10 @@ async function create(req, res) {
   }
 
   try {
-    // Check duplicate phone
+    // Check duplicate phone — within same branch only
     const [existing] = await db.query(
-      "SELECT id FROM customers WHERE phone = ?",
-      [phone.trim()]
+      "SELECT id FROM customers WHERE phone = ? AND branch_id = ?",
+      [phone.trim(), req.user.branch_id]
     );
     if (existing.length > 0) {
       return res.status(409).json({
@@ -190,12 +193,13 @@ async function create(req, res) {
 
     const [result] = await db.query(
       `INSERT INTO customers
-         (customer_code, full_name, phone, alt_phone, email,
+         (branch_id, customer_code, full_name, phone, alt_phone, email,
           date_of_birth, anniversary, gender, tier, address,
           city, state, pincode, pan, aadhaar, gst_number,
           credit_limit, notes, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
+        req.user.branch_id,
         customer_code,
         full_name.trim(),
         phone.trim(),
@@ -229,9 +233,10 @@ async function create(req, res) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PUT /api/customers/:id  (update)
+// PUT /api/customers/:id
 // ─────────────────────────────────────────────────────────────
 async function update(req, res) {
+  const branch_id = req.user.branch_id;
   const {
     full_name, phone, alt_phone, email,
     date_of_birth, anniversary, gender,
@@ -240,11 +245,11 @@ async function update(req, res) {
   } = req.body;
 
   try {
-    // Check duplicate phone (exclude self)
+    // Check duplicate phone within same branch (exclude self)
     if (phone) {
       const [existing] = await db.query(
-        "SELECT id FROM customers WHERE phone = ? AND id != ?",
-        [phone.trim(), req.params.id]
+        "SELECT id FROM customers WHERE phone = ? AND id != ? AND branch_id = ?",
+        [phone.trim(), req.params.id, branch_id]
       );
       if (existing.length > 0) {
         return res.status(409).json({
@@ -261,7 +266,7 @@ async function update(req, res) {
          tier=?, address=?, city=?, state=?, pincode=?,
          pan=?, aadhaar=?, gst_number=?,
          credit_limit=?, notes=?, status=?
-       WHERE id=?`,
+       WHERE id=? AND branch_id=?`,
       [
         full_name, phone, alt_phone || null, email || null,
         date_of_birth || null, anniversary || null, gender || null,
@@ -272,6 +277,7 @@ async function update(req, res) {
         notes || null,
         status || "Active",
         req.params.id,
+        branch_id,
       ]
     );
 
@@ -282,13 +288,14 @@ async function update(req, res) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// DELETE /api/customers/:id  — permanent hard delete
+// DELETE /api/customers/:id
 // ─────────────────────────────────────────────────────────────
 async function remove(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const [result] = await db.query(
-      "DELETE FROM customers WHERE id = ?",
-      [req.params.id]
+      "DELETE FROM customers WHERE id = ? AND branch_id = ?",
+      [req.params.id, branch_id]
     );
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, message: "Customer not found" });
@@ -509,9 +516,9 @@ async function updateKyc(req, res) {
 // GET /api/customers/reminders  (birthdays & anniversaries)
 // ─────────────────────────────────────────────────────────────
 async function getReminders(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const { days = 7 } = req.query;
-
     const [rows] = await db.query(
       `SELECT
          id, customer_code, full_name, phone, email, tier,
@@ -532,7 +539,7 @@ async function getReminders(req, res) {
            NOW()
          ) AS days_left
        FROM customers
-       WHERE status = 'Active'
+       WHERE status = 'Active' AND branch_id = ?
          AND (
            (date_of_birth IS NOT NULL
             AND MONTH(date_of_birth) = MONTH(DATE_ADD(NOW(), INTERVAL ? DAY)))
@@ -541,9 +548,8 @@ async function getReminders(req, res) {
             AND MONTH(anniversary) = MONTH(DATE_ADD(NOW(), INTERVAL ? DAY)))
          )
        ORDER BY days_left ASC`,
-      [parseInt(days), parseInt(days), parseInt(days), parseInt(days)]
+      [parseInt(days), parseInt(days), branch_id, parseInt(days), parseInt(days)]
     );
-
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -554,16 +560,17 @@ async function getReminders(req, res) {
 // GET /api/customers/due-tracking
 // ─────────────────────────────────────────────────────────────
 async function getDueTracking(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const [rows] = await db.query(
       `SELECT
          id, customer_code, full_name, phone, tier,
-         balance_due, credit_limit,
-         total_purchase,
+         balance_due, credit_limit, total_purchase,
          (credit_limit - balance_due) AS available_credit
        FROM customers
-       WHERE balance_due > 0 AND status = 'Active'
-       ORDER BY balance_due DESC`
+       WHERE balance_due > 0 AND status = 'Active' AND branch_id = ?
+       ORDER BY balance_due DESC`,
+      [branch_id]
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -575,6 +582,7 @@ async function getDueTracking(req, res) {
 // GET /api/customers/credit-register
 // ─────────────────────────────────────────────────────────────
 async function getCreditRegister(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const [rows] = await db.query(
       `SELECT
@@ -583,8 +591,9 @@ async function getCreditRegister(req, res) {
          (credit_limit - balance_due) AS available,
          total_purchase
        FROM customers
-       WHERE credit_limit > 0 AND status = 'Active'
-       ORDER BY balance_due DESC`
+       WHERE credit_limit > 0 AND status = 'Active' AND branch_id = ?
+       ORDER BY balance_due DESC`,
+      [branch_id]
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -596,6 +605,7 @@ async function getCreditRegister(req, res) {
 // GET /api/customers/search?q=  (quick search — for dropdowns)
 // ─────────────────────────────────────────────────────────────
 async function search(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const { q } = req.query;
     if (!q || q.length < 2) {
@@ -605,10 +615,10 @@ async function search(req, res) {
     const [rows] = await db.query(
       `SELECT id, customer_code, full_name, phone, tier, balance_due, wallet_balance, loyalty_points
        FROM customers
-       WHERE status = 'Active'
+       WHERE status = 'Active' AND branch_id = ?
          AND (full_name LIKE ? OR phone LIKE ? OR customer_code LIKE ?)
        LIMIT 10`,
-      [s, s, s]
+      [branch_id, s, s, s]
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -620,6 +630,7 @@ async function search(req, res) {
 // GET /api/customers/wallet-summary  (all customers wallet)
 // ─────────────────────────────────────────────────────────────
 async function getWalletSummary(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const [rows] = await db.query(
       `SELECT
@@ -628,8 +639,9 @@ async function getWalletSummary(req, res) {
          ROUND(loyalty_points * 0.25, 2) AS redeemable_value,
          wallet_balance
        FROM customers
-       WHERE status = 'Active'
-       ORDER BY loyalty_points DESC`
+       WHERE status = 'Active' AND branch_id = ?
+       ORDER BY loyalty_points DESC`,
+      [branch_id]
     );
     res.json({ success: true, data: rows });
   } catch (err) {

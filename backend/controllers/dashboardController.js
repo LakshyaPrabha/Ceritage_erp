@@ -11,6 +11,7 @@ async function tableExists(tableName) {
 
 // GET /api/dashboard/kpis
 async function getKpis(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const today = new Date().toISOString().split("T")[0];
     const result = {
@@ -22,44 +23,37 @@ async function getKpis(req, res) {
       gold_in_stock:   "0.000 kg",
     };
 
-    // Customers — table always exists after registration
     if (await tableExists("customers")) {
       const [[c]] = await db.query(
-        "SELECT COUNT(*) AS total_customers FROM customers WHERE status = 'Active'"
+        "SELECT COUNT(*) AS total_customers FROM customers WHERE status = 'Active' AND branch_id = ?",
+        [branch_id]
       );
       result.total_customers = c.total_customers || 0;
     }
 
-    // Invoices — may not exist yet
     if (await tableExists("invoices")) {
       const [[sales]] = await db.query(
-        `SELECT
-           COALESCE(SUM(grand_total), 0) AS today_sales,
-           COUNT(*) AS bills_today
-         FROM invoices
-         WHERE DATE(invoice_date) = ?`,
-        [today]
+        `SELECT COALESCE(SUM(grand_total),0) AS today_sales, COUNT(*) AS bills_today
+         FROM invoices WHERE DATE(invoice_date) = ? AND branch_id = ?`,
+        [today, branch_id]
       );
       result.today_sales = sales.today_sales || 0;
       result.bills_today  = sales.bills_today  || 0;
     }
 
-    // Repair jobs — may not exist yet
     if (await tableExists("repair_jobs")) {
       const [[repairs]] = await db.query(
-        "SELECT COUNT(*) AS pending_repairs FROM repair_jobs WHERE status IN ('Pending','In Progress','Overdue')"
+        "SELECT COUNT(*) AS pending_repairs FROM repair_jobs WHERE status IN ('Pending','In Progress','Overdue') AND branch_id = ?",
+        [branch_id]
       );
       result.pending_repairs = repairs.pending_repairs || 0;
     }
 
-    // Products — may not exist yet
     if (await tableExists("products")) {
       const [[stock]] = await db.query(
-        `SELECT
-           COUNT(*) AS stock_items,
-           COALESCE(SUM(gross_weight * stock_qty), 0) AS gold_weight
-         FROM products
-         WHERE status = 'Active'`
+        `SELECT COUNT(*) AS stock_items, COALESCE(SUM(gross_weight * stock_qty),0) AS gold_weight
+         FROM products WHERE status = 'Active' AND branch_id = ?`,
+        [branch_id]
       );
       result.stock_items   = stock.stock_items || 0;
       result.gold_in_stock = `${(parseFloat(stock.gold_weight || 0) / 1000).toFixed(3)} kg`;
@@ -73,21 +67,19 @@ async function getKpis(req, res) {
 
 // GET /api/dashboard/recent-bills
 async function getRecentBills(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     if (!(await tableExists("invoices"))) {
       return res.json({ success: true, data: [] });
     }
     const [rows] = await db.query(
-      `SELECT
-         i.invoice_no,
-         COALESCE(c.full_name, 'Walk-in') AS customer,
-         i.grand_total AS amount,
-         i.payment_mode,
-         i.status
+      `SELECT i.invoice_no, COALESCE(c.full_name,'Walk-in') AS customer,
+              i.grand_total AS amount, i.payment_mode, i.status
        FROM invoices i
        LEFT JOIN customers c ON i.customer_id = c.id
-       ORDER BY i.created_at DESC
-       LIMIT 10`
+       WHERE i.branch_id = ?
+       ORDER BY i.created_at DESC LIMIT 10`,
+      [branch_id]
     );
     res.json({ success: true, data: rows });
   } catch (err) {

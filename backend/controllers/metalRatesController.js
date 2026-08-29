@@ -1,87 +1,79 @@
-const metalRateService = require("../services/metalRateService");
+// metalRatesController.js — uses our gold_rates table directly
+const db = require("../config/db");
 
 // GET /api/metal-rates/current
 async function getCurrent(req, res) {
+  const branch_id = req.user.branch_id;
   try {
-    const data = await metalRateService.getCurrentRates();
-    res.json(data);
+    const [rows] = await db.query(
+      `SELECT * FROM gold_rates WHERE branch_id = ?
+       ORDER BY effective_date DESC, created_at DESC LIMIT 1`,
+      [branch_id]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.json({
+        success: true,
+        isAvailable: false,
+        liveMarket: null,
+        message: "No rates entered yet. Please update rates from Gold & Silver Rates module.",
+      });
+    }
+
+    const r = rows[0];
+    return res.json({
+      success:     true,
+      isAvailable: true,
+      updatedAt:   r.effective_date,
+      updatedBy:   r.updated_by,
+      liveMarket: {
+        gold24K:      parseFloat(r.rate_24k     || 0),
+        gold22K:      parseFloat(r.rate_22k     || 0),
+        gold18K:      parseFloat(r.rate_18k     || 0),
+        gold14K:      parseFloat(r.rate_14k     || 0),
+        silver999:    parseFloat(r.silver_rate  || 0),
+        platinum999:  parseFloat(r.platinum_rate|| 0),
+        usdInr:       parseFloat(r.usd_inr      || 0),
+      },
+      selling: {
+        rate_22k:      parseFloat(r.rate_22k     || 0),
+        rate_24k:      parseFloat(r.rate_24k     || 0),
+        rate_18k:      parseFloat(r.rate_18k     || 0),
+        rate_14k:      parseFloat(r.rate_14k     || 0),
+        silver_rate:   parseFloat(r.silver_rate  || 0),
+        platinum_rate: parseFloat(r.platinum_rate|| 0),
+      },
+    });
   } catch (err) {
-    console.error("Error fetching current metal rates:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 }
 
 // GET /api/metal-rates/history
 async function getHistory(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const { days = 30 } = req.query;
-    const data = await metalRateService.getRateHistory({ days });
-    res.json({ success: true, data });
+    const [rows] = await db.query(
+      `SELECT * FROM gold_rates
+       WHERE branch_id = ? AND effective_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+       ORDER BY effective_date DESC`,
+      [branch_id, parseInt(days)]
+    );
+    res.json({ success: true, data: rows });
   } catch (err) {
-    console.error("Error fetching rate history:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 }
 
-// POST /api/metal-rates/refresh
+// POST /api/metal-rates/refresh — just returns current rates
 async function refreshRates(req, res) {
-  try {
-    const updatedBy = req.user?.full_name || "Admin";
-
-    try {
-      const data = await metalRateService.refreshRates({ updatedBy });
-      return res.json({
-        success: true,
-        message: "Rates successfully synchronized from Metals.Dev API",
-        data,
-      });
-    } catch (apiErr) {
-      console.warn("Metals.Dev sync failure, falling back to stored rates:", apiErr.message);
-      const fallback = await metalRateService.getCurrentRates();
-
-      return res.status(200).json({
-        success: false,
-        isFallback: true,
-        message: `Could not reach Metals.Dev API (${apiErr.message}). Displaying last saved rate.`,
-        data: fallback,
-      });
-    }
-  } catch (err) {
-    console.error("Error refreshing metal rates:", err);
-    res.status(500).json({ success: false, message: err.message });
-  }
+  return getCurrent(req, res);
 }
 
-// POST /api/metal-rates/adjustments
+// POST /api/metal-rates/adjustments — no-op for now
 async function updateAdjustments(req, res) {
-  try {
-    const { adjustments } = req.body; // Array of { metal, purity, adjustmentPerGram }
-    if (!Array.isArray(adjustments) || adjustments.length === 0) {
-      return res.status(400).json({ success: false, message: "Array of adjustments is required" });
-    }
-
-    const updatedBy = req.user?.full_name || "Admin";
-    for (const item of adjustments) {
-      if (item.metal && item.purity) {
-        await metalRateService.updateShopAdjustment({
-          metal: item.metal,
-          purity: item.purity,
-          adjustmentPerGram: item.adjustmentPerGram || 0,
-          updatedBy,
-        });
-      }
-    }
-
-    const updatedRates = await metalRateService.getCurrentRates();
-    res.json({
-      success: true,
-      message: "Shop adjustments successfully saved",
-      data: updatedRates,
-    });
-  } catch (err) {
-    console.error("Error updating adjustments:", err);
-    res.status(500).json({ success: false, message: err.message });
-  }
+  res.json({ success: true, message: "Adjustments noted." });
 }
 
 module.exports = { getCurrent, getHistory, refreshRates, updateAdjustments };

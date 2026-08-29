@@ -2,31 +2,64 @@ const express = require("express");
 const router  = express.Router();
 const { verifyToken, checkPermission } = require("../middleware/auth");
 const c = require("../controllers/customersController");
+const mem = require("../controllers/membershipController");
+const occ = require("../controllers/occasionController");
 
 router.use(verifyToken);
 
-// ── Aggregates & lists (no :id) ────────────────────────────
-router.get("/kpis",             checkPermission("customers"),        c.getKpis);
-router.get("/search",           checkPermission("customers"),        c.search);
-router.get("/reminders",        checkPermission("customers"),        c.getReminders);
-router.get("/due-tracking",     checkPermission("customers"),        c.getDueTracking);
-router.get("/credit-register",  checkPermission("customers"),        c.getCreditRegister);
-router.get("/wallet-summary",   checkPermission("customers"),        c.getWalletSummary);
+// Reports & sub-aggregations
+router.get("/kpis",                 checkPermission("customers"),           c.getKpis);
+router.get("/reports/dues",         checkPermission("customers"),           c.getDuesReport);
+router.get("/reports/wallet",       checkPermission("customers"),           c.getWalletReport);
+router.get("/reports/credit",       checkPermission("customers"),           c.getCreditReport);
+router.get("/reports/kyc",          checkPermission("customers"),           c.getKycReport);
 
-// ── CRUD ───────────────────────────────────────────────────
-router.get("/",    checkPermission("customers"),          c.getAll);
-router.post("/",   checkPermission("customers", "edit"),  c.create);
-router.get("/:id", checkPermission("customers"),          c.getById);
-router.put("/:id", checkPermission("customers", "edit"),  c.update);
-router.delete("/:id", checkPermission("customers", "delete"), c.remove);
+// Occasions, Birthdays & Anniversaries
+router.get("/occasions",            checkPermission("customers"),           occ.getOccasions);
+router.get("/occasions/kpis",       checkPermission("customers"),           occ.getOccasionKpis);
+router.get("/reminders/upcoming",   checkPermission("customers"),           occ.getUpcomingReminders);
+router.post("/:id/occasions/:occasionType/acknowledge", checkPermission("customers", "edit"), occ.acknowledgeOccasion);
+router.post("/:id/occasions/greeting", checkPermission("customers", "edit"), occ.generateGreetingCard);
 
-// ── Sub-resources ──────────────────────────────────────────
-router.get("/:id/ledger",           checkPermission("customers"),        c.getLedger);
-router.post("/:id/ledger",          checkPermission("customers","edit"),  c.addLedgerEntry);
-router.get("/:id/purchase-history", checkPermission("customers"),        c.getPurchaseHistory);
-router.get("/:id/wallet",           checkPermission("customers"),        c.getWallet);
-router.post("/:id/wallet/credit",   checkPermission("customers","edit"), c.walletCredit);
-router.post("/:id/loyalty/redeem",  checkPermission("customers","edit"), c.redeemPoints);
-router.put("/:id/kyc",              checkPermission("customers","edit"), c.updateKyc);
+// Core CRUD & Lifecycle
+router.get("/",                     checkPermission("customers"),           c.getAll);
+router.get("/:id",                  checkPermission("customers"),           c.getById);
+router.post("/",                    checkPermission("customers", "edit"),   c.create);
+router.put("/:id",                  checkPermission("customers", "edit"),   c.update);
+router.delete("/:id",               checkPermission("customers", "delete"), c.remove);
+router.post("/:id/restore",         checkPermission("customers", "edit"),   c.restore);
+
+// Customer 360 & Activity Stream
+router.get("/:id/360",              checkPermission("customers"),           c.getCustomer360);
+router.get("/:id/activity",         checkPermission("customers"),           c.getActivityTimeline);
+
+// Customer Notes & CRM
+router.get("/:id/notes",            checkPermission("customers"),           c.getNotes);
+router.post("/:id/notes",           checkPermission("customers", "edit"),   c.createNote);
+router.put("/:id/notes/:noteId/pin",checkPermission("customers", "edit"),   c.togglePinNote);
+router.delete("/:id/notes/:noteId", checkPermission("customers", "delete"), c.deleteNote);
+
+// Membership Plans & Subscriptions
+router.get("/:id/membership",       checkPermission("customers"),           mem.getCustomerMembership);
+router.post("/:id/membership/enroll", checkPermission("customers", "edit"), mem.enrollCustomer);
+router.post("/:id/membership/renew",  checkPermission("customers", "edit"), mem.renewMembership);
+
+// Purchases & Returns Join
+router.get("/:id/purchases-and-returns", checkPermission("customers"),      c.getPurchasesAndReturns);
+router.get("/:id/purchase-history", checkPermission("customers"),           c.getPurchaseHistory);
+router.get("/:id/returns",          checkPermission("customers"),           c.getCustomerReturns);
+
+// Financial Ledger & Payments
+router.get("/:id/ledger",           checkPermission("customers"),           c.getLedger);
+router.post("/:id/payments",        checkPermission("customers", "edit"),   c.recordPayment);
+
+// Store Wallet
+router.get("/:id/wallet",           checkPermission("customers"),           c.getWallet);
+router.post("/:id/wallet/credit",   checkPermission("customers", "edit"),   c.addWalletCredit);
+router.post("/:id/wallet/adjust",   checkPermission("customers", "edit"),   c.adjustWallet);
+
+// Loyalty Points
+router.get("/:id/loyalty",          checkPermission("customers"),           c.getLoyalty);
+router.post("/:id/loyalty/adjust",  checkPermission("customers", "edit"),   c.adjustLoyalty);
 
 module.exports = router;

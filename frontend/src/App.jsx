@@ -9,8 +9,9 @@ import Dashboard from "./pages/Dashboard";
 window.__CERITAGE_API__ = "http://172.23.97.221:5000/api";
 
 function PrivateRoute({ children }) {
+  const token = sessionStorage.getItem("ceritage_token");
   const auth = sessionStorage.getItem("ceritage_auth");
-  return auth === "true" ? children : <Navigate to="/" replace />;
+  return token || auth === "true" ? children : <Navigate to="/" replace />;
 }
 
 function App() {

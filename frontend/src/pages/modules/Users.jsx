@@ -135,7 +135,8 @@ export default function Users({ t }) {
           <DataTable
             columns={["User","Username","Role","Branch","Status","Last Login","Actions"]}
             t={t}
-            emptyMsg="No users found. Use + Add User to create the first user." />
+            emptyMsg="No users found. Use + Add User to create the first user."
+          />
         </Card>
       )}
 

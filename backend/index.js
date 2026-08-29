@@ -34,6 +34,7 @@ app.get("/api/db-test", async (req, res) => {
 // ── API Routes ─────────────────────────────────────────────
 app.use("/api/auth",          require("./routes/auth"));
 app.use("/api/dashboard",     require("./routes/dashboard"));
+app.use("/api/analytics",     require("./routes/analytics"));
 app.use("/api/users",         require("./routes/users"));
 app.use("/api/customers",     require("./routes/customers"));
 app.use("/api/products",      require("./routes/products"));
@@ -45,9 +46,13 @@ app.use("/api/repair",        require("./routes/repair"));
 app.use("/api/orders",        require("./routes/orders"));
 app.use("/api/karigar",       require("./routes/karigar"));
 app.use("/api/rates",         require("./routes/rates"));
+app.use("/api/metal-rates",   require("./routes/metalRates"));
 app.use("/api/employees",     require("./routes/employees"));
 app.use("/api/suppliers",     require("./routes/suppliers"));
 app.use("/api/branch",        require("./routes/branch"));
+app.use("/api/emi",           require("./routes/emi"));
+app.use("/api/membership",    require("./routes/membership"));
+app.use("/api/communications",require("./routes/communication"));
 
 // ── 404 handler ────────────────────────────────────────────
 app.use((req, res) => {
@@ -62,7 +67,54 @@ app.use((err, req, res, next) => {
 
 // ── Start server ───────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Ceritage ERP Backend running on port ${PORT}`);
   console.log(`DB: ${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`);
 });
+
+server.on("error", (err) => {
+  console.error("Server error:", err);
+});
+
+// ── Metals.Dev Automated Twice-Daily Scheduler (Day & Evening Slots) ──
+const metalRateService = require("./services/metalRateService");
+
+setInterval(async () => {
+  try {
+    if (!process.env.METALS_DEV_API_KEY) return;
+
+    const now = new Date();
+    // Convert to Indian Standard Time (IST)
+    const istString = now.toLocaleTimeString("en-US", { timeZone: "Asia/Kolkata", hour12: false });
+    const [hours, minutes] = istString.split(":").map(Number);
+
+    const dayTime = process.env.METALS_DEV_DAY_TIME || "10:30";
+    const [dayHour, dayMin] = dayTime.split(":").map(Number);
+
+    const eveningTime = process.env.METALS_DEV_EVENING_TIME || "18:30";
+    const [eveHour, eveMin] = eveningTime.split(":").map(Number);
+
+    // 1. Check Morning / Day Slot (e.g. 10:30 AM IST)
+    if (hours === dayHour && minutes >= dayMin && minutes <= dayMin + 4) {
+      const quota = await metalRateService.getDailySyncStatus();
+      if (!quota.daySlotCompleted && quota.canRequest) {
+        console.log(`[Auto Scheduler] ☀️ Triggering Day Slot Market Rate Sync (${dayTime} IST)...`);
+        await metalRateService.refreshRates({ slot: "DAY", updatedBy: "Automated Day Scheduler" });
+      }
+    }
+
+    // 2. Check Evening Slot (e.g. 06:30 PM IST)
+    if (hours === eveHour && minutes >= eveMin && minutes <= eveMin + 4) {
+      const quota = await metalRateService.getDailySyncStatus();
+      if (!quota.eveningSlotCompleted && quota.canRequest) {
+        console.log(`[Auto Scheduler] 🌙 Triggering Evening Slot Market Rate Sync (${eveningTime} IST)...`);
+        await metalRateService.refreshRates({ slot: "EVENING", updatedBy: "Automated Evening Scheduler" });
+      }
+    }
+  } catch (err) {
+    console.warn("[Auto Scheduler] Background sync notice:", err.message);
+  }
+}, 60 * 1000); // Check every 60 seconds
+
+
+

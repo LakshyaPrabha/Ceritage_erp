@@ -10,12 +10,18 @@ const app = express();
 
 // ── Middleware ─────────────────────────────────────────────
 app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:3000"],
-  credentials: true,
+  origin: "*",
+  credentials: false,
 }));
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(morgan("dev"));
 app.use(express.json());
+
+// Disable 304 caching for API routes
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
 
 // ── Health check ───────────────────────────────────────────
 app.get("/", (req, res) => {
@@ -62,7 +68,7 @@ app.use((err, req, res, next) => {
 
 // ── Start server ───────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Ceritage ERP Backend running on port ${PORT}`);
   console.log(`DB: ${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`);
 });

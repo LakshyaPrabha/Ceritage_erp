@@ -1,7 +1,17 @@
-﻿import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import ceritageLogoSvg from "../assets/ceritage-logo.svg";
-import { BRAND } from "../theme.js";
+import { apiRequest } from "../lib/api";
+
+// ── Credentials (backend se replace hoga) ──────────────────
+// ── Brand colors from logo ─────────────────────────────────
+const BRAND = {
+  blue:   "#3B55E6",
+  purple: "#8B3BC8",
+  pink:   "#E63B8A",
+  grad:   "linear-gradient(135deg, #3B55E6 0%, #8B3BC8 50%, #E63B8A 100%)",
+  gradBtn:"linear-gradient(135deg, #3B55E6, #8B3BC8)",
+  gradBg: "linear-gradient(135deg, rgba(59,85,230,0.08) 0%, rgba(139,59,200,0.06) 50%, rgba(230,59,138,0.06) 100%)",
+};
 
 // ── Theme tokens ───────────────────────────────────────────
 function getTheme(dark) {
@@ -79,38 +89,24 @@ export default function Login() {
       setError("Username and password are required.");
       return;
     }
-
     setLoading(true);
-
     try {
-      const res = await fetch(`${window.__CERITAGE_API__ || "http://172.23.97.221:5000/api"}/auth/login`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
+      const result = await apiRequest("/auth/login", {
+        method: "POST",
         body: JSON.stringify({
-          username: username.trim().toLowerCase(),
-          password: password,
+          username: username.trim(),
+          password,
         }),
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        setLoading(false);
-        setError(data.message || "Invalid username or password.");
-        return;
-      }
-
-      // Save token and user info
-      sessionStorage.setItem("ceritage_auth",  "true");
-      sessionStorage.setItem("ceritage_user",  data.user.full_name || data.user.username);
-      sessionStorage.setItem("ceritage_token", data.token);
-      sessionStorage.setItem("ceritage_role",  data.user.role);
-
-      navigate("/dashboard");
-
+      sessionStorage.setItem("ceritage_auth", "true");
+      sessionStorage.setItem("ceritage_token", result.token);
+      sessionStorage.setItem("ceritage_user", result.user?.full_name || username.trim());
+      sessionStorage.setItem("ceritage_role", result.user?.role || "");
+      window.location.href = "/dashboard";
     } catch (err) {
       setLoading(false);
-      setError(`Connection error: ${err.message}`);
+      setError(err.message || "Login failed. Backend/database check karein.");
     }
   }
 

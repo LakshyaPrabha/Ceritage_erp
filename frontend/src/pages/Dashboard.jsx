@@ -1,7 +1,8 @@
-﻿﻿import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import ceritageLogoSvg from "../assets/ceritage-logo.svg";
 import { BRAND } from "../theme.js";
+import { apiRequest } from "../lib/api";
 
 // ── All module imports ─────────────────────────────────────
 import DashboardHome  from "./modules/DashboardHome";
@@ -35,8 +36,6 @@ import Rfid           from "./modules/Rfid";
 import Advance        from "./modules/Advance";
 import Compliance     from "./modules/Compliance";
 import Ai             from "./modules/Ai";
-
-// BRAND imported from theme.js above
 
 export function getTheme(dark) {
   return dark
@@ -211,6 +210,96 @@ function useSystemTheme() {
   return dark;
 }
 
+// ── Live market rate ticker hook — polls /api/metal-rates/current & listens to refresh events ──
+function useLiveRates() {
+  const [ratesData, setRatesData] = useState(null);
+
+  const fetchRates = useCallback(async () => {
+    try {
+      const res = await apiRequest("/metal-rates/current");
+      if (res && res.success) {
+        setRatesData(res);
+        return;
+      }
+      const legRes = await apiRequest("/rates/current");
+      if (legRes && legRes.data) {
+        setRatesData({
+          liveMarket: {
+            gold24K: legRes.data.rate_24k,
+            gold22K: legRes.data.rate_22k,
+            silver999: legRes.data.silver_rate,
+          },
+          source: "Metals.Dev",
+          isAvailable: true,
+          updatedAt: legRes.data.created_at || legRes.data.effective_date,
+        });
+      }
+    } catch {
+      setRatesData(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRates();
+    const id = setInterval(fetchRates, 10 * 60 * 1000); // check database every 10 min
+
+    const handleUpdate = () => fetchRates();
+    window.addEventListener("metal-rates-updated", handleUpdate);
+    window.addEventListener("focus", handleUpdate);
+
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("metal-rates-updated", handleUpdate);
+      window.removeEventListener("focus", handleUpdate);
+    };
+  }, [fetchRates]);
+
+  return ratesData;
+}
+
+function formatRate(val) {
+  if (val == null) return null;
+  const n = Number(val);
+  if (!isFinite(n) || n <= 0) return null;
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n);
+}
+
+function LiveRateTicker({ t }) {
+  const data = useLiveRates();
+  const gold24 = formatRate(data?.liveMarket?.gold24K);
+  const gold22 = formatRate(data?.liveMarket?.gold22K);
+  const silver = formatRate(data?.liveMarket?.silver999);
+
+  let label;
+  let statusBadge = null;
+
+  if (!data && gold24 === null && gold22 === null) {
+    label = "Market Rates: Loading...";
+  } else if (data && !data.isAvailable && gold24 === null) {
+    label = "Market Rates: Unavailable";
+  } else {
+    const parts = [];
+    if (gold24) parts.push(`24K: ₹${gold24}`);
+    if (gold22) parts.push(`22K: ₹${gold22}`);
+    if (silver) parts.push(`Ag: ₹${silver}`);
+    label = parts.join(" | ");
+
+    if (data?.isStale) {
+      statusBadge = " (Stale)";
+    }
+  }
+
+  return (
+    <div style={{ fontSize:12, color:t.tickerColor,
+      background:t.tickerBg, border:`1px solid ${t.tickerBorder}`,
+      borderRadius:8, padding:"4px 12px", whiteSpace:"nowrap",
+      display:"flex", alignItems:"center", gap:6 }}>
+      <span>{label}{statusBadge}</span>
+      <span style={{ fontSize:10, opacity:0.7, borderLeft:`1px solid ${t.tickerBorder}`, paddingLeft:6 }}>Metals.Dev</span>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [active,      setActive]      = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -223,7 +312,9 @@ export default function Dashboard() {
 
   function handleLogout() {
     sessionStorage.removeItem("ceritage_auth");
+    sessionStorage.removeItem("ceritage_token");
     sessionStorage.removeItem("ceritage_user");
+    sessionStorage.removeItem("ceritage_role");
     navigate("/");
   }
 
@@ -333,11 +424,8 @@ export default function Dashboard() {
             </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
-            <div style={{ fontSize:12, color:t.tickerColor,
-              background:t.tickerBg, border:`1px solid ${t.tickerBorder}`,
-              borderRadius:8, padding:"4px 12px", whiteSpace:"nowrap" }}>
-              Live Rates: —
-            </div>
+            {/* ── Live rate ticker — fetches real data ── */}
+            <LiveRateTicker t={t} />
             <div style={{ width:30, height:30, borderRadius:"50%",
               background:BRAND.gradBtn, display:"flex", alignItems:"center",
               justifyContent:"center", fontSize:11, fontWeight:800, color:"#fff" }}>

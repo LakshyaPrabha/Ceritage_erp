@@ -3,7 +3,6 @@
 
 const bcrypt = require("bcrypt");
 const db = require("../config/db");
-require("dotenv").config({ path: "../.env" });
 
 async function seed() {
   try {
@@ -63,6 +62,17 @@ async function seed() {
       );
     }
     console.log("Permissions seeded.");
+
+    // Seed initial gold & silver rates if not set
+    const [rateRows] = await db.query("SELECT COUNT(*) AS count FROM gold_rates");
+    if (rateRows[0].count === 0) {
+      await db.query(
+        `INSERT INTO gold_rates (rate_22k, rate_24k, rate_18k, rate_14k, silver_rate, platinum_rate, usd_inr, effective_date, updated_by, remarks)
+         VALUES (6650.00, 7255.00, 5440.00, 4230.00, 84.50, 3120.00, 86.80, CURDATE(), 'System', 'Metals.Dev Initial Rates')`
+      );
+      console.log("Initial Gold & Silver rates seeded.");
+    }
+
     console.log("\nSetup complete! You can now start the backend with: npm run dev");
     process.exit(0);
   } catch (err) {

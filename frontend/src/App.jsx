@@ -4,8 +4,9 @@ import Dashboard from "./pages/Dashboard";
 
 // Auth guard — sessionStorage check
 function PrivateRoute({ children }) {
+  const token = sessionStorage.getItem("ceritage_token");
   const auth = sessionStorage.getItem("ceritage_auth");
-  return auth === "true" ? children : <Navigate to="/" replace />;
+  return token || auth === "true" ? children : <Navigate to="/" replace />;
 }
 
 function App() {

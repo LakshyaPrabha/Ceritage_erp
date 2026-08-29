@@ -1,10 +1,8 @@
 import { useState, useEffect } from "react";
 import ceritageLogoSvg from "../assets/ceritage-logo.svg";
+import { apiRequest } from "../lib/api";
 
 // ── Credentials (backend se replace hoga) ──────────────────
-const ADMIN_USERNAME = "admin";
-const ADMIN_PASSWORD = "ceritage123";
-
 // ── Brand colors from logo ─────────────────────────────────
 const BRAND = {
   blue:   "#3B55E6",
@@ -82,7 +80,7 @@ export default function Login() {
 
   const t = getTheme(dark);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     if (!username.trim() || !password.trim()) {
@@ -90,19 +88,24 @@ export default function Login() {
       return;
     }
     setLoading(true);
-    setTimeout(() => {
-      if (
-        username.trim().toLowerCase() === ADMIN_USERNAME &&
-        password === ADMIN_PASSWORD
-      ) {
-        sessionStorage.setItem("ceritage_auth", "true");
-        sessionStorage.setItem("ceritage_user", username.trim());
-        window.location.href = "/dashboard";
-      } else {
-        setLoading(false);
-        setError("Username ya password galat hai. Dobara try karein.");
-      }
-    }, 600);
+    try {
+      const result = await apiRequest("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+        }),
+      });
+
+      sessionStorage.setItem("ceritage_auth", "true");
+      sessionStorage.setItem("ceritage_token", result.token);
+      sessionStorage.setItem("ceritage_user", result.user?.full_name || username.trim());
+      sessionStorage.setItem("ceritage_role", result.user?.role || "");
+      window.location.href = "/dashboard";
+    } catch (err) {
+      setLoading(false);
+      setError(err.message || "Login failed. Backend/database check karein.");
+    }
   }
 
   return (

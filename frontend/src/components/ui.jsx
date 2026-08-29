@@ -1,4 +1,4 @@
-// ─── Ceritage ERP — Shared UI Components ──────────────────
+﻿// ─── Ceritage ERP — Shared UI Components ──────────────────
 // BRAND directly defined here — no circular imports
 
 export const BRAND = {
@@ -110,7 +110,7 @@ export function BtnPrimary({ children, onClick, disabled, style = {} }) {
 
 // ── BtnOutline ─────────────────────────────────────────────
 export function BtnOutline({ children, onClick, t, style = {} }) {
-  const borderColor = t ? t.border : "rgba(139,59,200,0.3)";
+  const borderColor = t  ? t.border : "rgba(139,59,200,0.3)";
   return (
     <button onClick={onClick} style={{
       background:"none", border:`1px solid ${borderColor}`,
@@ -126,7 +126,7 @@ export function BtnOutline({ children, onClick, t, style = {} }) {
 // ── BtnSm ──────────────────────────────────────────────────
 export function BtnSm({ children, onClick, t, primary = false, style = {} }) {
   return primary
-    ? <BtnPrimary onClick={onClick} style={{ padding:"6px 14px", fontSize:12, ...style }}>{children}</BtnPrimary>
+     ? <BtnPrimary onClick={onClick} style={{ padding:"6px 14px", fontSize:12, ...style }}>{children}</BtnPrimary>
     : <BtnOutline onClick={onClick} t={t} style={{ padding:"6px 14px", fontSize:12, ...style }}>{children}</BtnOutline>;
 }
 
@@ -139,11 +139,11 @@ export function Tabs({ tabs, active, onChange, t }) {
         const isActive = active === tab.id;
         return (
           <button key={tab.id} onClick={() => onChange(tab.id)} style={{
-            background: isActive ? t.navActive : "none",
+            background: isActive  ? t.navActive : "none",
             border:"none",
-            borderBottom: isActive ? `2px solid ${BRAND.purple}` : "2px solid transparent",
-            color: isActive ? BRAND.purple : t.textSub,
-            fontSize:13, fontWeight: isActive ? 600 : 400,
+            borderBottom: isActive  ? `2px solid ${BRAND.purple}` : "2px solid transparent",
+            color: isActive  ? BRAND.purple : t.textSub,
+            fontSize:13, fontWeight: isActive  ? 600 : 400,
             padding:"9px 16px", cursor:"pointer",
             fontFamily:"inherit", transition:"all 0.15s" }}>
             {tab.label}
@@ -155,7 +155,7 @@ export function Tabs({ tabs, active, onChange, t }) {
 }
 
 // ── DataTable ──────────────────────────────────────────────
-export function DataTable({ columns, rows = [], emptyMsg = "Backend se data load hoga", t }) {
+export function DataTable({ columns, rows = [], emptyMsg = "Data will load from backend", t }) {
   return (
     <div style={{ overflowX:"auto" }}>
       <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
@@ -173,7 +173,7 @@ export function DataTable({ columns, rows = [], emptyMsg = "Backend se data load
         </thead>
         <tbody>
           {rows.length === 0
-            ? (
+             ? (
               <tr>
                 <td colSpan={columns.length} style={{ padding:"36px", textAlign:"center",
                   color:t.textFaint, fontSize:13 }}>
@@ -185,7 +185,7 @@ export function DataTable({ columns, rows = [], emptyMsg = "Backend se data load
               <tr key={i} style={{ borderBottom:`1px solid ${t.borderDash}` }}>
                 {columns.map((col) => (
                   <td key={col} style={{ padding:"10px 12px", color:t.textSub }}>
-                    {row[col] ?? "—"}
+                    {row[col] !== undefined && row[col] !== null  ? row[col] : "—"}
                   </td>
                 ))}
               </tr>
@@ -217,7 +217,7 @@ export function Modal({ open, onClose, title, children, footer, t, wide = false 
         background:"rgba(0,0,0,0.55)",
         display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
       <div style={{ background:t.card, border:`1px solid ${t.border}`,
-        borderRadius:16, width:"100%", maxWidth: wide ? 720 : 480,
+        borderRadius:16, width:"100%", maxWidth: wide  ? 720 : 480,
         maxHeight:"90vh", overflowY:"auto",
         boxShadow:"0 20px 60px rgba(0,0,0,0.4)", position:"relative" }}>
         <div style={{ height:3, borderRadius:"16px 16px 0 0", background:BRAND.grad }} />

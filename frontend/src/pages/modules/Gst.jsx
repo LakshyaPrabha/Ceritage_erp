@@ -1,4 +1,4 @@
-﻿import { BRAND } from "../../theme.js";
+﻿﻿import { BRAND } from "../../theme.js";
 import { useState } from "react";
 import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
          BtnPrimary, BtnOutline, BtnSm, FormGroup, FormGrid, Input, Select } from "../../components/ui";
@@ -91,7 +91,7 @@ export default function Gst({ t }) {
           <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:16 }}>
             {["All","Jewelry","Diamond","Gemstone","Service"].map((c) => (
               <button key={c} style={{ padding:"5px 12px", borderRadius:20, cursor:"pointer",
-                fontSize:12, fontFamily:"inherit", background: c==="All" ? BRAND.gradBtn : "none",
+                fontSize:12, fontFamily:"inherit", background: c==="All"  ? BRAND.gradBtn : "none",
                 color: c==="All" ? "#fff" : t.textSub,
                 border: c==="All" ? "none" : `1px solid ${t.borderDash}` }}>{c}</button>
             ))}

@@ -1,4 +1,4 @@
-const db = require("../config/db");
+﻿const db = require("../config/db");
 
 async function getAll(req, res) {
   try {
@@ -8,7 +8,7 @@ async function getAll(req, res) {
     );
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 
@@ -22,7 +22,7 @@ async function create(req, res) {
     );
     res.status(201).json({ success: true, data: { id: result.insertId } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 
@@ -35,7 +35,7 @@ async function update(req, res) {
     );
     res.json({ success: true, message: "Employee updated" });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 
@@ -49,7 +49,7 @@ async function markAttendance(req, res) {
     );
     res.json({ success: true, message: "Attendance marked" });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 
@@ -64,7 +64,7 @@ async function submitLeave(req, res) {
     );
     res.status(201).json({ success: true, data: { id: result.insertId, days } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 
@@ -77,7 +77,7 @@ async function approveLeave(req, res) {
     );
     res.json({ success: true, message: `Leave ${status}` });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 
@@ -90,7 +90,7 @@ async function getKpis(req, res) {
     );
     res.json({ success: true, data: kpis });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 

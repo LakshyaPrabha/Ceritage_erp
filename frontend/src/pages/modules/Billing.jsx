@@ -1,4 +1,4 @@
-﻿// ─── Ceritage ERP — Billing & GST Invoice ────────────────────────────────────
+﻿﻿// ─── Ceritage ERP — Billing & GST Invoice ────────────────────────────────────
 import { BRAND } from "../../theme.js";
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -105,17 +105,17 @@ function computeTotals(items, discPct, discAmt, oldGold, isSameState = true) {
 
   // Invoice-level discount
   const invDiscAmt  = discAmt
-    ? parseFloat(discAmt)
+     ? parseFloat(discAmt)
     : subtotal * (parseFloat(discPct) / 100 || 0);
 
   const taxableAmt  = subtotal - invDiscAmt;
-  const cgst        = isSameState ? totalGST / 2 : 0;
-  const sgst        = isSameState ? totalGST / 2 : 0;
-  const igst        = !isSameState ? totalGST : 0;
+  const cgst        = isSameState  ? totalGST / 2 : 0;
+  const sgst        = isSameState  ? totalGST / 2 : 0;
+  const igst        = !isSameState  ? totalGST : 0;
 
   // TCS: 1% on cash txns > ₹2 lakh (as per Income Tax Act)
   const grandBeforeTCS = taxableAmt + totalGST - (parseFloat(oldGold) || 0);
-  const tcs = grandBeforeTCS > 200000 ? parseFloat((grandBeforeTCS * 0.01).toFixed(2)) : 0;
+  const tcs = grandBeforeTCS > 200000  ? parseFloat((grandBeforeTCS * 0.01).toFixed(2)) : 0;
 
   const grandTotal = parseFloat((grandBeforeTCS + tcs).toFixed(2));
 
@@ -376,7 +376,7 @@ export default function Billing({ t }) {
       igst:               totals.igst,
       tcs:                totals.tcs,
       grand_total:        totals.grandTotal,
-      paid_amount:        status === "Paid" ? totals.grandTotal : parseFloat(amtReceived) || 0,
+      paid_amount:        status === "Paid"  ? totals.grandTotal : parseFloat(amtReceived) || 0,
       notes:              notes || null,
       status,
       items: items.map(item => ({
@@ -511,7 +511,7 @@ export default function Billing({ t }) {
     <div style="font-weight:700;margin-bottom:4px">Bill To:</div>
     <div>${custName}</div>
     <div style="font-size:11px;color:#777">${inv.phone || ""}</div>
-    ${inv.gst_number ? `<div style="font-size:11px">GSTIN: ${inv.gst_number}</div>` : ""}
+    ${inv.gst_number  ? `<div style="font-size:11px">GSTIN: ${inv.gst_number}</div>` : ""}
   </div>
   <div style="font-size:11px;color:#777;text-align:right">
     Payment: <b>${inv.payment_mode || "—"}</b><br/>
@@ -527,12 +527,12 @@ export default function Billing({ t }) {
 </table>
 <div class="totals">
   <div class="totals-row"><span>Subtotal</span><span>₹${parseFloat(inv.subtotal || 0).toLocaleString("en-IN")}</span></div>
-  ${parseFloat(inv.discount_amt || 0) > 0 ? `<div class="totals-row"><span>Discount</span><span>- ₹${parseFloat(inv.discount_amt).toLocaleString("en-IN")}</span></div>` : ""}
-  ${parseFloat(inv.cgst || 0) > 0 ? `<div class="totals-row"><span>CGST (1.5%)</span><span>₹${parseFloat(inv.cgst).toLocaleString("en-IN")}</span></div>` : ""}
-  ${parseFloat(inv.sgst || 0) > 0 ? `<div class="totals-row"><span>SGST (1.5%)</span><span>₹${parseFloat(inv.sgst).toLocaleString("en-IN")}</span></div>` : ""}
-  ${parseFloat(inv.igst || 0) > 0 ? `<div class="totals-row"><span>IGST (3%)</span><span>₹${parseFloat(inv.igst).toLocaleString("en-IN")}</span></div>` : ""}
-  ${parseFloat(inv.old_gold_exchange || 0) > 0 ? `<div class="totals-row"><span>Old Gold Exchange</span><span>- ₹${parseFloat(inv.old_gold_exchange).toLocaleString("en-IN")}</span></div>` : ""}
-  ${parseFloat(inv.tcs || 0) > 0 ? `<div class="totals-row"><span>TCS (1%)</span><span>₹${parseFloat(inv.tcs).toLocaleString("en-IN")}</span></div>` : ""}
+  ${parseFloat(inv.discount_amt || 0) > 0  ? `<div class="totals-row"><span>Discount</span><span>- ₹${parseFloat(inv.discount_amt).toLocaleString("en-IN")}</span></div>` : ""}
+  ${parseFloat(inv.cgst || 0) > 0  ? `<div class="totals-row"><span>CGST (1.5%)</span><span>₹${parseFloat(inv.cgst).toLocaleString("en-IN")}</span></div>` : ""}
+  ${parseFloat(inv.sgst || 0) > 0  ? `<div class="totals-row"><span>SGST (1.5%)</span><span>₹${parseFloat(inv.sgst).toLocaleString("en-IN")}</span></div>` : ""}
+  ${parseFloat(inv.igst || 0) > 0  ? `<div class="totals-row"><span>IGST (3%)</span><span>₹${parseFloat(inv.igst).toLocaleString("en-IN")}</span></div>` : ""}
+  ${parseFloat(inv.old_gold_exchange || 0) > 0  ? `<div class="totals-row"><span>Old Gold Exchange</span><span>- ₹${parseFloat(inv.old_gold_exchange).toLocaleString("en-IN")}</span></div>` : ""}
+  ${parseFloat(inv.tcs || 0) > 0  ? `<div class="totals-row"><span>TCS (1%)</span><span>₹${parseFloat(inv.tcs).toLocaleString("en-IN")}</span></div>` : ""}
   <div class="totals-row grand"><span>Grand Total</span><span>₹${parseFloat(inv.grand_total || 0).toLocaleString("en-IN")}</span></div>
 </div>
 <div style="clear:both"></div>
@@ -567,9 +567,9 @@ export default function Billing({ t }) {
 
       {/* KPI Cards */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))", gap:12, marginBottom:22 }}>
-        <StatCard label="Today's Billing"  value={kpis.today_billing    ? `₹${parseFloat(kpis.today_billing).toLocaleString("en-IN")}` : "₹0"}  color={BRAND.blue}   t={t} />
+        <StatCard label="Today's Billing"  value={kpis.today_billing     ? `₹${parseFloat(kpis.today_billing).toLocaleString("en-IN")}` : "₹0"}  color={BRAND.blue}   t={t} />
         <StatCard label="Bills Today"      value={kpis.bills_today      ?? 0}                                                                      color="#2ecc71"      t={t} />
-        <StatCard label="Pending Payments" value={kpis.pending_payments ? `₹${parseFloat(kpis.pending_payments).toLocaleString("en-IN")}` : "₹0"} color={BRAND.purple} t={t} />
+        <StatCard label="Pending Payments" value={kpis.pending_payments  ? `₹${parseFloat(kpis.pending_payments).toLocaleString("en-IN")}` : "₹0"} color={BRAND.purple} t={t} />
         <StatCard label="Returns Today"    value={kpis.returns_today    ?? 0}                                                                      color={BRAND.pink}   t={t} />
       </div>
 
@@ -589,7 +589,7 @@ export default function Billing({ t }) {
                   style={{
                     padding:"6px 14px", borderRadius:20, cursor:"pointer",
                     fontSize:12, fontWeight:600, fontFamily:"inherit",
-                    background: invType === type ? BRAND.gradBtn : "transparent",
+                    background: invType === type  ? BRAND.gradBtn : "transparent",
                     color:      invType === type ? "#fff" : t.textSub,
                     border:     invType === type ? "none" : `1px solid ${t.borderDash}`,
                     boxShadow:  invType === type ? "0 2px 10px rgba(59,85,230,0.25)" : "none",
@@ -747,13 +747,13 @@ export default function Billing({ t }) {
                       ["Discount",             `- ₹${totals.invDiscAmt.toLocaleString("en-IN")}`],
                       ["Taxable Amount",       `₹${totals.taxableAmt.toLocaleString("en-IN")}`],
                       ...(isSameState
-                        ? [["CGST (1.5%)", `₹${totals.cgst.toLocaleString("en-IN")}`],
+                         ? [["CGST (1.5%)", `₹${totals.cgst.toLocaleString("en-IN")}`],
                            ["SGST (1.5%)", `₹${totals.sgst.toLocaleString("en-IN")}`]]
                         : [["IGST (3%)",   `₹${totals.igst.toLocaleString("en-IN")}`]]),
                       ...(parseFloat(oldGold) > 0
-                        ? [["Old Gold Exchange", `- ₹${parseFloat(oldGold).toLocaleString("en-IN")}`]] : []),
+                         ? [["Old Gold Exchange", `- ₹${parseFloat(oldGold).toLocaleString("en-IN")}`]] : []),
                       ...(totals.tcs > 0
-                        ? [["TCS (1%) — Cash >₹2L", `₹${totals.tcs.toLocaleString("en-IN")}`]] : []),
+                         ? [["TCS (1%) — Cash >₹2L", `₹${totals.tcs.toLocaleString("en-IN")}`]] : []),
                     ].map(([k, v]) => (
                       <div key={k} style={{ display:"flex", justifyContent:"space-between",
                         padding:"4px 0", fontSize:13, color:t.textSub, borderBottom:`1px dashed ${t.borderDash}` }}>
@@ -812,7 +812,7 @@ export default function Billing({ t }) {
                       style={{
                         padding:"6px 14px", borderRadius:20, cursor:"pointer",
                         fontSize:12, fontWeight:600, fontFamily:"inherit",
-                        background: payMode === m ? BRAND.gradBtn : "transparent",
+                        background: payMode === m  ? BRAND.gradBtn : "transparent",
                         color:      payMode === m ? "#fff" : t.textSub,
                         border:     payMode === m ? "none" : `1px solid ${t.borderDash}`,
                       }}>
@@ -829,7 +829,7 @@ export default function Billing({ t }) {
                     </FormGroup>
                     <FormGroup label="Balance / Change (₹)" t={t} half>
                       <Input t={t} readOnly
-                        value={amtReceived ? `₹${change >= 0 ? change.toLocaleString("en-IN") : "Insufficient"}` : "—"}
+                        value={amtReceived  ? `₹${change >= 0  ? change.toLocaleString("en-IN") : "Insufficient"}` : "—"}
                         style={{ color: change >= 0 ? "#2ecc71" : BRAND.pink, fontWeight:700 }} />
                     </FormGroup>
                   </FormGrid>
@@ -935,12 +935,12 @@ export default function Billing({ t }) {
                   <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
                     <div><b>{invType.toUpperCase()}</b></div>
                     <div style={{ color:"#777", fontSize:10 }}>
-                      {invoiceDate ? new Date(invoiceDate).toLocaleDateString("en-IN") : "—"}
+                      {invoiceDate  ? new Date(invoiceDate).toLocaleDateString("en-IN") : "—"}
                     </div>
                   </div>
                   {/* Customer */}
                   <div style={{ background:"#f9f6ff", padding:"6px 8px", borderRadius:5, marginBottom:8 }}>
-                    <b>Bill To:</b> {selCustomer ? selCustomer.full_name : "—"}
+                    <b>Bill To:</b> {selCustomer  ? selCustomer.full_name : "—"}
                     {selCustomer && <span style={{ color:"#888" }}> · {selCustomer.phone}</span>}
                   </div>
                   {/* Items */}
@@ -964,7 +964,7 @@ export default function Billing({ t }) {
                         <span>Discount</span><span>- ₹{totals.invDiscAmt.toLocaleString("en-IN")}</span>
                       </div>
                     )}
-                    {isSameState ? (
+                    {isSameState  ? (
                       <>
                         <div style={{ display:"flex", justifyContent:"space-between", color:"#888", fontSize:10 }}>
                           <span>CGST 1.5%</span><span>₹{totals.cgst.toLocaleString("en-IN")}</span>
@@ -1000,12 +1000,12 @@ export default function Billing({ t }) {
                   </div>
                 </div>
                 <div style={{ display:"flex", gap:8, marginTop:10 }}>
-                  <a href={selCustomer ? `https://wa.me/91${selCustomer.phone}?text=${encodeURIComponent(`Your invoice of ₹${totals.grandTotal} is ready at Ceritage Jewelry. Thank you!`)}` : "#"}
+                  <a href={selCustomer  ? `https://wa.me/91${selCustomer.phone}?text=${encodeURIComponent(`Your invoice of ₹${totals.grandTotal} is ready at Ceritage Jewelry. Thank you!`)}` : "#"}
                     target="_blank" rel="noreferrer"
                     style={{ flex:1, textAlign:"center", background:"#25d366", color:"#fff",
                       borderRadius:7, padding:"7px 0", fontSize:12, fontWeight:600,
                       textDecoration:"none", display:"block" }}>
-                    💬 WhatsApp
+                    WhatsApp
                   </a>
                 </div>
               </Card>
@@ -1019,7 +1019,7 @@ export default function Billing({ t }) {
       ══════════════════════════════════════════════════════════════════ */}
       {tab === "list" && (
         <Card t={t}>
-          <CardHeader title={`All Invoices ${invoices.length > 0 ? `(${invoices.length})` : ""}`} t={t}
+          <CardHeader title={`All Invoices ${invoices.length > 0  ? `(${invoices.length})` : ""}`} t={t}
             actions={<>
               <div style={{ position:"relative" }}>
                 <input placeholder="Search invoice, customer..."
@@ -1039,7 +1039,7 @@ export default function Billing({ t }) {
               </select>
             </>} />
           {listLoading
-            ? <div style={{ textAlign:"center", padding:32, color:t.textFaint }}>Loading invoices...</div>
+             ? <div style={{ textAlign:"center", padding:32, color:t.textFaint }}>Loading invoices...</div>
             : <DataTable
                 columns={["Invoice No","Type","Date","Customer","Total","GST","Payment","Status","Actions"]}
                 rows={invoices.map(inv => ({
@@ -1052,8 +1052,8 @@ export default function Billing({ t }) {
                   "Payment":    inv.payment_mode,
                   "Status": (
                     <span style={{
-                      background: inv.status==="Paid" ? "rgba(46,204,113,0.12)" : inv.status==="Draft" ? `rgba(59,85,230,0.1)` : "rgba(243,156,18,0.12)",
-                      color:      inv.status==="Paid" ? "#2ecc71" : inv.status==="Draft" ? BRAND.blue : "#f39c12",
+                      background: inv.status==="Paid" ? "rgba(46,204,113,0.12)" : inv.status==="Draft"  ? `rgba(59,85,230,0.1)` : "rgba(243,156,18,0.12)",
+                      color:      inv.status==="Paid" ? "#2ecc71" : inv.status==="Draft"  ? BRAND.blue : "#f39c12",
                       border:`1px solid ${inv.status==="Paid" ? "rgba(46,204,113,0.3)" : "rgba(243,156,18,0.3)"}`,
                       borderRadius:6, padding:"2px 10px", fontSize:11, fontWeight:600,
                     }}>{inv.status}</span>
@@ -1098,7 +1098,7 @@ export default function Billing({ t }) {
                 </button>
               </div>
             } />
-          {receiptInv ? (
+          {receiptInv  ? (
             <div style={{ overflowX:"auto" }}>
               <div style={{ background:"#fff", color:"#333", border:`1px solid ${t.borderDash}`,
                 borderRadius:10, padding:28, maxWidth:760, margin:"0 auto", fontSize:12 }}>
@@ -1112,7 +1112,7 @@ export default function Billing({ t }) {
                   <div style={{ textAlign:"right" }}>
                     <div style={{ fontWeight:700, fontSize:14 }}>{receiptInv.invoice_type || "TAX INVOICE"}</div>
                     <div>No: <b style={{ color:BRAND.purple }}>{receiptInv.invoice_no}</b></div>
-                    <div style={{ color:"#777" }}>Date: {receiptInv.invoice_date ? new Date(receiptInv.invoice_date).toLocaleDateString("en-IN") : "—"}</div>
+                    <div style={{ color:"#777" }}>Date: {receiptInv.invoice_date  ? new Date(receiptInv.invoice_date).toLocaleDateString("en-IN") : "—"}</div>
                   </div>
                 </div>
                 {/* Bill To */}
@@ -1160,9 +1160,9 @@ export default function Billing({ t }) {
                     {[
                       ["CGST (1.5%)",  `₹${parseFloat(receiptInv.cgst||0).toLocaleString("en-IN")}`],
                       ["SGST (1.5%)",  `₹${parseFloat(receiptInv.sgst||0).toLocaleString("en-IN")}`],
-                      ...(parseFloat(receiptInv.igst||0) > 0 ? [["IGST (3%)", `₹${parseFloat(receiptInv.igst).toLocaleString("en-IN")}`]] : []),
-                      ...(parseFloat(receiptInv.discount_amt||0) > 0 ? [["Discount", `- ₹${parseFloat(receiptInv.discount_amt).toLocaleString("en-IN")}`]] : []),
-                      ...(parseFloat(receiptInv.tcs||0) > 0 ? [["TCS (1%)", `₹${parseFloat(receiptInv.tcs).toLocaleString("en-IN")}`]] : []),
+                      ...(parseFloat(receiptInv.igst||0) > 0  ? [["IGST (3%)", `₹${parseFloat(receiptInv.igst).toLocaleString("en-IN")}`]] : []),
+                      ...(parseFloat(receiptInv.discount_amt||0) > 0  ? [["Discount", `- ₹${parseFloat(receiptInv.discount_amt).toLocaleString("en-IN")}`]] : []),
+                      ...(parseFloat(receiptInv.tcs||0) > 0  ? [["TCS (1%)", `₹${parseFloat(receiptInv.tcs).toLocaleString("en-IN")}`]] : []),
                     ].map(([k,v]) => (
                       <div key={k} style={{ display:"flex", justifyContent:"space-between",
                         padding:"3px 0", fontSize:12, color:"#777", borderBottom:"1px dashed #eee" }}>
@@ -1190,17 +1190,17 @@ export default function Billing({ t }) {
           <div style={{ display:"flex", gap:10, justifyContent:"center", marginTop:16 }}>
             <button onClick={() => printInvoice(receiptInv)}
               disabled={!receiptInv}
-              style={{ background: receiptInv ? BRAND.gradBtn : t.card, border:"none", borderRadius:8,
+              style={{ background: receiptInv  ? BRAND.gradBtn : t.card, border:"none", borderRadius:8,
                 color: receiptInv ? "#fff" : t.textFaint, fontSize:13, fontWeight:700,
                 padding:"9px 24px", cursor: receiptInv ? "pointer" : "not-allowed", fontFamily:"inherit" }}>
-              🖨 Print Invoice
+              Print Invoice
             </button>
             {receiptInv && (
               <a href={`https://wa.me/91${receiptInv.customer_phone || ""}?text=${encodeURIComponent(`Your invoice ${receiptInv.invoice_no} of ₹${parseFloat(receiptInv.grand_total).toLocaleString()} is ready. Thank you - Ceritage Jewelry`)}`}
                 target="_blank" rel="noreferrer"
                 style={{ background:"#25d366", color:"#fff", borderRadius:8, padding:"9px 20px",
                   fontSize:13, fontWeight:700, textDecoration:"none", display:"inline-block" }}>
-                💬 WhatsApp
+                WhatsApp
               </a>
             )}
           </div>
@@ -1218,7 +1218,7 @@ export default function Billing({ t }) {
             <div style={{ display:"flex", gap:0, border:`1px solid ${t.inputBorder}`, borderRadius:9, overflow:"hidden", marginBottom:14 }}>
               {["Credit","Debit"].map(nt => (
                 <button key={nt} onClick={() => setNoteType(nt)}
-                  style={{ flex:1, background: noteType===nt ? BRAND.gradBtn : "transparent",
+                  style={{ flex:1, background: noteType===nt  ? BRAND.gradBtn : "transparent",
                     color: noteType===nt ? "#fff" : t.textSub, border:"none",
                     padding:"8px 0", fontSize:13, fontWeight:600,
                     cursor:"pointer", fontFamily:"inherit" }}>

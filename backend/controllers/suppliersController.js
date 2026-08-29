@@ -37,7 +37,7 @@ async function getAll(req, res) {
     const whereClause = "WHERE " + where.join(" AND ");
 
     const [rows] = await db.query(
-      `SELECT * FROM suppliers ${whereClause} ORDER BY created_at DESC`,
+      `SELECT * FROM suppliers s ${whereClause} ORDER BY created_at DESC`,
       params
     );
     res.json({ success: true, data: rows });

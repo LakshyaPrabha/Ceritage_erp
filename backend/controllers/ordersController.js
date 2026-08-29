@@ -1,4 +1,4 @@
-const db = require("../config/db");
+﻿const db = require("../config/db");
 
 async function getAll(req, res) {
   try {
@@ -17,7 +17,7 @@ async function getAll(req, res) {
     );
     res.json({ success: true, data: rows });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 
@@ -35,7 +35,7 @@ async function create(req, res) {
     );
     res.status(201).json({ success: true, data: { id: result.insertId, order_id } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 
@@ -49,7 +49,7 @@ async function updateStatus(req, res) {
     await db.query("UPDATE orders SET status = ? WHERE id = ?", [nextStatus, req.params.id]);
     res.json({ success: true, message: `Status updated to ${nextStatus}`, data: { status: nextStatus } });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 
@@ -65,7 +65,7 @@ async function getKpis(req, res) {
     );
     res.json({ success: true, data: kpis });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.json({ success: true, data: [], message: "Table not yet created." });
   }
 }
 

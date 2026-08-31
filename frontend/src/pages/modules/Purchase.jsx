@@ -13,12 +13,11 @@ function fmt(n)     { return n ? "₹" + Number(n).toLocaleString("en-IN", { min
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString("en-IN") : "—"; }
 
 const TABS = [
-  { id:"po",         label:"Purchase Orders" },
-  { id:"return",     label:"Purchase Return" },
-  { id:"grn",        label:"GRN" },
-  { id:"sup-ledger", label:"Supplier Ledger" },
-  { id:"sup-pay",    label:"Supplier Payment" },
-  { id:"old-metal",  label:"Old Gold/Silver" },
+  { id: "po",         label: "Purchase Orders" },
+  { id: "grn",        label: "Goods Received (GRN)" },
+  { id: "sup-ledger", label: "Supplier Ledger" },
+  { id: "sup-pay",    label: "Payments & Payables" },
+  { id: "old-metal",  label: "Old Metal Purchases" }
 ];
 
 const EMPTY_PO = {
@@ -270,8 +269,9 @@ export default function Purchase({ t }) {
   // ── render ────────────────────────────────────────────────────────────────────
   return (
     <div>
-      <PageHeader title="Purchase Management"
-        subtitle="Purchase Entry · Return · Supplier Ledger · PO · GRN · Old Gold/Silver"
+      <PageHeader
+        title="Purchase & Supply Chain Management"
+        subtitle="Purchase Orders · Goods Received (GRN) · Automatic Inventory Ingestion · Supplier Ledger & Payables"
         t={t}
         actions={<>
           <BtnOutline t={t} onClick={() => { setPretModal(true); loadSuppliers(); }}>Purchase Return</BtnOutline>
@@ -289,6 +289,7 @@ export default function Purchase({ t }) {
 
       <Tabs tabs={TABS} active={tab} onChange={setTab} t={t} />
 
+      {/* ── TAB 1: PURCHASE ORDERS REGISTER ─────────────────────────────────── */}
       {tab === "po" && (
         <Card t={t}>
           <CardHeader title="Purchase Orders" t={t}
@@ -355,6 +356,7 @@ export default function Purchase({ t }) {
         </Card>
       )}
 
+      {/* ── TAB 2: GOODS RECEIVED NOTE (GRN REGISTER) ───────────────────────── */}
       {tab === "grn" && (
         <Card t={t}>
           <CardHeader title="Goods Received Note (GRN)" t={t}
@@ -385,6 +387,7 @@ export default function Purchase({ t }) {
         </Card>
       )}
 
+      {/* ── TAB 3: SUPPLIER LEDGER STATEMENT ────────────────────────────────── */}
       {tab === "sup-ledger" && (
         <Card t={t}>
           <CardHeader title="Supplier Ledger" t={t}
@@ -425,7 +428,104 @@ export default function Purchase({ t }) {
         </Card>
       )}
 
+      {/* ── TAB 4: PAYMENTS & PAYABLES ───────────────────────────────────────── */}
       {tab === "sup-pay" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          {/* Active Payables */}
+          <Card t={t}>
+            <CardHeader
+              title="Supplier Payables & Outstanding"
+              t={t}
+              actions={<BtnSm t={t} primary onClick={() => setPaymentModal(true)}>+ Pay Supplier</BtnSm>}
+            />
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#f8f9fa", borderBottom: "1px solid #e9ecef" }}>
+                    <th style={{ padding: "10px 12px" }}>Supplier</th>
+                    <th style={{ padding: "10px 12px" }}>City</th>
+                    <th style={{ padding: "10px 12px" }}>Outstanding</th>
+                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payables.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ padding: 20, textAlign: "center", color: "#888" }}>
+                        No pending payables. All suppliers are settled!
+                      </td>
+                    </tr>
+                  ) : (
+                    payables.map((p) => (
+                      <tr key={p.supplier_id} style={{ borderBottom: "1px solid #eee" }}>
+                        <td style={{ padding: "10px 12px", fontWeight: 600 }}>{p.company_name}</td>
+                        <td style={{ padding: "10px 12px", color: "#666" }}>{p.city || "-"}</td>
+                        <td style={{ padding: "10px 12px", fontWeight: "bold", color: "#e74c3c" }}>
+                          ₹{parseFloat(p.outstanding || 0).toLocaleString("en-IN")}
+                        </td>
+                        <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <BtnSm
+                            t={t}
+                            primary
+                            onClick={() => {
+                              setPaymentForm({ ...paymentForm, supplier_id: p.supplier_id });
+                              setPaymentModal(true);
+                            }}
+                          >
+                            Pay Now
+                          </BtnSm>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Payment History */}
+          <Card t={t}>
+            <CardHeader title="Recent Supplier Payments" t={t} />
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: "#f8f9fa", borderBottom: "1px solid #e9ecef" }}>
+                    <th style={{ padding: "10px 12px" }}>Pay ID</th>
+                    <th style={{ padding: "10px 12px" }}>Date</th>
+                    <th style={{ padding: "10px 12px" }}>Supplier</th>
+                    <th style={{ padding: "10px 12px" }}>Mode</th>
+                    <th style={{ padding: "10px 12px" }}>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paymentsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} style={{ padding: 20, textAlign: "center", color: "#888" }}>
+                        No payments recorded yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    paymentsList.map((sp) => (
+                      <tr key={sp.id} style={{ borderBottom: "1px solid #eee" }}>
+                        <td style={{ padding: "10px 12px", fontWeight: "bold", color: BRAND.blue }}>{sp.pay_id}</td>
+                        <td style={{ padding: "10px 12px" }}>{sp.created_at ? sp.created_at.split("T")[0] : "-"}</td>
+                        <td style={{ padding: "10px 12px", fontWeight: 500 }}>{sp.supplier_name || "-"}</td>
+                        <td style={{ padding: "10px 12px" }}>{sp.payment_mode}</td>
+                        <td style={{ padding: "10px 12px", fontWeight: "bold", color: "#27ae60" }}>
+                          ₹{parseFloat(sp.amount || 0).toLocaleString("en-IN")}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── TAB 5: OLD METAL PURCHASES ───────────────────────────────────────── */}
+      {tab === "old-metal" && (
         <Card t={t}>
           <CardHeader title="Supplier Payments" t={t}
             actions={<BtnSm t={t} primary onClick={() => { setPayModal(true); loadSuppliers(); }}>New Payment</BtnSm>} />
@@ -491,6 +591,86 @@ export default function Purchase({ t }) {
             }
           </Card>
         </div>
+      </Modal>
+
+      {/* ── MODAL: PO DETAILS ────────────────────────────────────────────────── */}
+      {selectedPo && (
+        <Modal
+          open={poDetailModal}
+          onClose={() => setPoDetailModal(false)}
+          title={`Purchase Order Details — ${selectedPo.po_no}`}
+          t={t}
+          footer={
+            <>
+              {selectedPo.status !== "CANCELLED" && selectedPo.status !== "RECEIVED" && (
+                <button
+                  onClick={() => handlePoStatusChange(selectedPo.id, "CANCELLED")}
+                  style={{ background: "#fdedec", color: "#e74c3c", border: "none", padding: "8px 14px", borderRadius: 6, cursor: "pointer", marginRight: "auto" }}
+                >
+                  Cancel PO
+                </button>
+              )}
+              <BtnOutline t={t} onClick={() => setPoDetailModal(false)}>Close</BtnOutline>
+              {selectedPo.status !== "RECEIVED" && selectedPo.status !== "CANCELLED" && (
+                <BtnPrimary
+                  onClick={() => {
+                    setPoDetailModal(false);
+                    initReceiveGrn(selectedPo);
+                  }}
+                >
+                  Receive Goods (GRN)
+                </BtnPrimary>
+              )}
+            </>
+          }
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: 12, color: "#777" }}>Supplier</div>
+              <div style={{ fontWeight: "bold", fontSize: 14 }}>{selectedPo.supplier_name}</div>
+              <div style={{ fontSize: 12, color: "#555" }}>{selectedPo.supplier_phone} · {selectedPo.supplier_city}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "#777" }}>PO Date & Status</div>
+              <div style={{ fontWeight: 600 }}>{selectedPo.purchase_date?.split("T")[0]}</div>
+              <div style={{ marginTop: 4 }}>{getStatusBadge(selectedPo.status)}</div>
+            </div>
+          </div>
+
+          <h4 style={{ margin: "14px 0 8px 0", fontSize: 13 }}>Line Items</h4>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 14 }}>
+            <thead>
+              <tr style={{ background: "#f8f9fa", borderBottom: "1px solid #ddd" }}>
+                <th style={{ padding: "8px 10px" }}>Item</th>
+                <th style={{ padding: "8px 10px" }}>Purity</th>
+                <th style={{ padding: "8px 10px" }}>Ordered</th>
+                <th style={{ padding: "8px 10px" }}>Received</th>
+                <th style={{ padding: "8px 10px" }}>Weight (g)</th>
+                <th style={{ padding: "8px 10px" }}>Rate</th>
+                <th style={{ padding: "8px 10px" }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedPo.items?.map((item) => (
+                <tr key={item.id} style={{ borderBottom: "1px solid #eee" }}>
+                  <td style={{ padding: "8px 10px", fontWeight: 600 }}>{item.item_name}</td>
+                  <td style={{ padding: "8px 10px" }}>{item.purity}</td>
+                  <td style={{ padding: "8px 10px", fontWeight: 600 }}>{item.ordered_qty}</td>
+                  <td style={{ padding: "8px 10px", color: item.received_qty > 0 ? "#27ae60" : "#888", fontWeight: 600 }}>
+                    {item.received_qty}
+                  </td>
+                  <td style={{ padding: "8px 10px" }}>{parseFloat(item.weight_g || 0).toFixed(3)}</td>
+                  <td style={{ padding: "8px 10px" }}>₹{parseFloat(item.rate || 0).toLocaleString("en-IN")}</td>
+                  <td style={{ padding: "8px 10px", fontWeight: "bold" }}>₹{parseFloat(item.amount || 0).toLocaleString("en-IN")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ textAlign: "right", fontSize: 14, fontWeight: "bold", borderTop: "1px solid #eee", paddingTop: 10 }}>
+            Grand Total: ₹{parseFloat(selectedPo.total || 0).toLocaleString("en-IN")}
+          </div>
+        </Modal>
       )}
 
       {/* Add PO Modal */}
@@ -531,6 +711,88 @@ export default function Purchase({ t }) {
               <option value={3}>3%</option><option value={0.25}>0.25%</option><option value={5}>5%</option><option value={18}>18%</option>
             </Select>
           </FormGroup>
+
+          <FormGroup label="Payment Remarks" t={t}>
+            <Input
+              t={t}
+              placeholder="e.g. Full settlement for GRN-2026-0001"
+              value={paymentForm.remark}
+              onChange={(e) => setPaymentForm({ ...paymentForm, remark: e.target.value })}
+            />
+          </FormGroup>
+        </FormGrid>
+      </Modal>
+
+      {/* ── MODAL: OLD METAL SCRAP PURCHASE ─────────────────────────────────── */}
+      <Modal
+        open={oldMetalModal}
+        onClose={() => setOldMetalModal(false)}
+        title="Old Metal Scrap / Exchange Purchase"
+        t={t}
+        footer={
+          <>
+            <BtnOutline t={t} onClick={() => setOldMetalModal(false)}>Cancel</BtnOutline>
+            <BtnPrimary onClick={submitOldMetal}>Save Old Metal Entry</BtnPrimary>
+          </>
+        }
+      >
+        <FormGrid>
+          <FormGroup label="Metal Type" t={t} half>
+            <Select
+              t={t}
+              value={oldMetalForm.metal_type}
+              onChange={(e) => setOldMetalForm({ ...oldMetalForm, metal_type: e.target.value })}
+            >
+              <option value="Gold">Gold (Old Jewellery / Scrap)</option>
+              <option value="Silver">Silver</option>
+              <option value="Platinum">Platinum</option>
+            </Select>
+          </FormGroup>
+
+          <FormGroup label="Gross Weight (g) *" t={t} half>
+            <Input
+              t={t}
+              type="number"
+              step="0.001"
+              placeholder="0.000"
+              value={oldMetalForm.gross_weight}
+              onChange={(e) => setOldMetalForm({ ...oldMetalForm, gross_weight: e.target.value })}
+            />
+          </FormGroup>
+
+          <FormGroup label="Stone / Dust Deduction (g)" t={t} half>
+            <Input
+              t={t}
+              type="number"
+              step="0.001"
+              value={oldMetalForm.stone_deduction}
+              onChange={(e) => setOldMetalForm({ ...oldMetalForm, stone_deduction: e.target.value })}
+            />
+          </FormGroup>
+
+          <FormGroup label="Purity Factor" t={t} half>
+            <Select
+              t={t}
+              value={oldMetalForm.purity}
+              onChange={(e) => setOldMetalForm({ ...oldMetalForm, purity: e.target.value })}
+            >
+              <option value="0.9167">22K (91.67% Fine)</option>
+              <option value="0.7500">18K (75.00% Fine)</option>
+              <option value="0.5833">14K (58.33% Fine)</option>
+              <option value="0.9990">24K (99.90% Fine)</option>
+            </Select>
+          </FormGroup>
+
+          <FormGroup label="Purchase Rate / g (₹) *" t={t} half>
+            <Input
+              t={t}
+              type="number"
+              placeholder="Current scrap rate"
+              value={oldMetalForm.rate}
+              onChange={(e) => setOldMetalForm({ ...oldMetalForm, rate: e.target.value })}
+            />
+          </FormGroup>
+
           <FormGroup label="Payment Mode" t={t} half>
             <Select t={t} value={poForm.payment_mode} onChange={e => setPoForm(p => ({ ...p, payment_mode: e.target.value }))}>
               <option>RTGS</option><option>NEFT</option><option>Cheque</option><option>Cash</option><option>UPI</option>

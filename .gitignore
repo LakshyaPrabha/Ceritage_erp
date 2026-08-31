@@ -28,3 +28,9 @@ Thumbs.db
 .idea/
 backend/.env
 backend/.env
+
+mysql_data/
+backend/.env
+
+backend/.env
+mysql_data/

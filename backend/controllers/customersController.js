@@ -1,4 +1,4 @@
-﻿const db = require("../config/db");
+const db = require("../config/db");
 
 /**
  * Normalize phone numbers to clean canonical format (Indian standard 10-digits or clean string)
@@ -56,12 +56,12 @@ async function getKpis(req, res) {
   try {
     const [[totals]] = await db.query(
       `SELECT
-         COUNT(CASE WHEN status = 'Active' THEN 1 END) AS total_customers,
-         SUM(CASE WHEN status = 'Active' AND tier = 'Platinum' THEN 1 ELSE 0 END) AS platinum,
-         SUM(CASE WHEN status = 'Active' AND tier = 'Gold' THEN 1 ELSE 0 END) AS gold,
-         SUM(CASE WHEN status = 'Active' AND balance_due > 0 THEN 1 ELSE 0 END) AS pending_dues,
+         COUNT(CASE WHEN status = 'ACTIVE' THEN 1 END) AS total_customers,
+         SUM(CASE WHEN status = 'ACTIVE' AND tier = 'Platinum' THEN 1 ELSE 0 END) AS platinum,
+         SUM(CASE WHEN status = 'ACTIVE' AND tier = 'Gold' THEN 1 ELSE 0 END) AS gold,
+         SUM(CASE WHEN status = 'ACTIVE' AND balance_due > 0 THEN 1 ELSE 0 END) AS pending_dues,
          SUM(CASE WHEN status = 'ARCHIVED' THEN 1 ELSE 0 END) AS archived_customers,
-         SUM(CASE WHEN status = 'Active' AND (MONTH(date_of_birth) = MONTH(CURDATE()) OR MONTH(anniversary) = MONTH(CURDATE())) THEN 1 ELSE 0 END) AS birthdays_this_month
+         SUM(CASE WHEN status = 'ACTIVE' AND (MONTH(date_of_birth) = MONTH(CURDATE()) OR MONTH(anniversary) = MONTH(CURDATE())) THEN 1 ELSE 0 END) AS birthdays_this_month
        FROM customers`
     );
 
@@ -69,7 +69,7 @@ async function getKpis(req, res) {
       `SELECT COUNT(*) AS active_emis
        FROM emi_plans ep
        INNER JOIN customers c ON c.id = ep.customer_id
-       WHERE ep.status = 'Active' AND c.status = 'Active'`
+       WHERE ep.status = 'Active' AND c.status = 'ACTIVE'`
     );
 
     res.json({
@@ -96,26 +96,26 @@ async function getAll(req, res) {
   try {
     const { search, tier, city, kyc_status, status = "active", page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
-    let where = `WHERE c.branch_id = ?`;
-    const params = [branch_id];
+    const conditions = [];
+    const params = [];
 
     if (status === "active") {
-      where += " AND c.status = 'Active'";
+      conditions.push("c.status = 'ACTIVE'");
     } else if (status === "archived") {
-      where += " AND c.status = 'ARCHIVED'";
+      conditions.push("c.status = 'ARCHIVED'");
     }
 
     if (search) {
       const cleanPhoneSearch = normalizePhone(search);
-      where += " AND (c.full_name LIKE ? OR c.phone LIKE ? OR c.customer_code LIKE ? OR c.city LIKE ? OR c.phone LIKE ?)";
+      conditions.push("(c.full_name LIKE ? OR c.phone LIKE ? OR c.customer_id LIKE ? OR c.city LIKE ? OR c.phone LIKE ?)");
       const s = `%${search}%`;
       params.push(s, s, s, s, `%${cleanPhoneSearch}%`);
     }
-    if (tier)       { where += ` AND c.tier = ?`;        params.push(tier); }
-    if (city)       { where += ` AND c.city = ?`;         params.push(city); }
-    if (kyc_status) { where += ` AND c.kyc_status = ?`;   params.push(kyc_status); }
+    if (tier)       { conditions.push("c.tier = ?");       params.push(tier); }
+    if (city)       { conditions.push("c.city = ?");        params.push(city); }
+    if (kyc_status) { conditions.push("c.kyc_status = ?");  params.push(kyc_status); }
 
-    const whereClause = where;
+    const whereClause = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
     const [rows] = await db.query(
       `SELECT c.*,
@@ -123,7 +123,7 @@ async function getAll(req, res) {
               COUNT(DISTINCT i.id) AS total_orders
        FROM customers c
        LEFT JOIN invoices i ON i.customer_id = c.id
-       ${where}
+       ${whereClause}
        GROUP BY c.id
        ORDER BY c.created_at DESC
        LIMIT ? OFFSET ?`,
@@ -212,21 +212,23 @@ async function create(req, res) {
 
   try {
     const [existing] = await db.query(
-      `SELECT id, customer_code, full_name, status FROM customers WHERE phone = ?`,
+      `SELECT id, customer_id, full_name, status FROM customers WHERE phone = ?`,
       [normalizedPhone]
     );
 
     if (existing.length > 0) {
       const found = existing[0];
-      if (found.status === "ACTIVE" || found.status === "Active") {
+      if (found.status === "ACTIVE") {
         return res.status(409).json({
           success: false,
-          message: `A customer with this phone number already exists (${found.full_name}).`,
+          message: `A customer with phone number ${normalizedPhone} is already registered (${found.full_name}, ID: ${found.customer_id}).`,
+          existingCustomer: { id: found.id, customer_id: found.customer_id, full_name: found.full_name }
         });
       } else {
         return res.status(409).json({
           success: false,
-          message: `A customer with this phone number was previously archived (${found.full_name}).`,
+          message: `A customer with this phone number was previously archived (${found.full_name}, ID: ${found.customer_id}). Please restore the profile or use another number.`,
+          archivedCustomer: { id: found.id, customer_id: found.customer_id, full_name: found.full_name }
         });
       }
     }
@@ -246,12 +248,11 @@ async function create(req, res) {
 
     const [result] = await db.query(
       `INSERT INTO customers
-       (branch_id, customer_code, full_name, phone, email, date_of_birth, anniversary, tier,
+       (customer_id, full_name, phone, email, date_of_birth, anniversary, tier,
         city, state, pan, aadhaar, gst_number, credit_limit, loyalty_points,
-        wallet_balance, kyc_status, status, balance_due)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', 0)`,
+        wallet_balance, kyc_status, opt_in_whatsapp, opt_in_sms, opt_in_marketing, preferred_channel, status, balance_due)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0)`,
       [
-        req.user.branch_id,
         customer_id, full_name.trim(), normalizedPhone, email ? email.trim() : null,
         date_of_birth || null, anniversary || null, tier,
         city ? city.trim() : null, state ? state.trim() : null,
@@ -260,6 +261,8 @@ async function create(req, res) {
         gst_number ? gst_number.trim().toUpperCase() : null,
         Number(credit_limit || 0), initialLoyalty,
         initialWallet, calculatedKyc,
+        Boolean(opt_in_whatsapp), Boolean(opt_in_sms), Boolean(opt_in_marketing),
+        preferred_channel
       ]
     );
 
@@ -320,13 +323,13 @@ async function update(req, res) {
       cleanPhone = normalizePhone(phone);
       if (cleanPhone !== currentCust.phone) {
         const [conflict] = await db.query(
-          "SELECT id, customer_id, full_name FROM customers WHERE phone = ? AND id != ? AND status = 'Active'",
+          "SELECT id, customer_id, full_name FROM customers WHERE phone = ? AND id != ? AND status = 'ACTIVE'",
           [cleanPhone, custId]
         );
         if (conflict.length > 0) {
           return res.status(409).json({
             success: false,
-            message: `Another customer (${conflict[0].full_name}, ID: ${conflict[0].customer_code}) is already registered with phone ${cleanPhone}.`
+            message: `Another customer (${conflict[0].full_name}, ID: ${conflict[0].customer_id}) is already registered with phone ${cleanPhone}.`
           });
         }
       }
@@ -377,7 +380,7 @@ async function update(req, res) {
     );
 
     const performedBy = req.user?.full_name || req.user?.username || "Admin";
-    await logCustomerAudit(custId, "UPDATED", performedBy, `Updated customer profile ${currentCust.customer_code}`);
+    await logCustomerAudit(custId, "UPDATED", performedBy, `Updated customer profile ${currentCust.customer_id}`);
 
     res.json({ success: true, message: "Customer updated successfully" });
   } catch (err) {
@@ -398,11 +401,11 @@ async function remove(req, res) {
     await db.query("UPDATE customers SET status = 'ARCHIVED' WHERE id = ?", [custId]);
 
     const performedBy = req.user?.full_name || req.user?.username || "Admin";
-    await logCustomerAudit(custId, "ARCHIVED", performedBy, `Archived customer ${cust.full_name} (${cust.customer_code}). All historical invoices and ledger records preserved.`);
+    await logCustomerAudit(custId, "ARCHIVED", performedBy, `Archived customer ${cust.full_name} (${cust.customer_id}). All historical invoices and ledger records preserved.`);
 
     res.json({
       success: true,
-      message: `Customer ${cust.full_name} (${cust.customer_code}) archived successfully. Historical records preserved.`
+      message: `Customer ${cust.full_name} (${cust.customer_id}) archived successfully. Historical records preserved.`
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -420,24 +423,24 @@ async function restore(req, res) {
     const cust = rows[0];
 
     const [conflict] = await db.query(
-      "SELECT id, customer_id, full_name FROM customers WHERE phone = ? AND id != ? AND status = 'Active'",
+      "SELECT id, customer_id, full_name FROM customers WHERE phone = ? AND id != ? AND status = 'ACTIVE'",
       [cust.phone, custId]
     );
     if (conflict.length > 0) {
       return res.status(409).json({
         success: false,
-        message: `Cannot restore customer. Phone number ${cust.phone} is already assigned to another active customer (${conflict[0].full_name}, ID: ${conflict[0].customer_code}).`
+        message: `Cannot restore customer. Phone number ${cust.phone} is already assigned to another active customer (${conflict[0].full_name}, ID: ${conflict[0].customer_id}).`
       });
     }
 
-    await db.query("UPDATE customers SET status = 'Active' WHERE id = ?", [custId]);
+    await db.query("UPDATE customers SET status = 'ACTIVE' WHERE id = ?", [custId]);
 
     const performedBy = req.user?.full_name || req.user?.username || "Admin";
-    await logCustomerAudit(custId, "RESTORED", performedBy, `Restored customer ${cust.full_name} (${cust.customer_code}) to active directory.`);
+    await logCustomerAudit(custId, "RESTORED", performedBy, `Restored customer ${cust.full_name} (${cust.customer_id}) to active directory.`);
 
     res.json({
       success: true,
-      message: `Customer ${cust.full_name} (${cust.customer_code}) restored to active status.`
+      message: `Customer ${cust.full_name} (${cust.customer_id}) restored to active status.`
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -874,18 +877,25 @@ async function createNote(req, res) {
 // PUT /api/customers/:id/notes/:noteId/pin -> Toggle pinned status
 async function togglePinNote(req, res) {
   const { id: customerId, noteId } = req.params;
-  const { is_pinned } = req.body;
+  const body = req.body || {};
 
   try {
+    const [existing] = await db.query("SELECT is_pinned FROM customer_notes WHERE id = ? AND customer_id = ?", [noteId, customerId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: "Note not found" });
+    }
+
+    const nextPinState = body.is_pinned !== undefined ? Boolean(body.is_pinned) : !Boolean(existing[0].is_pinned);
+
     await db.query(
       "UPDATE customer_notes SET is_pinned = ? WHERE id = ? AND customer_id = ?",
-      [Boolean(is_pinned), noteId, customerId]
+      [nextPinState, noteId, customerId]
     );
 
     const author = req.user?.full_name || req.user?.username || "Staff";
-    await logCustomerAudit(customerId, "NOTE_PIN_TOGGLED", author, `${is_pinned ? 'Pinned' : 'Unpinned'} customer note #${noteId}`);
+    await logCustomerAudit(customerId, "NOTE_PIN_TOGGLED", author, `${nextPinState ? 'Pinned' : 'Unpinned'} customer note #${noteId}`);
 
-    res.json({ success: true, message: `Note ${is_pinned ? 'pinned' : 'unpinned'} successfully` });
+    res.json({ success: true, is_pinned: nextPinState, message: `Note ${nextPinState ? 'pinned' : 'unpinned'} successfully` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -1265,7 +1275,7 @@ async function getCustomer360(req, res) {
               DATEDIFF(cm.expiry_date, CURDATE()) AS days_remaining
        FROM customer_memberships cm
        JOIN membership_plans mp ON cm.plan_id = mp.id
-       WHERE cm.customer_id = ? AND cm.status = 'Active' AND cm.expiry_date >= CURDATE()
+       WHERE cm.customer_id = ? AND cm.status = 'ACTIVE' AND cm.expiry_date >= CURDATE()
        ORDER BY cm.expiry_date DESC LIMIT 1`,
       [customerId]
     );
@@ -1381,7 +1391,7 @@ async function getUpcomingReminders(req, res) {
               END AS event_type,
               COALESCE(date_of_birth, anniversary) AS event_date
        FROM customers
-       WHERE status = 'Active'
+       WHERE status = 'ACTIVE'
          AND ((date_of_birth IS NOT NULL AND MONTH(date_of_birth) = MONTH(CURDATE()))
           OR (anniversary IS NOT NULL AND MONTH(anniversary) = MONTH(CURDATE())))
        ORDER BY DAY(event_date) ASC`
@@ -1396,12 +1406,12 @@ async function getUpcomingReminders(req, res) {
 async function getDuesReport(req, res) {
   try {
     const [rows] = await db.query(
-      `SELECT c.id, c.customer_code, c.full_name, c.phone, c.tier, c.balance_due, c.credit_limit,
+      `SELECT c.id, c.customer_id, c.full_name, c.phone, c.tier, c.balance_due, c.credit_limit,
               COALESCE(SUM(i.grand_total), 0) AS total_purchase,
               COALESCE(SUM(i.paid_amount), 0) AS total_paid
        FROM customers c
        LEFT JOIN invoices i ON i.customer_id = c.id
-       WHERE c.status = 'Active' AND c.balance_due > 0
+       WHERE c.status = 'ACTIVE' AND c.balance_due > 0
        GROUP BY c.id
        ORDER BY c.balance_due DESC`
     );
@@ -1419,7 +1429,7 @@ async function getWalletReport(req, res) {
               (loyalty_points * 0.25) AS redeemable_value,
               wallet_balance
        FROM customers
-       WHERE status = 'Active'
+       WHERE status = 'ACTIVE'
        ORDER BY loyalty_points DESC, wallet_balance DESC`
     );
     res.json({ success: true, data: rows });
@@ -1432,12 +1442,12 @@ async function getWalletReport(req, res) {
 async function getCreditReport(req, res) {
   try {
     const [rows] = await db.query(
-      `SELECT c.id, c.customer_code, c.full_name, c.phone, c.tier, c.credit_limit,
+      `SELECT c.id, c.customer_id, c.full_name, c.phone, c.tier, c.credit_limit,
               c.balance_due AS used_credit,
               GREATEST(0, c.credit_limit - c.balance_due) AS available_credit,
               c.balance_due
        FROM customers c
-       WHERE c.status = 'Active' AND (c.credit_limit > 0 OR c.balance_due > 0)
+       WHERE c.status = 'ACTIVE' AND (c.credit_limit > 0 OR c.balance_due > 0)
        ORDER BY c.credit_limit DESC`
     );
     res.json({ success: true, data: rows });
@@ -1452,7 +1462,7 @@ async function getKycReport(req, res) {
     const [rows] = await db.query(
       `SELECT id, customer_id, full_name, phone, pan, aadhaar, gst_number, kyc_status
        FROM customers
-       WHERE status = 'Active'
+       WHERE status = 'ACTIVE'
        ORDER BY kyc_status ASC, created_at DESC`
     );
     const sanitized = rows.map(r => ({

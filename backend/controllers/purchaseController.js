@@ -19,14 +19,27 @@ async function getKpis(req, res) {
 
 // ─── PURCHASE ORDERS ──────────────────────────────────────────────────────────
 async function getAll(req, res) {
+  const branch_id = req.user?.branch_id || 1;
   try {
-    const { supplier_id, type, status, page = 1, limit = 50 } = req.query;
-    const offset = (page - 1) * limit;
-    let where = "WHERE 1=1";
-    const params = [];
-    if (supplier_id) { where += " AND po.supplier_id = ?"; params.push(supplier_id); }
-    if (type)        { where += " AND po.material_type = ?"; params.push(type); }
-    if (status)      { where += " AND po.status = ?"; params.push(status); }
+    const { supplier_id, status, search, page = 1, limit = 50 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const conditions = ["po.branch_id = ?"];
+    const params = [branch_id];
+
+    if (supplier_id) {
+      conditions.push("po.supplier_id = ?");
+      params.push(supplier_id);
+    }
+    if (status && status !== "ALL") {
+      conditions.push("po.status = ?");
+      params.push(status);
+    }
+    if (search) {
+      conditions.push("(po.po_no LIKE ? OR s.company_name LIKE ? OR po.item_description LIKE ?)");
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    const whereClause = "WHERE " + conditions.join(" AND ");
 
     const [rows] = await db.query(
       `SELECT po.*, s.company_name AS supplier_name
@@ -45,7 +58,9 @@ async function getAll(req, res) {
   }
 }
 
+// ── GET /api/purchases/orders/:id (PO Detail with Items) ─────────────────────
 async function getById(req, res) {
+  const branch_id = req.user?.branch_id || 1;
   try {
     const [[row]] = await db.query(
       `SELECT po.*, s.company_name AS supplier_name
@@ -61,6 +76,7 @@ async function getById(req, res) {
   }
 }
 
+// ── POST /api/purchases/orders (Create PO with Multi-Items) ──────────────────
 async function create(req, res) {
   const conn = await db.getConnection();
   try {
@@ -137,7 +153,24 @@ async function updatePO(req, res) {
 
 // ─── GRNs ─────────────────────────────────────────────────────────────────────
 async function getGRNs(req, res) {
+  const branch_id = req.user?.branch_id || 1;
   try {
+    const { supplier_id, search, page = 1, limit = 50 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const conditions = ["g.branch_id = ?"];
+    const params = [branch_id];
+
+    if (supplier_id) {
+      conditions.push("g.supplier_id = ?");
+      params.push(supplier_id);
+    }
+    if (search) {
+      conditions.push("(g.grn_no LIKE ? OR g.grn_id LIKE ? OR s.company_name LIKE ? OR g.invoice_ref LIKE ?)");
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    const whereClause = "WHERE " + conditions.join(" AND ");
+
     const [rows] = await db.query(
       `SELECT g.*, s.company_name AS supplier_name, po.po_no
        FROM grns g
@@ -145,7 +178,24 @@ async function getGRNs(req, res) {
        LEFT JOIN purchase_orders po ON g.po_id = po.id
        ORDER BY g.received_date DESC, g.created_at DESC`
     );
-    res.json({ success: true, data: rows });
+
+    const [[{ totalCount }]] = await db.query(
+      `SELECT COUNT(*) AS totalCount FROM grns g
+       LEFT JOIN suppliers s ON g.supplier_id = s.id
+       ${whereClause}`,
+      params
+    );
+
+    res.json({
+      success: true,
+      data: rows,
+      pagination: {
+        total: totalCount,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(totalCount / parseInt(limit))
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

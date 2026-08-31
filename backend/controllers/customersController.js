@@ -377,7 +377,7 @@ async function update(req, res) {
     );
 
     const performedBy = req.user?.full_name || req.user?.username || "Admin";
-    await logCustomerAudit(custId, "UPDATED", performedBy, `Updated customer profile ${currentcust.customer_code}`);
+    await logCustomerAudit(custId, "UPDATED", performedBy, `Updated customer profile ${currentCust.customer_code}`);
 
     res.json({ success: true, message: "Customer updated successfully" });
   } catch (err) {

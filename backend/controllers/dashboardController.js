@@ -25,8 +25,7 @@ async function getKpis(req, res) {
 
     if (await tableExists("customers")) {
       const [[c]] = await db.query(
-        "SELECT COUNT(*) AS total_customers FROM customers WHERE status = 'Active' AND branch_id = ?",
-        [branch_id]
+        "SELECT COUNT(*) AS total_customers FROM customers WHERE status IN ('Active','ACTIVE')"
       );
       result.total_customers = c.total_customers || 0;
     }
@@ -34,8 +33,8 @@ async function getKpis(req, res) {
     if (await tableExists("invoices")) {
       const [[sales]] = await db.query(
         `SELECT COALESCE(SUM(grand_total),0) AS today_sales, COUNT(*) AS bills_today
-         FROM invoices WHERE DATE(invoice_date) = ? AND branch_id = ?`,
-        [today, branch_id]
+         FROM invoices WHERE DATE(invoice_date) = ?`,
+        [today]
       );
       result.today_sales = sales.today_sales || 0;
       result.bills_today  = sales.bills_today  || 0;
@@ -43,8 +42,7 @@ async function getKpis(req, res) {
 
     if (await tableExists("repair_jobs")) {
       const [[repairs]] = await db.query(
-        "SELECT COUNT(*) AS pending_repairs FROM repair_jobs WHERE status IN ('Pending','In Progress','Overdue') AND branch_id = ?",
-        [branch_id]
+        "SELECT COUNT(*) AS pending_repairs FROM repair_jobs WHERE status IN ('Pending','In Progress','Overdue')"
       );
       result.pending_repairs = repairs.pending_repairs || 0;
     }
@@ -52,8 +50,7 @@ async function getKpis(req, res) {
     if (await tableExists("products")) {
       const [[stock]] = await db.query(
         `SELECT COUNT(*) AS stock_items, COALESCE(SUM(gross_weight * stock_qty),0) AS gold_weight
-         FROM products WHERE status = 'Active' AND branch_id = ?`,
-        [branch_id]
+         FROM products WHERE stock_qty > 0`
       );
       result.stock_items   = stock.stock_items || 0;
       result.gold_in_stock = `${(parseFloat(stock.gold_weight || 0) / 1000).toFixed(3)} kg`;
@@ -77,9 +74,7 @@ async function getRecentBills(req, res) {
               i.grand_total AS amount, i.payment_mode, i.status
        FROM invoices i
        LEFT JOIN customers c ON i.customer_id = c.id
-       WHERE i.branch_id = ?
-       ORDER BY i.created_at DESC LIMIT 10`,
-      [branch_id]
+       ORDER BY i.created_at DESC LIMIT 10`
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -97,7 +92,7 @@ async function getAlerts(req, res) {
       const [lowStock] = await db.query(
         `SELECT name, sku, stock_qty
          FROM products
-         WHERE stock_qty <= min_stock_qty AND status = 'Active'
+         WHERE stock_qty <= min_stock AND stock_qty >= 0
          LIMIT 5`
       );
       lowStock.forEach(p => alerts.push({

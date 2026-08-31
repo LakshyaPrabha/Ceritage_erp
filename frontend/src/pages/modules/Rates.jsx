@@ -214,15 +214,6 @@ export default function Rates({ t }) {
   const mcx = ratesData?.mcxReference || {};
   const lbma = ratesData?.lbmaReference || {};
 
-  const METAL_CARDS = current ? [
-    { label: "22K Gold /g",   value: fmt(current.rate_22k),      color: BRAND.blue   },
-    { label: "24K Gold /g",   value: fmt(current.rate_24k),      color: BRAND.purple },
-    { label: "18K Gold /g",   value: fmt(current.rate_18k),      color: "#3498db"    },
-    { label: "14K Gold /g",   value: fmt(current.rate_14k),      color: BRAND.pink   },
-    { label: "Silver /g",     value: fmt(current.silver_rate),   color: "#95a5a6"    },
-    { label: "Platinum /g",   value: fmt(current.platinum_rate), color: "#bdc3c7"    },
-    { label: "USD / INR",     value: fmt(current.usd_inr),       color: "#2ecc71"    },
-  ] : [];
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -626,11 +617,11 @@ export default function Rates({ t }) {
                 </span>
               </div>
 
-              {current && calcWeight && (
-                <div style={{ fontSize: 11, color: t.textFaint, textAlign: "center", marginTop: 4 }}>
-                  Based on {calcPurity} rate: Rs.{current.rate_22k}/g (22K)
-                </div>
-              )}
+              {/* {current && calcWeight && (
+                // <div style={{ fontSize: 11, color: t.textFaint, textAlign: "center", marginTop: 4 }}>
+                //   Based on {calcPurity} rate: Rs.{current.rate_22k}/g (22K)
+                // </div>
+              )} */}
             </div>
           </div>
           <BtnPrimary style={{ marginTop:8 }}>Save Alert Settings</BtnPrimary>

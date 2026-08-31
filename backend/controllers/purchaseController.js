@@ -1,5 +1,23 @@
 const db = require("../config/db");
 
+// ─── KPIs ─────────────────────────────────────────────────────────────────────
+async function getKpis(req, res) {
+  try {
+    const [[kpis]] = await db.query(
+      `SELECT
+         COALESCE(SUM(total),0)                              AS total_purchase_value,
+         COALESCE(SUM(total - COALESCE(paid_amount,0)),0)   AS pending_payments,
+         COALESCE(SUM(total),0)                             AS purchase_amount,
+         COUNT(*)                                           AS total_orders
+       FROM purchase_orders`
+    );
+    res.json({ success: true, data: kpis });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+// ─── PURCHASE ORDERS ──────────────────────────────────────────────────────────
 async function getAll(req, res) {
   try {
     const { supplier_id, type, status, page = 1, limit = 50 } = req.query;
@@ -11,12 +29,17 @@ async function getAll(req, res) {
     if (status)      { where += " AND po.status = ?"; params.push(status); }
 
     const [rows] = await db.query(
-      `SELECT po.*, s.company_name AS supplier_name FROM purchase_orders po
+      `SELECT po.*, s.company_name AS supplier_name
+       FROM purchase_orders po
        LEFT JOIN suppliers s ON po.supplier_id = s.id
-       ${where} ORDER BY po.purchase_date DESC LIMIT ? OFFSET ?`,
+       ${where} ORDER BY po.purchase_date DESC, po.id DESC
+       LIMIT ? OFFSET ?`,
       [...params, parseInt(limit), parseInt(offset)]
     );
-    res.json({ success: true, data: rows });
+    const [[{ total }]] = await db.query(
+      `SELECT COUNT(*) AS total FROM purchase_orders po ${where}`, params
+    );
+    res.json({ success: true, data: rows, total });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -24,55 +47,103 @@ async function getAll(req, res) {
 
 async function getById(req, res) {
   try {
-    const [rows] = await db.query(
-      `SELECT po.*, s.company_name AS supplier_name FROM purchase_orders po
-       LEFT JOIN suppliers s ON po.supplier_id = s.id WHERE po.id = ?`,
+    const [[row]] = await db.query(
+      `SELECT po.*, s.company_name AS supplier_name
+       FROM purchase_orders po
+       LEFT JOIN suppliers s ON po.supplier_id = s.id
+       WHERE po.id = ?`,
       [req.params.id]
     );
-    if (rows.length === 0) return res.status(404).json({ success: false, message: "PO not found" });
-    res.json({ success: true, data: rows[0] });
+    if (!row) return res.status(404).json({ success: false, message: "PO not found" });
+    res.json({ success: true, data: row });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 }
 
 async function create(req, res) {
-  const { supplier_id, purchase_date, material_type, item_description, purity, weight_qty, rate, gst_pct, payment_mode, expected_delivery, remarks } = req.body;
+  const conn = await db.getConnection();
   try {
-    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM purchase_orders");
-    const po_no = `PO-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
-    const amount = (weight_qty || 0) * (rate || 0);
-    const gst_amount = amount * ((gst_pct || 3) / 100);
-    const total = amount + gst_amount;
+    await conn.beginTransaction();
 
-    const [result] = await db.query(
-      `INSERT INTO purchase_orders (po_no, supplier_id, purchase_date, material_type, item_description, purity, weight_qty, rate, amount, gst_pct, gst_amount, total, payment_mode, expected_delivery, remarks)
+    const {
+      supplier_id, purchase_date, material_type, item_description,
+      purity, weight_qty, rate, gst_pct = 3, payment_mode,
+      expected_delivery, remarks,
+    } = req.body;
+
+    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM purchase_orders");
+    const year = new Date().getFullYear();
+    const po_no = `PO-${year}-${String(count + 1).padStart(4, "0")}`;
+
+    const amount     = (parseFloat(weight_qty) || 0) * (parseFloat(rate) || 0);
+    const gst_amount = amount * (parseFloat(gst_pct) / 100);
+    const total      = amount + gst_amount;
+
+    const [result] = await conn.query(
+      `INSERT INTO purchase_orders
+         (po_no, supplier_id, purchase_date, material_type, item_description,
+          purity, weight_qty, rate, amount, gst_pct, gst_amount, total,
+          payment_mode, expected_delivery, remarks)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [po_no, supplier_id, purchase_date, material_type, item_description, purity || null, weight_qty || 0, rate || 0, amount, gst_pct || 3, gst_amount, total, payment_mode, expected_delivery || null, remarks || null]
+      [po_no, supplier_id || null,
+       purchase_date || new Date().toISOString().slice(0, 10),
+       material_type, item_description, purity || null,
+       weight_qty || 0, rate || 0, amount, gst_pct, gst_amount, total,
+       payment_mode, expected_delivery || null, remarks || null]
     );
+
+    // Update supplier outstanding
+    if (supplier_id) {
+      await conn.query(
+        "UPDATE suppliers SET outstanding = COALESCE(outstanding,0) + ? WHERE id = ?",
+        [total, supplier_id]
+      );
+      // Insert ledger entry
+      await conn.query(
+        `INSERT INTO supplier_ledger (supplier_id, date, po_no, item, total, paid, balance)
+         VALUES (?,?,?,?,?,0,?)`,
+        [supplier_id, purchase_date || new Date().toISOString().slice(0, 10),
+         po_no, item_description, total, total]
+      );
+    }
+
+    await conn.commit();
     res.status(201).json({ success: true, data: { id: result.insertId, po_no } });
   } catch (err) {
+    await conn.rollback();
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    conn.release();
   }
 }
 
-async function getKpis(req, res) {
+async function updatePO(req, res) {
   try {
-    const [[kpis]] = await db.query(
-      `SELECT SUM(total) AS total_purchase_value, SUM(total - COALESCE(paid_amount,0)) AS pending_payments,
-       SUM(total) AS purchase_amount, COUNT(*) AS total_orders FROM purchase_orders`
-    );
-    res.json({ success: true, data: kpis });
+    const { status, paid_amount } = req.body;
+    const updates = [];
+    const params = [];
+    if (status)      { updates.push("status = ?");      params.push(status); }
+    if (paid_amount !== undefined) { updates.push("paid_amount = ?"); params.push(paid_amount); }
+    if (!updates.length) return res.status(400).json({ success: false, message: "Nothing to update" });
+
+    params.push(req.params.id);
+    await db.query(`UPDATE purchase_orders SET ${updates.join(", ")} WHERE id = ?`, params);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 }
 
+// ─── GRNs ─────────────────────────────────────────────────────────────────────
 async function getGRNs(req, res) {
   try {
     const [rows] = await db.query(
-      `SELECT g.*, s.company_name AS supplier_name FROM grns g
-       LEFT JOIN suppliers s ON g.supplier_id = s.id ORDER BY g.received_date DESC`
+      `SELECT g.*, s.company_name AS supplier_name, po.po_no
+       FROM grns g
+       LEFT JOIN suppliers s ON g.supplier_id = s.id
+       LEFT JOIN purchase_orders po ON g.po_id = po.id
+       ORDER BY g.received_date DESC, g.created_at DESC`
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -81,26 +152,51 @@ async function getGRNs(req, res) {
 }
 
 async function createGRN(req, res) {
-  const { po_id, supplier_id, received_date, item_description, weight_qty, received_by, condition, notes } = req.body;
+  const conn = await db.getConnection();
   try {
-    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM grns");
+    await conn.beginTransaction();
+
+    const { po_id, supplier_id, received_date, item_description, weight_qty, received_by, condition, notes } = req.body;
+
+    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM grns");
     const grn_id = `GRN-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
-    const [result] = await db.query(
-      `INSERT INTO grns (grn_id, po_id, supplier_id, received_date, item_description, weight_qty, received_by, condition_status, notes)
+
+    const [result] = await conn.query(
+      `INSERT INTO grns
+         (grn_id, po_id, supplier_id, received_date, item_description, weight_qty, received_by, condition_status, notes)
        VALUES (?,?,?,?,?,?,?,?,?)`,
-      [grn_id, po_id || null, supplier_id || null, received_date, item_description || null, weight_qty || 0, received_by || null, condition || "Good", notes || null]
+      [grn_id, po_id || null, supplier_id || null,
+       received_date || new Date().toISOString().slice(0, 10),
+       item_description || null, weight_qty || 0,
+       received_by || null, condition || "Good", notes || null]
     );
+
+    // Update linked PO status to Received
+    if (po_id) {
+      await conn.query(
+        "UPDATE purchase_orders SET status = 'Received' WHERE id = ? AND status = 'Pending'",
+        [po_id]
+      );
+    }
+
+    await conn.commit();
     res.status(201).json({ success: true, data: { id: result.insertId, grn_id } });
   } catch (err) {
+    await conn.rollback();
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    conn.release();
   }
 }
 
-async function getOldMetalPurchases(req, res) {
+// ─── PURCHASE RETURNS ─────────────────────────────────────────────────────────
+async function getPurchaseReturns(req, res) {
   try {
     const [rows] = await db.query(
-      `SELECT om.*, c.full_name AS customer_name FROM old_metal_purchases om
-       LEFT JOIN customers c ON om.customer_id = c.id ORDER BY om.created_at DESC`
+      `SELECT pr.*, s.company_name AS supplier_name
+       FROM purchase_returns pr
+       LEFT JOIN suppliers s ON pr.supplier_id = s.id
+       ORDER BY pr.return_date DESC, pr.created_at DESC`
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -108,21 +204,185 @@ async function getOldMetalPurchases(req, res) {
   }
 }
 
-async function createOldMetalPurchase(req, res) {
-  const { customer_id, metal_type, gross_weight, stone_deduction, purity, rate, payment_mode } = req.body;
+async function createPurchaseReturn(req, res) {
   try {
-    const net_weight = (gross_weight || 0) - (stone_deduction || 0);
-    const fine_weight = net_weight * (parseFloat(purity) || 0.9167);
-    const amount_paid = fine_weight * (rate || 0);
+    const { po_ref, supplier_id, return_date, item_description, quantity, amount, reason, refund_mode, notes } = req.body;
+
+    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM purchase_returns");
+    const return_no = `PRTN-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+
     const [result] = await db.query(
-      `INSERT INTO old_metal_purchases (customer_id, metal_type, gross_weight, stone_deduction, net_weight, purity, fine_weight, rate, amount_paid, payment_mode)
+      `INSERT INTO purchase_returns
+         (return_no, po_ref, supplier_id, return_date, item_description, quantity, amount, reason, refund_mode, notes)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [customer_id || null, metal_type, gross_weight || 0, stone_deduction || 0, net_weight, purity, fine_weight, rate || 0, amount_paid, payment_mode]
+      [return_no, po_ref || null, supplier_id || null,
+       return_date || new Date().toISOString().slice(0, 10),
+       item_description, quantity || 0, amount || 0,
+       reason, refund_mode || "NEFT", notes || null]
     );
-    res.status(201).json({ success: true, data: { id: result.insertId, amount_paid } });
+
+    res.status(201).json({ success: true, data: { id: result.insertId, return_no } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 }
 
-module.exports = { getAll, getById, create, getKpis, getGRNs, createGRN, getOldMetalPurchases, createOldMetalPurchase };
+// ─── SUPPLIER PAYMENTS ────────────────────────────────────────────────────────
+async function getSupplierPayments(req, res) {
+  try {
+    const { supplier_id } = req.query;
+    let where = "WHERE 1=1";
+    const params = [];
+    if (supplier_id) { where += " AND sp.supplier_id = ?"; params.push(supplier_id); }
+
+    const [rows] = await db.query(
+      `SELECT sp.*, s.company_name AS supplier_name
+       FROM supplier_payments sp
+       LEFT JOIN suppliers s ON sp.supplier_id = s.id
+       ${where} ORDER BY sp.created_at DESC`,
+      params
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+async function createSupplierPayment(req, res) {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const { supplier_id, amount, payment_mode, reference, po_ref, remark, paid_date } = req.body;
+
+    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM supplier_payments");
+    const pay_id = `PAY-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+
+    const [result] = await conn.query(
+      `INSERT INTO supplier_payments
+         (pay_id, supplier_id, amount, payment_mode, reference, po_ref, remark)
+       VALUES (?,?,?,?,?,?,?)`,
+      [pay_id, supplier_id || null, amount || 0, payment_mode,
+       reference || null, po_ref || null, remark || null]
+    );
+
+    // Reduce supplier outstanding
+    if (supplier_id) {
+      await conn.query(
+        "UPDATE suppliers SET outstanding = GREATEST(0, COALESCE(outstanding,0) - ?) WHERE id = ?",
+        [amount || 0, supplier_id]
+      );
+      // Update ledger paid/balance for this PO
+      if (po_ref) {
+        await conn.query(
+          `UPDATE supplier_ledger
+           SET paid = paid + ?, balance = GREATEST(0, balance - ?)
+           WHERE supplier_id = ? AND po_no = ?`,
+          [amount, amount, supplier_id, po_ref]
+        );
+        await conn.query(
+          "UPDATE purchase_orders SET paid_amount = COALESCE(paid_amount,0) + ? WHERE po_no = ?",
+          [amount, po_ref]
+        );
+      }
+    }
+
+    await conn.commit();
+    res.status(201).json({ success: true, data: { id: result.insertId, pay_id } });
+  } catch (err) {
+    await conn.rollback();
+    res.status(500).json({ success: false, message: err.message });
+  } finally {
+    conn.release();
+  }
+}
+
+// ─── SUPPLIER LEDGER ──────────────────────────────────────────────────────────
+async function getSupplierLedger(req, res) {
+  try {
+    const { supplier_id } = req.params;
+    const [rows] = await db.query(
+      `SELECT * FROM supplier_ledger
+       WHERE supplier_id = ?
+       ORDER BY date DESC, created_at DESC`,
+      [supplier_id]
+    );
+    const [[summary]] = await db.query(
+      `SELECT COALESCE(SUM(total),0) AS total_billed,
+              COALESCE(SUM(paid),0) AS total_paid,
+              COALESCE(SUM(balance),0) AS total_balance
+       FROM supplier_ledger WHERE supplier_id = ?`,
+      [supplier_id]
+    );
+    res.json({ success: true, data: rows, summary });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+// ─── OLD METAL PURCHASES ──────────────────────────────────────────────────────
+async function getOldMetalPurchases(req, res) {
+  try {
+    const [rows] = await db.query(
+      `SELECT om.*, c.full_name AS customer_name
+       FROM old_metal_purchases om
+       LEFT JOIN customers c ON om.customer_id = c.id
+       ORDER BY om.created_at DESC`
+    );
+    const [[kpis]] = await db.query(
+      `SELECT COUNT(*) AS total_entries,
+              COALESCE(SUM(CASE WHEN metal_type='Gold' THEN fine_weight END),0)   AS fine_gold,
+              COALESCE(SUM(CASE WHEN metal_type='Silver' THEN fine_weight END),0) AS fine_silver,
+              COALESCE(SUM(amount_paid),0) AS total_paid
+       FROM old_metal_purchases`
+    );
+    res.json({ success: true, data: rows, kpis });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+async function createOldMetalPurchase(req, res) {
+  try {
+    const { customer_id, metal_type, gross_weight, stone_deduction, purity, rate, payment_mode } = req.body;
+
+    const net_weight  = (parseFloat(gross_weight) || 0) - (parseFloat(stone_deduction) || 0);
+    const purityValue = parseFloat(purity) || 0.9167;
+    const fine_weight = net_weight * purityValue;
+    const amount_paid = fine_weight * (parseFloat(rate) || 0);
+
+    const [result] = await db.query(
+      `INSERT INTO old_metal_purchases
+         (customer_id, metal_type, gross_weight, stone_deduction, net_weight, purity, fine_weight, rate, amount_paid, payment_mode)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [customer_id || null, metal_type, gross_weight || 0, stone_deduction || 0,
+       net_weight, purity, fine_weight, rate || 0, amount_paid, payment_mode]
+    );
+
+    res.status(201).json({ success: true, data: { id: result.insertId, amount_paid: amount_paid.toFixed(2) } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+// ─── SUPPLIER LIST (for dropdowns) ────────────────────────────────────────────
+async function getSuppliersList(req, res) {
+  try {
+    const [rows] = await db.query(
+      "SELECT id, company_name, outstanding FROM suppliers WHERE status='Active' ORDER BY company_name"
+    );
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+module.exports = {
+  getKpis, getAll, getById, create, updatePO,
+  getGRNs, createGRN,
+  getPurchaseReturns, createPurchaseReturn,
+  getSupplierPayments, createSupplierPayment,
+  getSupplierLedger,
+  getOldMetalPurchases, createOldMetalPurchase,
+  getSuppliersList,
+};

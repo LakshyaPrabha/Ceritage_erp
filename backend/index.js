@@ -47,6 +47,7 @@ app.use("/api/products",      require("./routes/products"));
 app.use("/api/billing",       require("./routes/billing"));
 app.use("/api/sales",         require("./routes/sales"));
 app.use("/api/purchase",      require("./routes/purchase"));
+app.use("/api/purchases",     require("./routes/purchase"));
 app.use("/api/gold-exchange",  require("./routes/goldExchange"));
 app.use("/api/repair",        require("./routes/repair"));
 app.use("/api/orders",        require("./routes/orders"));

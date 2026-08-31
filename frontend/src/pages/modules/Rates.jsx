@@ -423,7 +423,8 @@ export default function Rates({ t }) {
                 <span style={{ color:t.textMuted }}>MCX Silver PM:</span>
                 <span>{mcx.silverPM ? `₹${fmt(mcx.silverPM)} / g` : "—"}</span>
               </div>
-            )}
+            </div>
+
             {saveError && (
               <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(230,59,138,0.1)", border: "1px solid rgba(230,59,138,0.3)", borderRadius: 8, color: BRAND.pink, fontSize: 13 }}>
                 {saveError}

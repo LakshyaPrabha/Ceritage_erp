@@ -94,28 +94,28 @@ async function getKpis(req, res) {
 async function getAll(req, res) {
   const branch_id = req.user.branch_id;
   try {
-    const { search, tier, city, status = "active", page = 1, limit = 100 } = req.query;
+    const { search, tier, city, kyc_status, status = "active", page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
-    let where = "WHERE 1=1";
+    const conditions = [];
     const params = [];
 
     if (status === "active") {
-      where += " AND c.status = 'ACTIVE'";
+      conditions.push("c.status = 'ACTIVE'");
     } else if (status === "archived") {
-      where += " AND c.status = 'ARCHIVED'";
+      conditions.push("c.status = 'ARCHIVED'");
     }
 
     if (search) {
       const cleanPhoneSearch = normalizePhone(search);
-      where += " AND (c.full_name LIKE ? OR c.phone LIKE ? OR c.customer_id LIKE ? OR c.city LIKE ? OR c.phone LIKE ?)";
+      conditions.push("(c.full_name LIKE ? OR c.phone LIKE ? OR c.customer_id LIKE ? OR c.city LIKE ? OR c.phone LIKE ?)");
       const s = `%${search}%`;
       params.push(s, s, s, s, `%${cleanPhoneSearch}%`);
     }
-    if (tier)       { where.push("c.tier = ?");       params.push(tier); }
-    if (city)       { where.push("c.city = ?");        params.push(city); }
-    if (kyc_status) { where.push("c.kyc_status = ?");  params.push(kyc_status); }
+    if (tier)       { conditions.push("c.tier = ?");       params.push(tier); }
+    if (city)       { conditions.push("c.city = ?");        params.push(city); }
+    if (kyc_status) { conditions.push("c.kyc_status = ?");  params.push(kyc_status); }
 
-    const whereClause = "WHERE " + where.join(" AND ");
+    const whereClause = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
     const [rows] = await db.query(
       `SELECT c.*,
@@ -123,7 +123,7 @@ async function getAll(req, res) {
               COUNT(DISTINCT i.id) AS total_orders
        FROM customers c
        LEFT JOIN invoices i ON i.customer_id = c.id
-       ${where}
+       ${whereClause}
        GROUP BY c.id
        ORDER BY c.created_at DESC
        LIMIT ? OFFSET ?`,
@@ -877,18 +877,25 @@ async function createNote(req, res) {
 // PUT /api/customers/:id/notes/:noteId/pin -> Toggle pinned status
 async function togglePinNote(req, res) {
   const { id: customerId, noteId } = req.params;
-  const { is_pinned } = req.body;
+  const body = req.body || {};
 
   try {
+    const [existing] = await db.query("SELECT is_pinned FROM customer_notes WHERE id = ? AND customer_id = ?", [noteId, customerId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: "Note not found" });
+    }
+
+    const nextPinState = body.is_pinned !== undefined ? Boolean(body.is_pinned) : !Boolean(existing[0].is_pinned);
+
     await db.query(
       "UPDATE customer_notes SET is_pinned = ? WHERE id = ? AND customer_id = ?",
-      [Boolean(is_pinned), noteId, customerId]
+      [nextPinState, noteId, customerId]
     );
 
     const author = req.user?.full_name || req.user?.username || "Staff";
-    await logCustomerAudit(customerId, "NOTE_PIN_TOGGLED", author, `${is_pinned ? 'Pinned' : 'Unpinned'} customer note #${noteId}`);
+    await logCustomerAudit(customerId, "NOTE_PIN_TOGGLED", author, `${nextPinState ? 'Pinned' : 'Unpinned'} customer note #${noteId}`);
 
-    res.json({ success: true, message: `Note ${is_pinned ? 'pinned' : 'unpinned'} successfully` });
+    res.json({ success: true, is_pinned: nextPinState, message: `Note ${nextPinState ? 'pinned' : 'unpinned'} successfully` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

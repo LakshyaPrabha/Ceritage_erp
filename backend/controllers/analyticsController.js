@@ -25,7 +25,7 @@ async function getSummary(req, res) {
 
     const [[stock]] = await db.query(
       `SELECT
-         COALESCE(SUM(CASE WHEN stock_qty <= min_stock THEN 1 ELSE 0 END), 0) AS low_out_stock,
+         COALESCE(SUM(CASE WHEN stock_qty <= COALESCE(min_stock, 2) THEN 1 ELSE 0 END), 0) AS low_out_stock,
          COALESCE(SUM(CASE WHEN stock_qty > 0 THEN stock_qty * COALESCE(purchase_price, 0) ELSE 0 END), 0) AS stock_value
        FROM products`
     );

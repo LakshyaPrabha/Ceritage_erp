@@ -53,13 +53,13 @@ async function getKpis(req, res) {
     }
 
     // Products — may not exist yet
-    if (await tableExists("products")) {
+     if (await tableExists("products")) {
       const [[stock]] = await db.query(
         `SELECT
            COUNT(*) AS stock_items,
            COALESCE(SUM(gross_weight * stock_qty), 0) AS gold_weight
          FROM products
-         WHERE status = 'Active'`
+         WHERE stock_status != 'Out of Stock'`
       );
       result.stock_items   = stock.stock_items || 0;
       result.gold_in_stock = `${(parseFloat(stock.gold_weight || 0) / 1000).toFixed(3)} kg`;
@@ -105,7 +105,7 @@ async function getAlerts(req, res) {
       const [lowStock] = await db.query(
         `SELECT name, sku, stock_qty
          FROM products
-         WHERE stock_qty <= min_stock_qty AND status = 'Active'
+         WHERE stock_qty <= COALESCE(min_stock, 2) AND stock_status != 'Out of Stock'
          LIMIT 5`
       );
       lowStock.forEach(p => alerts.push({
@@ -137,7 +137,7 @@ async function getAlerts(req, res) {
     // EMI due today
     if (await tableExists("emi_plans")) {
       const [emiDue] = await db.query(
-        `SELECT ep.plan_id, COALESCE(c.full_name, 'Customer') AS full_name, ep.emi_amount
+        `SELECT COALESCE(ep.plan_code, ep.id) AS plan_id, COALESCE(c.full_name, 'Customer') AS full_name, COALESCE(ep.monthly_installment, 0) AS emi_amount
          FROM emi_plans ep
          LEFT JOIN customers c ON ep.customer_id = c.id
          WHERE DATE(ep.next_due_date) = CURDATE()
@@ -147,8 +147,8 @@ async function getAlerts(req, res) {
       emiDue.forEach(e => alerts.push({
         type:  "emi_due",
         title: "EMI Due Today",
-        meta:  `${e.full_name} — ₹${e.emi_amount} due today`,
-        color: "#3498db",
+        meta:  `${e.plan_id} (${e.full_name}) — ₹${parseFloat(e.emi_amount).toLocaleString("en-IN")}`,
+        color: "#9b59b6",
       }));
     }
 

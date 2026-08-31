@@ -1,4 +1,4 @@
-﻿// ─── Ceritage ERP — Supplier Management ──────────────────────────────────────
+// ─── Ceritage ERP — Supplier Management ──────────────────────────────────────
 import { BRAND } from "../../theme.js";
 import { useState, useEffect } from "react";
 import {
@@ -9,8 +9,8 @@ import {
 
 const API = window.__CERITAGE_API__ || "/api";
 function authHeaders() {
-  const token = sessionStorage.getItem("ceritage_token");
-  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const token = localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
+  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 
 const TABS = [

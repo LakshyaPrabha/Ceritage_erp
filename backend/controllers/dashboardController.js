@@ -11,6 +11,7 @@ async function tableExists(tableName) {
 
 // GET /api/dashboard/kpis
 async function getKpis(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const today = new Date().toISOString().split("T")[0];
     const result = {
@@ -22,29 +23,23 @@ async function getKpis(req, res) {
       gold_in_stock:   "0.000 kg",
     };
 
-    // Customers — table always exists after registration
     if (await tableExists("customers")) {
       const [[c]] = await db.query(
-        "SELECT COUNT(*) AS total_customers FROM customers WHERE status = 'Active'"
+        "SELECT COUNT(*) AS total_customers FROM customers WHERE status IN ('Active','ACTIVE')"
       );
       result.total_customers = c.total_customers || 0;
     }
 
-    // Invoices — may not exist yet
     if (await tableExists("invoices")) {
       const [[sales]] = await db.query(
-        `SELECT
-           COALESCE(SUM(grand_total), 0) AS today_sales,
-           COUNT(*) AS bills_today
-         FROM invoices
-         WHERE DATE(invoice_date) = ?`,
+        `SELECT COALESCE(SUM(grand_total),0) AS today_sales, COUNT(*) AS bills_today
+         FROM invoices WHERE DATE(invoice_date) = ?`,
         [today]
       );
       result.today_sales = sales.today_sales || 0;
       result.bills_today  = sales.bills_today  || 0;
     }
 
-    // Repair jobs — may not exist yet
     if (await tableExists("repair_jobs")) {
       const [[repairs]] = await db.query(
         "SELECT COUNT(*) AS pending_repairs FROM repair_jobs WHERE status IN ('Pending','In Progress','Overdue')"
@@ -73,21 +68,17 @@ async function getKpis(req, res) {
 
 // GET /api/dashboard/recent-bills
 async function getRecentBills(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     if (!(await tableExists("invoices"))) {
       return res.json({ success: true, data: [] });
     }
     const [rows] = await db.query(
-      `SELECT
-         i.invoice_no,
-         COALESCE(c.full_name, 'Walk-in') AS customer,
-         i.grand_total AS amount,
-         i.payment_mode,
-         i.status
+      `SELECT i.invoice_no, COALESCE(c.full_name,'Walk-in') AS customer,
+              i.grand_total AS amount, i.payment_mode, i.status
        FROM invoices i
        LEFT JOIN customers c ON i.customer_id = c.id
-       ORDER BY i.created_at DESC
-       LIMIT 10`
+       ORDER BY i.created_at DESC LIMIT 10`
     );
     res.json({ success: true, data: rows });
   } catch (err) {

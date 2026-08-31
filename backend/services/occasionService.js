@@ -86,18 +86,17 @@ async function getCustomerOccasions(options = {}) {
   const [customers] = await db.query(
     `SELECT c.id, c.customer_id AS cust_code, c.full_name, c.phone, c.email, c.city,
             c.date_of_birth, c.anniversary, c.tier AS default_tier,
-            c.opt_in_whatsapp, c.opt_in_sms, c.opt_in_marketing, c.preferred_channel,
-            cm.plan_name AS active_tier, mp.badge_color, mp.loyalty_multiplier, mp.making_discount_pct
+            c.opt_in_whatsapp, c.opt_in_sms, c.opt_in_marketing, c.preferred_channel
      FROM customers c
-     LEFT JOIN customer_memberships cm ON cm.customer_id = c.id AND cm.status = 'ACTIVE' AND cm.expiry_date >= CURDATE()
-     LEFT JOIN membership_plans mp ON cm.plan_id = mp.id
-     WHERE c.status = 'ACTIVE'
+     WHERE c.status IN ('ACTIVE', 'Active')
      ORDER BY c.full_name ASC`
   );
 
   // 2. Fetch existing reminder records for current & next year
   const [reminderRows] = await db.query(
-    `SELECT * FROM customer_occasion_reminders
+    `SELECT id, customer_id, occasion_type, occasion_year,
+            status, acknowledged_by, acknowledged_at
+     FROM customer_occasion_reminders
      WHERE occasion_year IN (?, ?)`,
     [istNow.year, istNow.year + 1]
   );
@@ -111,8 +110,8 @@ async function getCustomerOccasions(options = {}) {
   const occasionsList = [];
 
   for (const cust of customers) {
-    const effectiveTier = cust.active_tier || cust.default_tier || "Regular";
-    const badgeColor = cust.badge_color || (effectiveTier === "Platinum" ? "#9b59b6" : (effectiveTier === "Gold" ? "#f1c40f" : "#3498db"));
+    const effectiveTier = cust.default_tier || "Regular";
+    const badgeColor = effectiveTier === "Platinum" ? "#9b59b6" : effectiveTier === "Gold" ? "#f1c40f" : "#3498db";
 
     // Check Birthday
     if (cust.date_of_birth && (occasion === "all" || occasion === "birthday" || occasion === "BIRTHDAY")) {
@@ -138,9 +137,9 @@ async function getCustomerOccasions(options = {}) {
           reminderId: rem?.id || null,
           acknowledgedBy: rem?.acknowledged_by || null,
           acknowledgedAt: rem?.acknowledged_at || null,
-          greetingGenerated: Boolean(rem?.greeting_generated),
-          couponCode: rem?.coupon_code || null,
-          bonusPoints: rem?.bonus_points || 0,
+          greetingGenerated: false,
+          couponCode: null,
+          bonusPoints: 0,
           preferences: {
             optInWhatsapp: Boolean(cust.opt_in_whatsapp),
             optInSms: Boolean(cust.opt_in_sms),
@@ -175,9 +174,9 @@ async function getCustomerOccasions(options = {}) {
           reminderId: rem?.id || null,
           acknowledgedBy: rem?.acknowledged_by || null,
           acknowledgedAt: rem?.acknowledged_at || null,
-          greetingGenerated: Boolean(rem?.greeting_generated),
-          couponCode: rem?.coupon_code || null,
-          bonusPoints: rem?.bonus_points || 0,
+          greetingGenerated: false,
+          couponCode: null,
+          bonusPoints: 0,
           preferences: {
             optInWhatsapp: Boolean(cust.opt_in_whatsapp),
             optInSms: Boolean(cust.opt_in_sms),

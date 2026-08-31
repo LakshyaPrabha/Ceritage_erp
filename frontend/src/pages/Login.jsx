@@ -1,3 +1,5 @@
+
+import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import ceritageLogoSvg from "../assets/ceritage-logo.svg";
@@ -63,7 +65,7 @@ function getTheme(dark) {
 
 // ── Component ──────────────────────────────────────────────
 export default function Login() {
-  const navigate = useNavigate();
+  const navigate = () => { window.location.href = "/dashboard"; };
   const [username,     setUsername]     = useState("");
   const [password,     setPassword]     = useState("");
   const [showPassword, setShowPassword] = useState(false);

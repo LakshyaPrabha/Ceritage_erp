@@ -8,20 +8,24 @@ function pct(numerator, denominator) {
 
 // GET /api/analytics/summary
 async function getSummary(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const { year = new Date().getFullYear() } = req.query;
     const targetYear = parseInt(year, 10) || new Date().getFullYear();
 
     const [[summary]] = await db.query(
       `SELECT
-         COALESCE(SUM(CASE WHEN YEAR(invoice_date) = ? THEN grand_total ELSE 0 END), 0) AS annual_revenue,
-         COALESCE(SUM(CASE WHEN DATE(invoice_date) = CURDATE() THEN grand_total ELSE 0 END), 0) AS today_sales,
+         COALESCE(SUM(CASE WHEN YEAR(invoice_date) = ? THEN grand_total ELSE 0 END),0) AS annual_revenue,
+         COALESCE(SUM(CASE WHEN DATE(invoice_date) = CURDATE() THEN grand_total ELSE 0 END),0) AS today_sales,
          COUNT(CASE WHEN YEAR(invoice_date) = ? THEN 1 END) AS annual_bills
-       FROM invoices`,
-      [targetYear, targetYear]
+       FROM invoices WHERE branch_id = ?`,
+      [targetYear, targetYear, branch_id]
     );
 
-    const [[customers]] = await db.query("SELECT COUNT(*) AS total_customers FROM customers");
+    const [[customers]] = await db.query(
+      "SELECT COUNT(*) AS total_customers FROM customers WHERE branch_id = ?",
+      [branch_id]
+    );
 
     const [[stock]] = await db.query(
       `SELECT
@@ -30,33 +34,33 @@ async function getSummary(req, res) {
        FROM products`
     );
 
-    const [[branches]] = await db.query("SELECT COUNT(*) AS active_branches FROM branches WHERE status = 'Active'");
+    const [[branches]] = await db.query(
+      "SELECT COUNT(*) AS active_branches FROM branches WHERE status = 'Active'"
+    );
 
-    // Real COGS & Gross Profit
     const [[profit]] = await db.query(
       `SELECT
-         COALESCE(SUM(ii.amount), 0) AS revenue,
-         COALESCE(SUM(COALESCE(p.purchase_price, 0)), 0) AS cost
+         COALESCE(SUM(ii.amount),0) AS revenue,
+         COALESCE(SUM(COALESCE(p.purchase_price,0)),0) AS cost
        FROM invoice_items ii
        LEFT JOIN products p ON p.id = ii.product_id
        LEFT JOIN invoices i ON i.id = ii.invoice_id
-       WHERE YEAR(i.invoice_date) = ?`,
-      [targetYear]
+       WHERE YEAR(i.invoice_date) = ? AND i.branch_id = ?`,
+      [targetYear, branch_id]
     );
 
-    const grossProfit = Number(profit.revenue || 0) - Number(profit.cost || 0);
-
+    const grossProfit = Number(profit.revenue||0) - Number(profit.cost||0);
     res.json({
       success: true,
       data: {
-        annual_revenue: Number(summary.annual_revenue || 0),
-        annual_bills: Number(summary.annual_bills || 0),
-        profit_margin: pct(grossProfit, profit.revenue),
-        today_sales: Number(summary.today_sales || 0),
-        total_customers: Number(customers.total_customers || 0),
-        low_out_stock: Number(stock.low_out_stock || 0),
-        active_branches: Number(branches.active_branches || 1),
-        stock_value: Number(stock.stock_value || 0),
+        annual_revenue:   Number(summary.annual_revenue  || 0),
+        annual_bills:     Number(summary.annual_bills    || 0),
+        profit_margin:    pct(grossProfit, profit.revenue),
+        today_sales:      Number(summary.today_sales     || 0),
+        total_customers:  Number(customers.total_customers || 0),
+        low_out_stock:    Number(stock.low_out_stock     || 0),
+        active_branches:  Number(branches.active_branches || 1),
+        stock_value:      Number(stock.stock_value       || 0),
       },
     });
   } catch (err) {
@@ -67,44 +71,28 @@ async function getSummary(req, res) {
 
 // GET /api/analytics/daily
 async function getDaily(req, res) {
+  const branch_id = req.user.branch_id;
   try {
     const [rows] = await db.query(
-      `SELECT
-         invoice_date AS date,
-         COUNT(*) AS bills,
-         COALESCE(SUM(grand_total), 0) AS revenue,
-         COALESCE(SUM(CASE WHEN invoice_type = 'Return Invoice' THEN grand_total ELSE 0 END), 0) AS returns,
-         COALESCE(SUM(CASE WHEN payment_mode = 'Cash' THEN grand_total ELSE 0 END), 0) AS cash,
-         COALESCE(SUM(CASE WHEN payment_mode = 'UPI' THEN grand_total ELSE 0 END), 0) AS upi,
-         COALESCE(SUM(CASE WHEN payment_mode = 'Card' THEN grand_total ELSE 0 END), 0) AS card
+      `SELECT invoice_date AS date, COUNT(*) AS bills,
+              COALESCE(SUM(grand_total),0) AS revenue,
+              COALESCE(SUM(CASE WHEN invoice_type='Return Invoice' THEN grand_total ELSE 0 END),0) AS returns,
+              COALESCE(SUM(CASE WHEN payment_mode='Cash' THEN grand_total ELSE 0 END),0) AS cash,
+              COALESCE(SUM(CASE WHEN payment_mode='UPI' THEN grand_total ELSE 0 END),0) AS upi,
+              COALESCE(SUM(CASE WHEN payment_mode='Card' THEN grand_total ELSE 0 END),0) AS card
        FROM invoices
-       WHERE invoice_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-       GROUP BY invoice_date
-       ORDER BY invoice_date DESC`
+       WHERE invoice_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND branch_id = ?
+       GROUP BY invoice_date ORDER BY invoice_date DESC`,
+      [branch_id]
     );
-
-    const totalRevenue = rows.reduce((sum, r) => sum + Number(r.revenue || 0), 0);
-    res.json({
-      success: true,
-      data: rows.map((r) => {
-        const rev = Number(r.revenue || 0);
-        const ret = Number(r.returns || 0);
-        return {
-          date: r.date,
-          bills: r.bills,
-          revenue: rev,
-          returns: ret,
-          net_sales: rev - ret,
-          cash: Number(r.cash || 0),
-          upi: Number(r.upi || 0),
-          card: Number(r.card || 0),
-          share: pct(rev, totalRevenue),
-        };
-      }),
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+    const totalRevenue = rows.reduce((sum, r) => sum + Number(r.revenue||0), 0);
+    res.json({ success: true, data: rows.map(r => {
+      const rev = Number(r.revenue||0), ret = Number(r.returns||0);
+      return { date:r.date, bills:r.bills, revenue:rev, returns:ret,
+               net_sales:rev-ret, cash:Number(r.cash||0),
+               upi:Number(r.upi||0), card:Number(r.card||0), share:pct(rev,totalRevenue) };
+    })});
+  } catch (err) { res.status(500).json({ success:false, message:err.message }); }
 }
 
 // GET /api/analytics/monthly

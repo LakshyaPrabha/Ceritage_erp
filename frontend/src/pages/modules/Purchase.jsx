@@ -1,4 +1,4 @@
-﻿import { BRAND } from "../../theme.js";
+import { BRAND } from "../../theme.js";
 import { useState, useEffect, useCallback } from "react";
 import {PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
   BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid, Input, Select,
@@ -6,7 +6,7 @@ import {PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
 
 const API = "http://localhost:5000/api";
 function authHeaders() {
-  const token = sessionStorage.getItem("ceritage_token");
+  const token = sessionStorage.getItem("ceritage_token") || localStorage.getItem("ceritage_token");
   return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 }
 function fmt(n)     { return n ? "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2 }) : "₹0.00"; }
@@ -436,40 +436,38 @@ export default function Purchase({ t }) {
             <CardHeader
               title="Supplier Payables & Outstanding"
               t={t}
-              actions={<BtnSm t={t} primary onClick={() => setPaymentModal(true)}>+ Pay Supplier</BtnSm>}
+              actions={<BtnSm t={t} primary onClick={() => { setPayModal(true); loadSuppliers(); }}>+ Pay Supplier</BtnSm>}
             />
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
-                  <tr style={{ background: "#f8f9fa", borderBottom: "1px solid #e9ecef" }}>
-                    <th style={{ padding: "10px 12px" }}>Supplier</th>
-                    <th style={{ padding: "10px 12px" }}>City</th>
-                    <th style={{ padding: "10px 12px" }}>Outstanding</th>
-                    <th style={{ padding: "10px 12px", textAlign: "right" }}>Action</th>
+                  <tr style={{ borderBottom: `1px solid ${t.border}` }}>
+                    <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Supplier</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Outstanding</th>
+                    <th style={{ textAlign: "right", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {payables.length === 0 ? (
+                  {suppliers.length === 0 ? (
                     <tr>
-                      <td colSpan={4} style={{ padding: 20, textAlign: "center", color: "#888" }}>
-                        No pending payables. All suppliers are settled!
+                      <td colSpan={3} style={{ padding: 24, textAlign: "center", color: t.subtext }}>
+                        No suppliers found.
                       </td>
                     </tr>
                   ) : (
-                    payables.map((p) => (
-                      <tr key={p.supplier_id} style={{ borderBottom: "1px solid #eee" }}>
-                        <td style={{ padding: "10px 12px", fontWeight: 600 }}>{p.company_name}</td>
-                        <td style={{ padding: "10px 12px", color: "#666" }}>{p.city || "-"}</td>
-                        <td style={{ padding: "10px 12px", fontWeight: "bold", color: "#e74c3c" }}>
-                          ₹{parseFloat(p.outstanding || 0).toLocaleString("en-IN")}
+                    suppliers.map((s) => (
+                      <tr key={s.id} style={{ borderBottom: `1px solid ${t.border}` }}>
+                        <td style={{ padding: "10px 12px", fontWeight: 600, color: t.text }}>{s.company_name}</td>
+                        <td style={{ padding: "10px 12px", fontWeight: "bold", color: parseFloat(s.outstanding || 0) > 0 ? "#e74c3c" : "#2ecc71" }}>
+                          {fmt(s.outstanding)}
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right" }}>
                           <BtnSm
                             t={t}
                             primary
                             onClick={() => {
-                              setPaymentForm({ ...paymentForm, supplier_id: p.supplier_id });
-                              setPaymentModal(true);
+                              setPayForm(prev => ({ ...prev, supplier_id: s.id }));
+                              setPayModal(true);
                             }}
                           >
                             Pay Now
@@ -489,30 +487,30 @@ export default function Purchase({ t }) {
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead>
-                  <tr style={{ background: "#f8f9fa", borderBottom: "1px solid #e9ecef" }}>
-                    <th style={{ padding: "10px 12px" }}>Pay ID</th>
-                    <th style={{ padding: "10px 12px" }}>Date</th>
-                    <th style={{ padding: "10px 12px" }}>Supplier</th>
-                    <th style={{ padding: "10px 12px" }}>Mode</th>
-                    <th style={{ padding: "10px 12px" }}>Amount</th>
+                  <tr style={{ borderBottom: `1px solid ${t.border}` }}>
+                    <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Pay ID</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Date</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Supplier</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Mode</th>
+                    <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Amount</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {paymentsList.length === 0 ? (
+                  {payments.length === 0 ? (
                     <tr>
-                      <td colSpan={5} style={{ padding: 20, textAlign: "center", color: "#888" }}>
-                        No payments recorded yet.
+                      <td colSpan={5} style={{ padding: 24, textAlign: "center", color: t.subtext }}>
+                        No supplier payments recorded yet.
                       </td>
                     </tr>
                   ) : (
-                    paymentsList.map((sp) => (
-                      <tr key={sp.id} style={{ borderBottom: "1px solid #eee" }}>
+                    payments.map((sp) => (
+                      <tr key={sp.id} style={{ borderBottom: `1px solid ${t.border}` }}>
                         <td style={{ padding: "10px 12px", fontWeight: "bold", color: BRAND.blue }}>{sp.pay_id}</td>
-                        <td style={{ padding: "10px 12px" }}>{sp.created_at ? sp.created_at.split("T")[0] : "-"}</td>
-                        <td style={{ padding: "10px 12px", fontWeight: 500 }}>{sp.supplier_name || "-"}</td>
-                        <td style={{ padding: "10px 12px" }}>{sp.payment_mode}</td>
-                        <td style={{ padding: "10px 12px", fontWeight: "bold", color: "#27ae60" }}>
-                          ₹{parseFloat(sp.amount || 0).toLocaleString("en-IN")}
+                        <td style={{ padding: "10px 12px", color: t.subtext }}>{fmtDate(sp.created_at)}</td>
+                        <td style={{ padding: "10px 12px", fontWeight: 500, color: t.text }}>{sp.supplier_name || "—"}</td>
+                        <td style={{ padding: "10px 12px", color: t.subtext }}>{sp.payment_mode}</td>
+                        <td style={{ padding: "10px 12px", fontWeight: "bold", color: "#2ecc71" }}>
+                          {fmt(sp.amount)}
                         </td>
                       </tr>
                     ))
@@ -522,35 +520,6 @@ export default function Purchase({ t }) {
             </div>
           </Card>
         </div>
-      )}
-
-      {/* ── TAB 5: OLD METAL PURCHASES ───────────────────────────────────────── */}
-      {tab === "old-metal" && (
-        <Card t={t}>
-          <CardHeader title="Supplier Payments" t={t}
-            actions={<BtnSm t={t} primary onClick={() => { setPayModal(true); loadSuppliers(); }}>New Payment</BtnSm>} />
-          {payments.length === 0
-            ? <p style={{ textAlign:"center", padding:36, color:t.subtext, fontSize:13 }}>No supplier payments</p>
-            : <div style={{ overflowX:"auto" }}>
-                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-                  <thead><tr>{["Pay ID","Supplier","Date","Amount","Mode","Reference","PO Ref"].map(c => (
-                    <th key={c} style={{ textAlign:"left", padding:"9px 12px", color:t.subtext, fontWeight:600, fontSize:11, textTransform:"uppercase", borderBottom:`1px solid ${t.border}` }}>{c}</th>
-                  ))}</tr></thead>
-                  <tbody>{payments.map(p => (
-                    <tr key={p.id} style={{ borderBottom:`1px solid ${t.border}` }}>
-                      <td style={{ padding:"10px 12px", color:t.text, fontWeight:600 }}>{p.pay_id}</td>
-                      <td style={{ padding:"10px 12px", color:t.text }}>{p.supplier_name||"—"}</td>
-                      <td style={{ padding:"10px 12px", color:t.subtext }}>{fmtDate(p.created_at)}</td>
-                      <td style={{ padding:"10px 12px", color:"#2ecc71", fontWeight:600 }}>{fmt(p.amount)}</td>
-                      <td style={{ padding:"10px 12px", color:t.subtext }}>{p.payment_mode}</td>
-                      <td style={{ padding:"10px 12px", color:t.subtext }}>{p.reference||"—"}</td>
-                      <td style={{ padding:"10px 12px", color:t.subtext }}>{p.po_ref||"—"}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-          }
-        </Card>
       )}
 
       {tab === "old-metal" && (
@@ -591,90 +560,10 @@ export default function Purchase({ t }) {
             }
           </Card>
         </div>
-      </Modal>
-
-      {/* ── MODAL: PO DETAILS ────────────────────────────────────────────────── */}
-      {selectedPo && (
-        <Modal
-          open={poDetailModal}
-          onClose={() => setPoDetailModal(false)}
-          title={`Purchase Order Details — ${selectedPo.po_no}`}
-          t={t}
-          footer={
-            <>
-              {selectedPo.status !== "CANCELLED" && selectedPo.status !== "RECEIVED" && (
-                <button
-                  onClick={() => handlePoStatusChange(selectedPo.id, "CANCELLED")}
-                  style={{ background: "#fdedec", color: "#e74c3c", border: "none", padding: "8px 14px", borderRadius: 6, cursor: "pointer", marginRight: "auto" }}
-                >
-                  Cancel PO
-                </button>
-              )}
-              <BtnOutline t={t} onClick={() => setPoDetailModal(false)}>Close</BtnOutline>
-              {selectedPo.status !== "RECEIVED" && selectedPo.status !== "CANCELLED" && (
-                <BtnPrimary
-                  onClick={() => {
-                    setPoDetailModal(false);
-                    initReceiveGrn(selectedPo);
-                  }}
-                >
-                  Receive Goods (GRN)
-                </BtnPrimary>
-              )}
-            </>
-          }
-        >
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-            <div>
-              <div style={{ fontSize: 12, color: "#777" }}>Supplier</div>
-              <div style={{ fontWeight: "bold", fontSize: 14 }}>{selectedPo.supplier_name}</div>
-              <div style={{ fontSize: 12, color: "#555" }}>{selectedPo.supplier_phone} · {selectedPo.supplier_city}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: "#777" }}>PO Date & Status</div>
-              <div style={{ fontWeight: 600 }}>{selectedPo.purchase_date?.split("T")[0]}</div>
-              <div style={{ marginTop: 4 }}>{getStatusBadge(selectedPo.status)}</div>
-            </div>
-          </div>
-
-          <h4 style={{ margin: "14px 0 8px 0", fontSize: 13 }}>Line Items</h4>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 14 }}>
-            <thead>
-              <tr style={{ background: "#f8f9fa", borderBottom: "1px solid #ddd" }}>
-                <th style={{ padding: "8px 10px" }}>Item</th>
-                <th style={{ padding: "8px 10px" }}>Purity</th>
-                <th style={{ padding: "8px 10px" }}>Ordered</th>
-                <th style={{ padding: "8px 10px" }}>Received</th>
-                <th style={{ padding: "8px 10px" }}>Weight (g)</th>
-                <th style={{ padding: "8px 10px" }}>Rate</th>
-                <th style={{ padding: "8px 10px" }}>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedPo.items?.map((item) => (
-                <tr key={item.id} style={{ borderBottom: "1px solid #eee" }}>
-                  <td style={{ padding: "8px 10px", fontWeight: 600 }}>{item.item_name}</td>
-                  <td style={{ padding: "8px 10px" }}>{item.purity}</td>
-                  <td style={{ padding: "8px 10px", fontWeight: 600 }}>{item.ordered_qty}</td>
-                  <td style={{ padding: "8px 10px", color: item.received_qty > 0 ? "#27ae60" : "#888", fontWeight: 600 }}>
-                    {item.received_qty}
-                  </td>
-                  <td style={{ padding: "8px 10px" }}>{parseFloat(item.weight_g || 0).toFixed(3)}</td>
-                  <td style={{ padding: "8px 10px" }}>₹{parseFloat(item.rate || 0).toLocaleString("en-IN")}</td>
-                  <td style={{ padding: "8px 10px", fontWeight: "bold" }}>₹{parseFloat(item.amount || 0).toLocaleString("en-IN")}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <div style={{ textAlign: "right", fontSize: 14, fontWeight: "bold", borderTop: "1px solid #eee", paddingTop: 10 }}>
-            Grand Total: ₹{parseFloat(selectedPo.total || 0).toLocaleString("en-IN")}
-          </div>
-        </Modal>
       )}
 
-      {/* Add PO Modal */}
-      <Modal open={addModal} onClose={() => setAddModal(false)} title="New Purchase Order" t={t}
+      {/* ── New Purchase Order Modal ────────────────────────────────────────── */}
+      <Modal open={poModal} onClose={() => { setPoModal(false); setPoForm(EMPTY_PO); }} title="New Purchase Order" t={t}
         footer={<>
           <BtnOutline t={t} onClick={() => setPoModal(false)}>Cancel</BtnOutline>
           <BtnPrimary onClick={submitPO} disabled={saving}>{saving ? "Saving…" : "Create PO"}</BtnPrimary>
@@ -711,88 +600,6 @@ export default function Purchase({ t }) {
               <option value={3}>3%</option><option value={0.25}>0.25%</option><option value={5}>5%</option><option value={18}>18%</option>
             </Select>
           </FormGroup>
-
-          <FormGroup label="Payment Remarks" t={t}>
-            <Input
-              t={t}
-              placeholder="e.g. Full settlement for GRN-2026-0001"
-              value={paymentForm.remark}
-              onChange={(e) => setPaymentForm({ ...paymentForm, remark: e.target.value })}
-            />
-          </FormGroup>
-        </FormGrid>
-      </Modal>
-
-      {/* ── MODAL: OLD METAL SCRAP PURCHASE ─────────────────────────────────── */}
-      <Modal
-        open={oldMetalModal}
-        onClose={() => setOldMetalModal(false)}
-        title="Old Metal Scrap / Exchange Purchase"
-        t={t}
-        footer={
-          <>
-            <BtnOutline t={t} onClick={() => setOldMetalModal(false)}>Cancel</BtnOutline>
-            <BtnPrimary onClick={submitOldMetal}>Save Old Metal Entry</BtnPrimary>
-          </>
-        }
-      >
-        <FormGrid>
-          <FormGroup label="Metal Type" t={t} half>
-            <Select
-              t={t}
-              value={oldMetalForm.metal_type}
-              onChange={(e) => setOldMetalForm({ ...oldMetalForm, metal_type: e.target.value })}
-            >
-              <option value="Gold">Gold (Old Jewellery / Scrap)</option>
-              <option value="Silver">Silver</option>
-              <option value="Platinum">Platinum</option>
-            </Select>
-          </FormGroup>
-
-          <FormGroup label="Gross Weight (g) *" t={t} half>
-            <Input
-              t={t}
-              type="number"
-              step="0.001"
-              placeholder="0.000"
-              value={oldMetalForm.gross_weight}
-              onChange={(e) => setOldMetalForm({ ...oldMetalForm, gross_weight: e.target.value })}
-            />
-          </FormGroup>
-
-          <FormGroup label="Stone / Dust Deduction (g)" t={t} half>
-            <Input
-              t={t}
-              type="number"
-              step="0.001"
-              value={oldMetalForm.stone_deduction}
-              onChange={(e) => setOldMetalForm({ ...oldMetalForm, stone_deduction: e.target.value })}
-            />
-          </FormGroup>
-
-          <FormGroup label="Purity Factor" t={t} half>
-            <Select
-              t={t}
-              value={oldMetalForm.purity}
-              onChange={(e) => setOldMetalForm({ ...oldMetalForm, purity: e.target.value })}
-            >
-              <option value="0.9167">22K (91.67% Fine)</option>
-              <option value="0.7500">18K (75.00% Fine)</option>
-              <option value="0.5833">14K (58.33% Fine)</option>
-              <option value="0.9990">24K (99.90% Fine)</option>
-            </Select>
-          </FormGroup>
-
-          <FormGroup label="Purchase Rate / g (₹) *" t={t} half>
-            <Input
-              t={t}
-              type="number"
-              placeholder="Current scrap rate"
-              value={oldMetalForm.rate}
-              onChange={(e) => setOldMetalForm({ ...oldMetalForm, rate: e.target.value })}
-            />
-          </FormGroup>
-
           <FormGroup label="Payment Mode" t={t} half>
             <Select t={t} value={poForm.payment_mode} onChange={e => setPoForm(p => ({ ...p, payment_mode: e.target.value }))}>
               <option>RTGS</option><option>NEFT</option><option>Cheque</option><option>Cash</option><option>UPI</option>

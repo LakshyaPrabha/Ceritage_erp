@@ -1,7 +1,7 @@
-﻿const db = require("../config/db");
+const db = require("../config/db");
 
 async function getKpis(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.user?.branch_id || 1;
   try {
     const [[kpis]] = await db.query(
       `SELECT
@@ -24,7 +24,7 @@ async function getKpis(req, res) {
 }
 
 async function getAll(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.user?.branch_id || 1;
   try {
     const { search, status, page = 1, limit = 100 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -54,7 +54,7 @@ async function getAll(req, res) {
 }
 
 async function getById(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.user?.branch_id || 1;
   try {
     const [rows] = await db.query(
       `SELECT r.*, c.full_name AS customer_name, c.phone AS customer_phone
@@ -71,7 +71,7 @@ async function getById(req, res) {
 }
 
 async function create(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.user?.branch_id || 1;
   const {
     customer_id, item_name, item_type, metal, purity, weight_g,
     issue_desc, work_to_do, received_date, promised_date,
@@ -112,7 +112,7 @@ async function create(req, res) {
 }
 
 async function update(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.user?.branch_id || 1;
   const {
     customer_id, item_name, item_type, metal, purity, weight_g,
     issue_desc, work_to_do, received_date, promised_date,
@@ -147,7 +147,7 @@ async function update(req, res) {
 }
 
 async function updateStatus(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.user?.branch_id || 1;
   const { status, actual_cost, delivery_date } = req.body;
   try {
     await db.query(
@@ -164,7 +164,7 @@ async function updateStatus(req, res) {
 }
 
 async function remove(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.user?.branch_id || 1;
   try {
     const [r] = await db.query(
       "DELETE FROM repair_jobs WHERE id=? AND branch_id=?",

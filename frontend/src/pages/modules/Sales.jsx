@@ -5,13 +5,13 @@ import {
   BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid, Input, Select,
 } from "../../components/ui";
 
-const API = "http://localhost:5000/api";
+const API = window.__CERITAGE_API__ || "http://localhost:5000/api";
 function authHeaders() {
-  const token = sessionStorage.getItem("ceritage_token");
-  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const token = localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
+  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
-function fmt(n) { return n ? "?" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2 }) : "?0.00"; }
-function fmtDate(d) { return d ? new Date(d).toLocaleDateString("en-IN") : "�"; }
+function fmt(n) { return n ? "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2 }) : "₹0.00"; }
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString("en-IN") : "—"; }
 
 const TABS = [
   { id:"register", label:"Sales Register" },

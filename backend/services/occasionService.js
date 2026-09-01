@@ -92,14 +92,20 @@ async function getCustomerOccasions(options = {}) {
      ORDER BY c.full_name ASC`
   );
 
-  // 2. Fetch existing reminder records for current & next year
-  const [reminderRows] = await db.query(
-    `SELECT id, customer_id, occasion_type, occasion_year,
-            status, acknowledged_by, acknowledged_at
-     FROM customer_occasion_reminders
-     WHERE occasion_year IN (?, ?)`,
-    [istNow.year, istNow.year + 1]
-  );
+  // 2. Fetch existing reminder records for current & next year safely
+  let reminderRows = [];
+  try {
+    const [rows] = await db.query(
+      `SELECT id, customer_id, occasion_type, occasion_year,
+              reminder_status, greeting_sent, voucher_code, bonus_loyalty_points, notes
+       FROM customer_occasion_reminders
+       WHERE occasion_year IN (?, ?)`,
+      [istNow.year, istNow.year + 1]
+    );
+    reminderRows = rows;
+  } catch (err) {
+    console.warn("Notice: customer_occasion_reminders query fallback:", err.message);
+  }
 
   const reminderMap = new Map();
   reminderRows.forEach(r => {
@@ -118,6 +124,8 @@ async function getCustomerOccasions(options = {}) {
       const bdayInfo = calculateNextOccurrence(cust.date_of_birth, istNow);
       if (bdayInfo) {
         const rem = reminderMap.get(`${cust.id}_BIRTHDAY_${bdayInfo.occurrenceYear}`);
+        const status = rem ? rem.reminder_status : (bdayInfo.daysUntil === 0 ? "DUE_TODAY" : "UPCOMING");
+
         occasionsList.push({
           customerId: cust.id,
           custCode: cust.cust_code || `CUST-${cust.id}`,
@@ -133,13 +141,12 @@ async function getCustomerOccasions(options = {}) {
           occurrenceYear: bdayInfo.occurrenceYear,
           daysUntil: bdayInfo.daysUntil,
           isThisMonth: bdayInfo.isThisMonth,
-          status: rem ? rem.status : (bdayInfo.daysUntil === 0 ? "TODAY" : "UPCOMING"),
+          status,
           reminderId: rem?.id || null,
-          acknowledgedBy: rem?.acknowledged_by || null,
-          acknowledgedAt: rem?.acknowledged_at || null,
-          greetingGenerated: false,
-          couponCode: null,
-          bonusPoints: 0,
+          greetingGenerated: Boolean(rem?.greeting_sent),
+          couponCode: rem?.voucher_code || null,
+          bonusPoints: rem?.bonus_loyalty_points || 0,
+          notes: rem?.notes || null,
           preferences: {
             optInWhatsapp: Boolean(cust.opt_in_whatsapp),
             optInSms: Boolean(cust.opt_in_sms),
@@ -155,6 +162,8 @@ async function getCustomerOccasions(options = {}) {
       const annivInfo = calculateNextOccurrence(cust.anniversary, istNow);
       if (annivInfo) {
         const rem = reminderMap.get(`${cust.id}_ANNIVERSARY_${annivInfo.occurrenceYear}`);
+        const status = rem ? rem.reminder_status : (annivInfo.daysUntil === 0 ? "DUE_TODAY" : "UPCOMING");
+
         occasionsList.push({
           customerId: cust.id,
           custCode: cust.cust_code || `CUST-${cust.id}`,
@@ -170,13 +179,12 @@ async function getCustomerOccasions(options = {}) {
           occurrenceYear: annivInfo.occurrenceYear,
           daysUntil: annivInfo.daysUntil,
           isThisMonth: annivInfo.isThisMonth,
-          status: rem ? rem.status : (annivInfo.daysUntil === 0 ? "TODAY" : "UPCOMING"),
+          status,
           reminderId: rem?.id || null,
-          acknowledgedBy: rem?.acknowledged_by || null,
-          acknowledgedAt: rem?.acknowledged_at || null,
-          greetingGenerated: false,
-          couponCode: null,
-          bonusPoints: 0,
+          greetingGenerated: Boolean(rem?.greeting_sent),
+          couponCode: rem?.voucher_code || null,
+          bonusPoints: rem?.bonus_loyalty_points || 0,
+          notes: rem?.notes || null,
           preferences: {
             optInWhatsapp: Boolean(cust.opt_in_whatsapp),
             optInSms: Boolean(cust.opt_in_sms),
@@ -275,12 +283,11 @@ async function acknowledgeOccasion(customerId, occasionType, occasionDate, ackno
     reminderId = existing[0].id;
     await db.query(
       `UPDATE customer_occasion_reminders SET
-         status = 'ACKNOWLEDGED',
-         acknowledged_by = ?,
-         acknowledged_at = CURRENT_TIMESTAMP,
-         notes = COALESCE(?, notes)
+         reminder_status = 'ACKNOWLEDGED',
+         notes = COALESCE(?, notes),
+         updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
-      [acknowledgedBy, notes || null, reminderId]
+      [notes || null, reminderId]
     );
   } else {
     const istNow = getIstNow();
@@ -289,19 +296,23 @@ async function acknowledgeOccasion(customerId, occasionType, occasionDate, ackno
 
     const [res] = await db.query(
       `INSERT INTO customer_occasion_reminders
-       (customer_id, occasion_type, occasion_date, occasion_year, days_until_event, status, acknowledged_by, acknowledged_at, notes)
-       VALUES (?, ?, ?, ?, ?, 'ACKNOWLEDGED', ?, CURRENT_TIMESTAMP, ?)`,
-      [customerId, normType, dateStr, year, diffDays, acknowledgedBy, notes || null]
+       (customer_id, occasion_type, occasion_date, occasion_year, days_in_advance, reminder_status, notes)
+       VALUES (?, ?, ?, ?, ?, 'ACKNOWLEDGED', ?)`,
+      [customerId, normType, dateStr, year, diffDays, notes || null]
     );
     reminderId = res.insertId;
   }
 
-  // Audit log
-  await db.query(
-    `INSERT INTO customer_audit_logs (customer_id, action, performed_by, details)
-     VALUES (?, 'OCCASION_REMINDER_ACKNOWLEDGED', ?, ?)`,
-    [customerId, acknowledgedBy, `Acknowledged ${normType} for ${dateStr} (${notes || 'Staff contact'})`]
-  );
+  // Audit log with schema-safe column names
+  try {
+    await db.query(
+      `INSERT INTO customer_audit_logs (customer_id, action_type, performed_by, description)
+       VALUES (?, 'OCCASION_REMINDER_ACKNOWLEDGED', ?, ?)`,
+      [customerId, acknowledgedBy, `Acknowledged ${normType} for ${dateStr} (${notes || 'Staff contact'})`]
+    );
+  } catch (err) {
+    console.warn("Audit log notice:", err.message);
+  }
 
   return { success: true, reminderId, status: "ACKNOWLEDGED" };
 }

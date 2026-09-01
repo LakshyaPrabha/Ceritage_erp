@@ -1,14 +1,14 @@
-﻿import { BRAND } from "../../theme.js";
+import { BRAND } from "../../theme.js";
 import { useState, useEffect } from "react";
 import {PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
   BtnPrimary, BtnOutline, BtnSm, Modal,
   FormGroup, FormGrid, Input, Select, SectionTitle,
 } from "../../components/ui";
 
-const API = window.__CERITAGE_API__ || "/api";
+const API = window.__CERITAGE_API__ || "http://localhost:5000/api";
 function authHeaders() {
-  const token = sessionStorage.getItem("ceritage_token");
-  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const token = localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
+  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 
 const TABS = [

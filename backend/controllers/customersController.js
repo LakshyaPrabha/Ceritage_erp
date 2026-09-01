@@ -42,9 +42,9 @@ function maskPan(pan) {
 async function logCustomerAudit(customerId, action, performedBy = "System", details = "") {
   try {
     await db.query(
-      `INSERT INTO customer_audit_logs (customer_id, action, performed_by, details)
-       VALUES (?, ?, ?, ?)`,
-      [customerId, action, performedBy, details]
+      `INSERT INTO customer_audit_logs (customer_id, action_type, action, performed_by, description, details)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [customerId, action, action, performedBy, details, details]
     );
   } catch (err) {
     console.warn("Failed to write customer audit log:", err.message);
@@ -1052,144 +1052,237 @@ async function getActivityTimeline(req, res) {
     const events = [];
 
     // 1. Invoices
-    const [invRows] = await db.query(
-      `SELECT i.id, i.invoice_no, i.invoice_date, i.grand_total, i.payment_mode, i.status, i.created_at,
-              GROUP_CONCAT(ii.item_description SEPARATOR ', ') AS items_summary
-       FROM invoices i
-       LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
-       WHERE i.customer_id = ?
-       GROUP BY i.id`,
-      [customerId]
-    );
-    invRows.forEach(i => {
-      events.push({
-        id: `INV-${i.id}`,
-        type: "INVOICE_CREATED",
-        title: `Invoice Generated (${i.invoice_no})`,
-        description: `Purchased: ${i.items_summary || 'Jewellery Items'} · Status: ${i.status}`,
-        amount: Number(i.grand_total),
-        reference: i.invoice_no,
-        date: i.created_at || i.invoice_date,
-        performed_by: "Sales Staff",
-        source: "invoices"
+    try {
+      const [invRows] = await db.query(
+        `SELECT i.id, i.invoice_no, i.invoice_date, i.grand_total, i.payment_mode, i.status, i.created_at,
+                GROUP_CONCAT(ii.item_description SEPARATOR ', ') AS items_summary
+         FROM invoices i
+         LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
+         WHERE i.customer_id = ?
+         GROUP BY i.id`,
+        [customerId]
+      );
+      invRows.forEach(i => {
+        events.push({
+          id: `INV-${i.id}`,
+          type: "INVOICE_CREATED",
+          title: `Invoice Generated (${i.invoice_no})`,
+          description: `Purchased: ${i.items_summary || 'Jewellery Items'} · Status: ${i.status}`,
+          amount: Number(i.grand_total),
+          reference: i.invoice_no,
+          date: i.created_at || i.invoice_date,
+          performed_by: "Sales Staff",
+          source: "invoices"
+        });
       });
-    });
+    } catch (e) {
+      console.warn("Activity timeline invoices notice:", e.message);
+    }
 
     // 2. Customer Ledger Payments
-    const [ledgerRows] = await db.query(
-      `SELECT * FROM customer_ledger WHERE customer_id = ? AND credit > 0`,
-      [customerId]
-    );
-    ledgerRows.forEach(l => {
-      events.push({
-        id: `LED-${l.id}`,
-        type: "PAYMENT_RECEIVED",
-        title: "Payment Received",
-        description: l.particulars || "Payment credited against dues",
-        amount: Number(l.credit),
-        reference: l.reference,
-        date: l.created_at || l.date,
-        performed_by: "Cashier",
-        source: "customer_ledger"
+    try {
+      const [ledgerRows] = await db.query(
+        `SELECT * FROM customer_ledger WHERE customer_id = ? AND credit > 0`,
+        [customerId]
+      );
+      ledgerRows.forEach(l => {
+        events.push({
+          id: `LED-${l.id}`,
+          type: "PAYMENT_RECEIVED",
+          title: "Payment Received",
+          description: l.particulars || "Payment credited against dues",
+          amount: Number(l.credit),
+          reference: l.reference,
+          date: l.created_at || l.date,
+          performed_by: "Cashier",
+          source: "customer_ledger"
+        });
       });
-    });
+    } catch (e) {
+      console.warn("Activity timeline ledger notice:", e.message);
+    }
 
     // 3. Returns
-    const [retRows] = await db.query("SELECT * FROM returns WHERE customer_id = ?", [customerId]);
-    retRows.forEach(r => {
-      events.push({
-        id: `RET-${r.id}`,
-        type: "RETURN_PROCESSED",
-        title: `Sales Return (${r.return_no})`,
-        description: `Returned: ${r.item_description} · Reason: ${r.reason || 'Customer request'} · Refund: ${r.refund_mode}`,
-        amount: Number(r.refund_amount),
-        reference: r.return_no,
-        date: r.created_at || r.return_date,
-        performed_by: "Admin",
-        source: "returns"
+    try {
+      const [retRows] = await db.query("SELECT * FROM returns WHERE customer_id = ?", [customerId]);
+      retRows.forEach(r => {
+        events.push({
+          id: `RET-${r.id}`,
+          type: "RETURN_PROCESSED",
+          title: `Sales Return (${r.return_no || '#' + r.id})`,
+          description: `Returned: ${r.item_description || 'Item'} · Reason: ${r.reason || 'Customer request'} · Refund: ${r.refund_mode || 'Cash'}`,
+          amount: Number(r.refund_amount || 0),
+          reference: r.return_no || r.invoice_ref,
+          date: r.created_at || r.return_date,
+          performed_by: "Admin",
+          source: "returns"
+        });
       });
-    });
+    } catch (e) {
+      console.warn("Activity timeline returns notice:", e.message);
+    }
 
     // 4. Notes
-    const [noteRows] = await db.query("SELECT * FROM customer_notes WHERE customer_id = ?", [customerId]);
-    noteRows.forEach(n => {
-      events.push({
-        id: `NOTE-${n.id}`,
-        type: "NOTE_ADDED",
-        title: `Customer Note [${n.category}]`,
-        description: n.note_text,
-        reference: `NOTE-${n.id}`,
-        date: n.created_at,
-        performed_by: n.created_by || "Staff",
-        source: "customer_notes"
+    try {
+      const [noteRows] = await db.query("SELECT * FROM customer_notes WHERE customer_id = ?", [customerId]);
+      noteRows.forEach(n => {
+        events.push({
+          id: `NOTE-${n.id}`,
+          type: "NOTE_ADDED",
+          title: `Customer Note [${n.category || 'General'}]`,
+          description: n.note_text,
+          reference: `NOTE-${n.id}`,
+          date: n.created_at,
+          performed_by: n.created_by || "Staff",
+          source: "customer_notes"
+        });
       });
-    });
+    } catch (e) {
+      console.warn("Activity timeline notes notice:", e.message);
+    }
 
     // 5. Wallet Transactions
-    const [walletRows] = await db.query("SELECT * FROM customer_wallet_transactions WHERE customer_id = ?", [customerId]);
-    walletRows.forEach(w => {
-      events.push({
-        id: `WAL-${w.id}`,
-        type: `WALLET_${w.transaction_type}`,
-        title: `Store Wallet ${w.transaction_type}`,
-        description: `${w.description || 'Wallet transaction'} · Balance after: ₹${Number(w.balance_after).toLocaleString('en-IN')}`,
-        amount: Number(w.amount),
-        reference: w.reference_id,
-        date: w.created_at,
-        performed_by: w.performed_by,
-        source: "customer_wallet_transactions"
+    try {
+      const [walletRows] = await db.query("SELECT * FROM customer_wallet_transactions WHERE customer_id = ?", [customerId]);
+      walletRows.forEach(w => {
+        events.push({
+          id: `WAL-${w.id}`,
+          type: `WALLET_${w.transaction_type}`,
+          title: `Store Wallet ${w.transaction_type}`,
+          description: `${w.description || 'Wallet transaction'} · Balance after: ₹${Number(w.balance_after).toLocaleString('en-IN')}`,
+          amount: Number(w.amount),
+          reference: w.reference_id,
+          date: w.created_at,
+          performed_by: w.performed_by,
+          source: "customer_wallet_transactions"
+        });
       });
-    });
+    } catch (e) {
+      console.warn("Activity timeline wallet notice:", e.message);
+    }
 
     // 6. Loyalty Transactions
-    const [loyaltyRows] = await db.query("SELECT * FROM customer_loyalty_transactions WHERE customer_id = ?", [customerId]);
-    loyaltyRows.forEach(l => {
-      events.push({
-        id: `LOY-${l.id}`,
-        type: `LOYALTY_${l.transaction_type}`,
-        title: `Loyalty Points ${l.transaction_type}`,
-        description: `${l.description || 'Loyalty points update'} · Points: ${l.points} pts (Balance: ${l.balance_after} pts)`,
-        points: l.points,
-        reference: l.reference_id,
-        date: l.created_at,
-        performed_by: l.performed_by,
-        source: "customer_loyalty_transactions"
+    try {
+      const [loyaltyRows] = await db.query("SELECT * FROM customer_loyalty_transactions WHERE customer_id = ?", [customerId]);
+      loyaltyRows.forEach(l => {
+        events.push({
+          id: `LOY-${l.id}`,
+          type: `LOYALTY_${l.transaction_type}`,
+          title: `Loyalty Points ${l.transaction_type}`,
+          description: `${l.description || 'Loyalty points update'} · Points: ${l.points} pts (Balance: ${l.balance_after} pts)`,
+          points: l.points,
+          reference: l.reference_id,
+          date: l.created_at,
+          performed_by: l.performed_by,
+          source: "customer_loyalty_transactions"
+        });
       });
-    });
+    } catch (e) {
+      console.warn("Activity timeline loyalty notice:", e.message);
+    }
 
     // 7. EMI Payments
-    const [emiPayRows] = await db.query("SELECT * FROM emi_payments WHERE customer_id = ?", [customerId]);
-    emiPayRows.forEach(ep => {
-      events.push({
-        id: `EMI-PAY-${ep.id}`,
-        type: "EMI_PAYMENT",
-        title: `EMI Installment #${ep.installment_no} Paid`,
-        description: `Installment payment of ₹${Number(ep.amount).toLocaleString('en-IN')} via ${ep.payment_mode}`,
-        amount: Number(ep.amount),
-        reference: ep.receipt_no,
-        date: ep.created_at || ep.payment_date,
-        performed_by: ep.performed_by,
-        source: "emi_payments"
+    try {
+      const [emiPayRows] = await db.query("SELECT * FROM emi_payments WHERE customer_id = ?", [customerId]);
+      emiPayRows.forEach(ep => {
+        events.push({
+          id: `EMI-PAY-${ep.id}`,
+          type: "EMI_PAYMENT",
+          title: `EMI Payment (${ep.payment_no || '#' + ep.id})`,
+          description: `Payment of ₹${Number(ep.amount).toLocaleString('en-IN')} via ${ep.payment_mode || 'Cash'}`,
+          amount: Number(ep.amount),
+          reference: ep.reference_no || ep.payment_no,
+          date: ep.created_at || ep.payment_date,
+          performed_by: ep.collected_by || ep.performed_by || "Cashier",
+          source: "emi_payments"
+        });
       });
-    });
+    } catch (e) {
+      console.warn("Activity timeline emi payments notice:", e.message);
+    }
 
     // 8. Customer Audit Logs
-    const [auditRows] = await db.query(
-      "SELECT * FROM customer_audit_logs WHERE customer_id = ? AND action IN ('CREATED', 'UPDATED', 'ARCHIVED', 'RESTORED', 'KYC_UPDATED')",
-      [customerId]
-    );
-    auditRows.forEach(a => {
-      events.push({
-        id: `AUD-${a.id}`,
-        type: a.action,
-        title: `Profile ${a.action.replace('_', ' ')}`,
-        description: a.details,
-        reference: `AUDIT-${a.id}`,
-        date: a.created_at,
-        performed_by: a.performed_by,
-        source: "customer_audit_logs"
+    try {
+      const [auditRows] = await db.query(
+        "SELECT * FROM customer_audit_logs WHERE customer_id = ?",
+        [customerId]
+      );
+      auditRows.forEach(a => {
+        const actionName = a.action_type || a.action || "UPDATE";
+        events.push({
+          id: `AUD-${a.id}`,
+          type: actionName,
+          title: `Profile ${actionName.replace(/_/g, ' ')}`,
+          description: a.description || a.details || "Customer profile action logged",
+          reference: `AUDIT-${a.id}`,
+          date: a.created_at,
+          performed_by: a.performed_by || "Staff",
+          source: "customer_audit_logs"
+        });
       });
-    });
+    } catch (e) {
+      console.warn("Activity timeline audit logs notice:", e.message);
+    }
+
+    // 9. Repair Jobs
+    try {
+      const [repairRows] = await db.query("SELECT * FROM repair_jobs WHERE customer_id = ?", [customerId]);
+      repairRows.forEach(r => {
+        events.push({
+          id: `REP-${r.id}`,
+          type: "REPAIR_JOB",
+          title: `Repair Job (${r.job_no || '#' + r.id})`,
+          description: `${r.item_name || 'Jewellery Repair'} · Status: ${r.status || 'Received'}`,
+          amount: Number(r.actual_cost || r.estimated_cost || 0),
+          reference: r.job_no,
+          date: r.created_at || r.received_date,
+          performed_by: "Workshop",
+          source: "repair_jobs"
+        });
+      });
+    } catch (e) {
+      console.warn("Activity timeline repair jobs notice:", e.message);
+    }
+
+    // 10. Custom Orders
+    try {
+      const [orderRows] = await db.query("SELECT * FROM orders WHERE customer_id = ?", [customerId]);
+      orderRows.forEach(o => {
+        events.push({
+          id: `ORD-${o.id}`,
+          type: "CUSTOM_ORDER",
+          title: `Custom Order (${o.order_no || '#' + o.id})`,
+          description: `${o.item_name || 'Custom Order'} · Status: ${o.status || 'Pending'}`,
+          amount: Number(o.estimated_total || 0),
+          reference: o.order_no,
+          date: o.created_at,
+          performed_by: "Sales Staff",
+          source: "orders"
+        });
+      });
+    } catch (e) {
+      console.warn("Activity timeline orders notice:", e.message);
+    }
+
+    // 11. Old Gold Exchanges
+    try {
+      const [exRows] = await db.query("SELECT * FROM gold_exchanges WHERE customer_id = ?", [customerId]);
+      exRows.forEach(x => {
+        events.push({
+          id: `EX-${x.id}`,
+          type: "GOLD_EXCHANGE",
+          title: `Old Metal Exchange (${x.metal_type || 'Gold'})`,
+          description: `Exchanged ${x.gross_weight || 0}g scrap · Value: ₹${Number(x.final_value || x.valuation_amount || 0).toLocaleString('en-IN')}`,
+          amount: Number(x.final_value || x.valuation_amount || 0),
+          reference: x.exchange_no || `#${x.id}`,
+          date: x.created_at,
+          performed_by: "Cashier",
+          source: "gold_exchanges"
+        });
+      });
+    } catch (e) {
+      console.warn("Activity timeline gold exchanges notice:", e.message);
+    }
 
     // Filter by type if provided
     let filteredEvents = events;

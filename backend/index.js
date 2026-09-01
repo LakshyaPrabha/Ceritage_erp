@@ -62,6 +62,10 @@ app.use("/api/membership",    require("./routes/membership"));
 app.use("/api/communications",require("./routes/communication"));
 app.use("/api/inventory",     require("./routes/inventory"));
 app.use("/api/hallmark",      require("./routes/hallmark"));
+app.use("/api/payments",      require("./routes/payments"));
+app.use("/api/accounting",    require("./routes/accounting"));
+app.use("/api/gst",           require("./routes/gst"));
+app.use("/api/tunch",         require("./routes/tunch"));
 app.use("/api/advance",       require("./routes/advance"));
 
 // ── 404 handler ────────────────────────────────────────────

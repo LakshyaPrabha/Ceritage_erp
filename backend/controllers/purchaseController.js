@@ -45,12 +45,12 @@ async function getAll(req, res) {
       `SELECT po.*, s.company_name AS supplier_name
        FROM purchase_orders po
        LEFT JOIN suppliers s ON po.supplier_id = s.id
-       ${where} ORDER BY po.purchase_date DESC, po.id DESC
+       ${whereClause} ORDER BY po.purchase_date DESC, po.id DESC
        LIMIT ? OFFSET ?`,
       [...params, parseInt(limit), parseInt(offset)]
     );
     const [[{ total }]] = await db.query(
-      `SELECT COUNT(*) AS total FROM purchase_orders po ${where}`, params
+      `SELECT COUNT(*) AS total FROM purchase_orders po ${whereClause}`, params
     );
     res.json({ success: true, data: rows, total });
   } catch (err) {
@@ -394,22 +394,26 @@ async function getOldMetalPurchases(req, res) {
 
 async function createOldMetalPurchase(req, res) {
   try {
-    const { customer_id, metal_type, gross_weight, stone_deduction, purity, rate, payment_mode } = req.body;
+    const { customer_id, metal_type = "Gold", gross_weight, stone_deduction, purity, rate, payment_mode = "Cash" } = req.body;
+
+    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM old_metal_purchases");
+    const purchase_no = `OMP-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 
     const net_weight  = (parseFloat(gross_weight) || 0) - (parseFloat(stone_deduction) || 0);
     const purityValue = parseFloat(purity) || 0.9167;
     const fine_weight = net_weight * purityValue;
-    const amount_paid = fine_weight * (parseFloat(rate) || 0);
+    const rateVal     = parseFloat(rate) || 0;
+    const amount_paid = fine_weight * rateVal;
 
     const [result] = await db.query(
       `INSERT INTO old_metal_purchases
-         (customer_id, metal_type, gross_weight, stone_deduction, net_weight, purity, fine_weight, rate, amount_paid, payment_mode)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [customer_id || null, metal_type, gross_weight || 0, stone_deduction || 0,
-       net_weight, purity, fine_weight, rate || 0, amount_paid, payment_mode]
+         (purchase_no, customer_id, metal_type, gross_weight, stone_deduction, net_weight, purity, fine_weight, rate, rate_per_gram, amount_paid, total_paid, payment_mode, purchase_date)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_DATE)`,
+      [purchase_no, customer_id || null, metal_type, gross_weight || 0, stone_deduction || 0,
+       net_weight, String(purity), fine_weight, rateVal, rateVal, amount_paid, amount_paid, payment_mode]
     );
 
-    res.status(201).json({ success: true, data: { id: result.insertId, amount_paid: amount_paid.toFixed(2) } });
+    res.status(201).json({ success: true, data: { id: result.insertId, purchase_no, amount_paid: amount_paid.toFixed(2) } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

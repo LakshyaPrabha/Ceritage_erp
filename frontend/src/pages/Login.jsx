@@ -1,5 +1,4 @@
 
-import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import ceritageLogoSvg from "../assets/ceritage-logo.svg";

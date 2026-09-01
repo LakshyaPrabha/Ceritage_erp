@@ -63,6 +63,7 @@ app.use("/api/communications",require("./routes/communication"));
 app.use("/api/inventory",     require("./routes/inventory"));
 app.use("/api/hallmark",      require("./routes/hallmark"));
 app.use("/api/advance",       require("./routes/advance"));
+app.use("/api/rfid",          require("./routes/rfid"));
 
 // ── 404 handler ────────────────────────────────────────────
 app.use((req, res) => {

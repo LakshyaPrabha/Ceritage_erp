@@ -105,6 +105,9 @@ export default function Login() {
       sessionStorage.setItem("ceritage_token", result.token);
       sessionStorage.setItem("ceritage_user", result.user?.full_name || username.trim());
       sessionStorage.setItem("ceritage_role", result.user?.role || "");
+      sessionStorage.setItem("ceritage_permissions", JSON.stringify(result.user?.permissions || {}));
+      localStorage.setItem("ceritage_permissions", JSON.stringify(result.user?.permissions || {}));
+      localStorage.setItem("ceritage_role", result.user?.role || "");
       window.location.href = "/dashboard";
     } catch (err) {
       setLoading(false);

@@ -1,4 +1,4 @@
-﻿import { BRAND } from "../../theme.js";
+import { BRAND } from "../../theme.js";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
          BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid,
@@ -654,6 +654,15 @@ export default function Products({ t }) {
 
   const productRows = products.map(p => ({
     "Product":     p.name,
+    "Store / Branch": (
+      <span style={{
+        padding: "3px 8px", borderRadius: 12, fontSize: 11, fontWeight: 700,
+        background: "rgba(59,85,230,0.1)", color: BRAND.blue,
+        display: "inline-flex", alignItems: "center", gap: 4
+      }}>
+         {p.branch_name || "Main Showroom"}
+      </span>
+    ),
     "SKU":         p.sku,
     "Type":        p.product_category,
     "Metal":       p.metal_type,

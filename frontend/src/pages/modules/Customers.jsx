@@ -934,11 +934,20 @@ export default function Customers({ t }) {
             t={t}
           />
           <DataTable
-            columns={["Customer ID", "Full Name", "Phone", "Tier", "City", "Wallet", "Points", "Balance Due", "Actions"]}
+            columns={["Customer ID", "Full Name", "Phone", "Registered Branch", "Tier", "City", "Wallet", "Points", "Balance Due", "Actions"]}
             rows={customers.map(c => ({
               "Customer ID": <code>{c.customer_id || `CUST-${c.id}`}</code>,
               "Full Name": <strong>{c.full_name}</strong>,
               "Phone": c.phone,
+              "Registered Branch": (
+                <span style={{
+                  padding: "3px 8px", borderRadius: 12, fontSize: 11, fontWeight: 700,
+                  background: "rgba(59,85,230,0.1)", color: BRAND.blue,
+                  display: "inline-flex", alignItems: "center", gap: 4
+                }}>
+                   {c.branch_name || "Main Showroom"}
+                </span>
+              ),
               "Tier": (
                 <span style={{
                   padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700,

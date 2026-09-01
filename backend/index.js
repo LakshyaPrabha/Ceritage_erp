@@ -67,6 +67,7 @@ app.use("/api/accounting",    require("./routes/accounting"));
 app.use("/api/gst",           require("./routes/gst"));
 app.use("/api/tunch",         require("./routes/tunch"));
 app.use("/api/advance",       require("./routes/advance"));
+app.use("/api/rfid",          require("./routes/rfid"));
 
 // ── 404 handler ────────────────────────────────────────────
 app.use((req, res) => {

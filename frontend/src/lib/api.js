@@ -1,7 +1,7 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
 
 export function getAuthToken() {
-  return sessionStorage.getItem("ceritage_token");
+  return localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
 }
 
 export async function apiRequest(path, options = {}) {

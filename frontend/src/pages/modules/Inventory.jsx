@@ -1,12 +1,12 @@
-﻿import { BRAND } from "../../theme.js";
+import { BRAND } from "../../theme.js";
 import { useState, useEffect, useCallback } from "react";
 import { PageHeader, Card, CardHeader, StatCard, Tabs,
          BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid, Input, Select } from "../../components/ui";
 
-const API = "http://localhost:5000/api";
+const API = window.__CERITAGE_API__ || "http://localhost:5000/api";
 function authHeaders() {
-  const token = sessionStorage.getItem("ceritage_token");
-  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const token = localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
+  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
 }
 function fmt(n)     { return n != null ? "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 0 }) : "₹0"; }
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString("en-IN") : "—"; }

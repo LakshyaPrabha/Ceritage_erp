@@ -11,7 +11,17 @@ function verifyToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // { id, username, role, branch_id }
+    req.user = decoded; // { id, username, role, branch_id, permissions }
+
+    // Multi-Branch Context:
+    // Admin can filter by x-branch-id header or view all (null).
+    // Non-admin is strictly bound to their assigned branch_id.
+    if (decoded.role === "admin") {
+      req.branchId = req.headers["x-branch-id"] ? parseInt(req.headers["x-branch-id"]) : null;
+    } else {
+      req.branchId = decoded.branch_id || 1;
+    }
+
     next();
   } catch (err) {
     return res.status(403).json({ success: false, message: "Invalid or expired token" });

@@ -33,8 +33,8 @@ async function generateGreeting(customer, occasionType, options = {}) {
 
       // Check if points already granted for this occasion/year
       const [existingRem] = await conn.query(
-        `SELECT id, bonus_points FROM customer_occasion_reminders
-         WHERE customer_id = ? AND occasion_type = ? AND occasion_year = ? AND bonus_points > 0`,
+        `SELECT id, bonus_loyalty_points FROM customer_occasion_reminders
+         WHERE customer_id = ? AND occasion_type = ? AND occasion_year = ? AND bonus_loyalty_points > 0`,
         [customer.id, normType, year]
       );
 
@@ -61,11 +61,15 @@ async function generateGreeting(customer, occasionType, options = {}) {
           await conn.query("UPDATE customers SET loyalty_points = ? WHERE id = ?", [newPts, customer.id]);
           pointsGranted = pts;
 
-          await conn.query(
-            `INSERT INTO customer_audit_logs (customer_id, action, performed_by, details)
-             VALUES (?, 'OCCASION_BONUS_POINTS_GRANTED', ?, ?)`,
-            [customer.id, performed_by, `Granted ${pts} bonus loyalty points for ${normType} ${year}`]
-          );
+          try {
+            await conn.query(
+              `INSERT INTO customer_audit_logs (customer_id, action_type, performed_by, description)
+               VALUES (?, 'OCCASION_BONUS_POINTS_GRANTED', ?, ?)`,
+              [customer.id, performed_by, `Granted ${pts} bonus loyalty points for ${normType} ${year}`]
+            );
+          } catch (e) {
+            console.warn("Audit notice:", e.message);
+          }
         }
       }
       await conn.commit();
@@ -81,7 +85,7 @@ async function generateGreeting(customer, occasionType, options = {}) {
     }
   }
 
-  // Update or insert reminder record with greeting_generated and coupon_code
+  // Update or insert reminder record with greeting_sent and voucher_code
   try {
     const [remRows] = await db.query(
       "SELECT id FROM customer_occasion_reminders WHERE customer_id = ? AND occasion_type = ? AND occasion_year = ?",
@@ -91,9 +95,11 @@ async function generateGreeting(customer, occasionType, options = {}) {
     if (remRows.length > 0) {
       await db.query(
         `UPDATE customer_occasion_reminders SET
-           greeting_generated = TRUE,
-           coupon_code = COALESCE(?, coupon_code),
-           bonus_points = GREATEST(bonus_points, ?)
+           reminder_status = 'GREETED',
+           greeting_sent = 1,
+           greeting_timestamp = CURRENT_TIMESTAMP,
+           voucher_code = COALESCE(?, voucher_code),
+           bonus_loyalty_points = GREATEST(bonus_loyalty_points, ?)
          WHERE id = ?`,
         [couponCode, pointsGranted, remRows[0].id]
       );
@@ -102,35 +108,36 @@ async function generateGreeting(customer, occasionType, options = {}) {
       const occDateStr = occDate ? new Date(occDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
       await db.query(
         `INSERT INTO customer_occasion_reminders
-         (customer_id, occasion_type, occasion_date, occasion_year, days_until_event, status, greeting_generated, coupon_code, bonus_points)
-         VALUES (?, ?, ?, ?, 0, 'PENDING', TRUE, ?, ?)`,
+         (customer_id, occasion_type, occasion_date, occasion_year, days_in_advance, reminder_status, greeting_sent, greeting_timestamp, voucher_code, bonus_loyalty_points)
+         VALUES (?, ?, ?, ?, 0, 'GREETED', 1, CURRENT_TIMESTAMP, ?, ?)`,
         [customer.id, normType, occDateStr, year, couponCode, pointsGranted]
       );
     }
 
-    await db.query(
-      `INSERT INTO customer_audit_logs (customer_id, action, performed_by, details)
-       VALUES (?, 'OCCASION_GREETING_GENERATED', ?, ?)`,
-      [customer.id, performed_by, `Generated ${normType} greeting card${couponCode ? ` (Coupon: ${couponCode})` : ''}`]
-    );
+    try {
+      await db.query(
+        `INSERT INTO customer_audit_logs (customer_id, action_type, performed_by, description)
+         VALUES (?, 'OCCASION_GREETING_GENERATED', ?, ?)`,
+        [customer.id, performed_by, `Generated ${normType} greeting card${couponCode ? ` (Coupon: ${couponCode})` : ''}`]
+      );
+    } catch (e) {
+      console.warn("Audit notice:", e.message);
+    }
   } catch (err) {
     console.warn("Notice updating occasion reminder on greeting generation:", err.message);
   }
 
   return {
-    customer: {
-      id: customer.id,
-      name: customer.full_name,
-      phone: customer.phone,
-      tier: customer.tier || 'Regular'
-    },
-    occasionType: normType,
-    greeting: greetingText,
-    couponCode,
-    bonusPointsGranted: pointsGranted
+    success: true,
+    occasion_type: normType,
+    customer_id: customer.id,
+    customer_name: customerName,
+    phone: customer.phone,
+    greeting_text: greetingText,
+    coupon_code: couponCode,
+    bonus_points_granted: pointsGranted,
+    generated_at: new Date().toISOString()
   };
 }
 
-module.exports = {
-  generateGreeting,
-};
+module.exports = { generateGreeting };

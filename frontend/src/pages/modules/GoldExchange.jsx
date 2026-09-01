@@ -1,197 +1,450 @@
-﻿import { BRAND } from "../../theme.js";
-import { useState } from "react";
-import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
-         BtnPrimary, BtnOutline, BtnSm, FormGroup, FormGrid, Input, Select } from "../../components/ui";
+// ─── Ceritage ERP — Old Metal & Gold/Silver Exchange Valuation ──────────────
+import { BRAND } from "../../theme.js";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  PageHeader, Card, CardHeader, StatCard, Tabs,
+  BtnPrimary, BtnOutline, BtnSm, FormGroup, FormGrid, Input, Select
+} from "../../components/ui";
+
+const API = window.__CERITAGE_API__ || "http://localhost:5000/api";
+
+function authHeaders() {
+  const token = localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  };
+}
 
 const TABS = [
-  { id:"calc",    label:"Exchange Calculator" },
-  { id:"list",    label:"Exchange Register" },
-  { id:"purity",  label:"Purity Calculator" },
-  { id:"melt",    label:"Melting Calculator" },
+  { id: "calc",    label: "Exchange Calculator" },
+  { id: "list",    label: "Exchange Register" },
+  { id: "purity",  label: "Purity Standards" },
+  { id: "melt",    label: "Melting Loss Calculator" },
 ];
 
 const PURITY_CHART = [
-  { karat:"24K", fineness:"999", pct:"99.9%", use:"Coins, Bullion, Investment" },
-  { karat:"22K", fineness:"916", pct:"91.6%", use:"Indian Jewelry (most common)" },
-  { karat:"18K", fineness:"750", pct:"75.0%", use:"Diamond Jewelry, Western" },
-  { karat:"14K", fineness:"583", pct:"58.3%", use:"Export Jewelry" },
-  { karat:"10K", fineness:"417", pct:"41.7%", use:"Fashion Jewelry" },
-  { karat:"Silver 925", fineness:"925", pct:"92.5%", use:"Sterling Silver" },
+  { karat: "24K", fineness: "999", pct: "99.9%", factor: 0.999, use: "Coins, Bullion, Investment Bars" },
+  { karat: "22K", fineness: "916", pct: "91.6%", factor: 0.9167, use: "Indian Hallmarked Jewellery (Standard)" },
+  { karat: "18K", fineness: "750", pct: "75.0%", factor: 0.750, use: "Diamond Jewellery, Western Designs" },
+  { karat: "14K", fineness: "585", pct: "58.5%", factor: 0.5833, use: "Export & Lightweight Jewellery" },
+  { karat: "10K", fineness: "417", pct: "41.7%", factor: 0.417, use: "Fashion Jewellery" },
+  { karat: "Silver 999", fineness: "999", pct: "99.9%", factor: 0.999, use: "Fine Silver Bars & Coins" },
+  { karat: "Silver 925", fineness: "925", pct: "92.5%", factor: 0.925, use: "Sterling Silver Utensils & Ornaments" },
 ];
+
+const fmt = (v) => "₹" + Number(v || 0).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 export default function GoldExchange({ t }) {
   const [tab, setTab] = useState("calc");
+  const [customers, setCustomers] = useState([]);
+  const [exchanges, setExchanges] = useState([]);
+  const [kpis, setKpis] = useState({
+    total_exchanges: 0,
+    fine_gold_received: 0,
+    fine_silver_received: 0,
+    total_value_given: 0,
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [successMsg, setSuccessMsg] = useState(null);
+  const [error, setError] = useState(null);
+
+  // Form State
+  const [form, setForm] = useState({
+    customer_id: "",
+    metal_type: "Gold",
+    item_description: "",
+    gross_weight: "",
+    stone_weight: "0",
+    purity: "0.9167",
+    rate: "",
+    wastage_pct: "0",
+    exchange_for: "New Purchase",
+  });
+
+  // Melting calculator state
+  const [meltGross, setMeltGross] = useState("");
+  const [meltPurity, setMeltPurity] = useState("0.9167");
+  const [meltLossPct, setMeltLossPct] = useState("1.5");
+
+  const notify = (msg) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(null), 4000);
+  };
+
+  // Fetch Metal Rate
+  const loadRates = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/metal-rates/current`, { headers: authHeaders() });
+      const json = await res.json();
+      if (json.success && json.data?.gold_22k?.shop_rate) {
+        setForm(prev => prev.rate ? prev : { ...prev, rate: String(json.data.gold_22k.shop_rate) });
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const loadKpis = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/gold-exchange/kpis`, { headers: authHeaders() });
+      const json = await res.json();
+      if (json.success && json.data) setKpis(json.data);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const loadCustomers = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/customers?limit=200`, { headers: authHeaders() });
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) setCustomers(json.data);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const loadExchanges = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/gold-exchange`, { headers: authHeaders() });
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) setExchanges(json.data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRates();
+    loadKpis();
+    loadCustomers();
+    loadExchanges();
+  }, [loadRates, loadKpis, loadCustomers, loadExchanges]);
+
+  // Live Calculations
+  const calculated = useMemo(() => {
+    const gross = Number(form.gross_weight || 0);
+    const stone = Number(form.stone_weight || 0);
+    const net = Math.max(0, gross - stone);
+    const purity = Number(form.purity || 0.9167);
+    const fine = net * purity;
+    const rate = Number(form.rate || 0);
+    const base = fine * rate;
+    const wastage = Number(form.wastage_pct || 0);
+    const deduction = base * (wastage / 100);
+    const finalVal = Math.max(0, base - deduction);
+
+    return {
+      net_weight: net.toFixed(3),
+      fine_weight: fine.toFixed(3),
+      base_value: base,
+      deduction,
+      final_value: finalVal,
+      purity_pct: (purity * 100).toFixed(2) + "%",
+    };
+  }, [form]);
+
+  // Submit Exchange
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.gross_weight || Number(form.gross_weight) <= 0 || !form.rate || Number(form.rate) <= 0) {
+      alert("Gross weight and rate per gram are required");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/gold-exchange`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          ...form,
+          gross_weight: Number(form.gross_weight),
+          stone_weight: Number(form.stone_weight || 0),
+          rate: Number(form.rate),
+          wastage_pct: Number(form.wastage_pct || 0),
+        })
+      });
+      const json = await res.json();
+      if (json.success) {
+        notify(`Exchange registered! Valuation: ${fmt(calculated.final_value)}`);
+        setForm(prev => ({
+          ...prev,
+          item_description: "",
+          gross_weight: "",
+          stone_weight: "0",
+          wastage_pct: "0",
+        }));
+        loadExchanges();
+        loadKpis();
+      } else {
+        alert(json.message || "Failed to record exchange");
+      }
+    } catch (err) {
+      alert("Error: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div>
-      <PageHeader title="Gold & Silver Exchange"
-        subtitle="Old Gold · Silver · Melting Calculation · Purity · Exchange Billing"
+      <PageHeader
+        title="Old Gold & Silver Exchange Valuation"
+        subtitle="Customer Old Metal · Hallmarking & Touch Valuation · Instant Credit / Cash Out"
         t={t}
-        actions={<>
-          <BtnOutline t={t}>Export</BtnOutline>
-          <BtnPrimary>New Exchange</BtnPrimary>
-        </>} />
+        actions={
+          <div style={{ display: "flex", gap: 8 }}>
+            <BtnOutline t={t} onClick={() => setTab("melt")}>🔥 Melting Calculator</BtnOutline>
+            <BtnPrimary onClick={() => setTab("calc")}>+ New Exchange Valuation</BtnPrimary>
+          </div>
+        }
+      />
 
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",
-        gap:12, marginBottom:22 }}>
-        <StatCard label="Total Exchanges"     color={BRAND.blue}   t={t} />
-        <StatCard label="Fine Gold Received"  color="#f0c040"      t={t} />
-        <StatCard label="Fine Silver Received" color="#95a5a6"     t={t} />
-        <StatCard label="Total Value Given"   color="#2ecc71"      t={t} />
+      {successMsg && (
+        <div style={{ background: "rgba(46,204,113,0.15)", border: "1px solid #2ecc71", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#2ecc71", fontSize: 13, fontWeight: 600 }}>
+          ✓ {successMsg}
+        </div>
+      )}
+
+      {error && (
+        <div style={{ background: "rgba(231,76,60,0.15)", border: "1px solid #e74c3c", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#e74c3c", fontSize: 13 }}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      {/* KPI Ribbon */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 12, marginBottom: 20 }}>
+        <StatCard label="Total Exchanges"      value={kpis.total_exchanges || 0} color={BRAND.blue} t={t} />
+        <StatCard label="Fine Gold Inward"     value={Number(kpis.fine_gold_received || 0).toFixed(3) + "g"} color="#f0c040" t={t} />
+        <StatCard label="Fine Silver Inward"   value={Number(kpis.fine_silver_received || 0).toFixed(3) + "g"} color="#95a5a6" t={t} />
+        <StatCard label="Total Valuation Given" value={fmt(kpis.total_value_given)} color="#2ecc71" t={t} />
       </div>
 
       <Tabs tabs={TABS} active={tab} onChange={setTab} t={t} />
 
+      {/* TAB 1: CALCULATOR & ENTRY */}
       {tab === "calc" && (
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-          <Card t={t} style={{ marginBottom:0 }}>
-            <CardHeader title="Exchange Entry" t={t} />
-            <FormGrid>
-              <FormGroup label="Customer" t={t}>
-                <Select t={t}><option>Walk-in Customer</option></Select>
-              </FormGroup>
-              <FormGroup label="Metal Type" t={t} half>
-                <Select t={t}><option>Gold</option><option>Silver</option></Select>
-              </FormGroup>
-              <FormGroup label="Item Description *" t={t}>
-                <Input t={t} placeholder="e.g. Old gold bangle, broken chain..." />
-              </FormGroup>
-              <FormGroup label="Gross Weight (g) *" t={t} half><Input t={t} type="number" step="0.001" placeholder="0.000" /></FormGroup>
-              <FormGroup label="Stone / Deduction Wt (g)" t={t} half><Input t={t} type="number" step="0.001" defaultValue="0" /></FormGroup>
-              <FormGroup label="Declared Purity" t={t} half>
-                <Select t={t}>
-                  <option value="0.9167">22K (91.67%)</option>
-                  <option value="0.75">18K (75%)</option>
-                  <option value="0.583">14K (58.3%)</option>
-                  <option value="0.999">24K (99.9%)</option>
-                  <option value="0.925">Silver 925 (92.5%)</option>
-                </Select>
-              </FormGroup>
-              <FormGroup label="Current Rate (₹/g)" t={t} half><Input t={t} type="number" placeholder="Market rate" /></FormGroup>
-              <FormGroup label="Wastage / Deduction (%)" t={t} half><Input t={t} type="number" defaultValue="0" step="0.1" /></FormGroup>
-              <FormGroup label="Exchange For" t={t} half>
-                <Select t={t}><option>New Purchase</option><option>Cash Payout</option><option>Store Credit</option></Select>
-              </FormGroup>
-            </FormGrid>
-            <div style={{ display:"flex", gap:10, marginTop:8 }}>
-              <BtnOutline t={t}>Calculate</BtnOutline>
-              <BtnPrimary style={{ flex:1 }}>Confirm Exchange</BtnPrimary>
-              <BtnOutline t={t}>Print Slip</BtnOutline>
-            </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16 }}>
+          <Card t={t}>
+            <CardHeader title="Exchange Entry Form" t={t} />
+            <form onSubmit={handleSubmit}>
+              <FormGrid>
+                <FormGroup label="Customer (Optional)" t={t}>
+                  <Select t={t} value={form.customer_id} onChange={e => setForm(p => ({ ...p, customer_id: e.target.value }))}>
+                    <option value="">Walk-in Customer</option>
+                    {customers.map(c => <option key={c.id} value={c.id}>{c.full_name} ({c.phone})</option>)}
+                  </Select>
+                </FormGroup>
+                <FormGroup label="Metal Type" t={t} half>
+                  <Select t={t} value={form.metal_type} onChange={e => setForm(p => ({ ...p, metal_type: e.target.value }))}>
+                    <option value="Gold">Gold</option>
+                    <option value="Silver">Silver</option>
+                    <option value="Platinum">Platinum</option>
+                  </Select>
+                </FormGroup>
+                <FormGroup label="Purity Factor *" t={t} half>
+                  <Select t={t} value={form.purity} onChange={e => setForm(p => ({ ...p, purity: e.target.value }))}>
+                    <option value="0.9167">22K (91.67%)</option>
+                    <option value="0.999">24K (99.9%)</option>
+                    <option value="0.75">18K (75.0%)</option>
+                    <option value="0.5833">14K (58.33%)</option>
+                    <option value="0.925">Silver 925 (92.5%)</option>
+                  </Select>
+                </FormGroup>
+                <FormGroup label="Old Jewellery Description" t={t}>
+                  <Input t={t} placeholder="e.g. Broken antique chain and 2 pairs earrings" value={form.item_description} onChange={e => setForm(p => ({ ...p, item_description: e.target.value }))} />
+                </FormGroup>
+                <FormGroup label="Gross Weight (g) *" t={t} half>
+                  <Input t={t} type="number" step="0.001" placeholder="e.g. 15.500" value={form.gross_weight} onChange={e => setForm(p => ({ ...p, gross_weight: e.target.value }))} required />
+                </FormGroup>
+                <FormGroup label="Stone / Enamel Deduction (g)" t={t} half>
+                  <Input t={t} type="number" step="0.001" placeholder="e.g. 0.500" value={form.stone_weight} onChange={e => setForm(p => ({ ...p, stone_weight: e.target.value }))} />
+                </FormGroup>
+                <FormGroup label="Current Rate per Gram (₹) *" t={t} half>
+                  <Input t={t} type="number" step="0.01" placeholder="e.g. 7450" value={form.rate} onChange={e => setForm(p => ({ ...p, rate: e.target.value }))} required />
+                </FormGroup>
+                <FormGroup label="Melting / Wastage Deduction (%)" t={t} half>
+                  <Input t={t} type="number" step="0.1" placeholder="e.g. 2.0" value={form.wastage_pct} onChange={e => setForm(p => ({ ...p, wastage_pct: e.target.value }))} />
+                </FormGroup>
+                <FormGroup label="Exchange Settlement For" t={t}>
+                  <Select t={t} value={form.exchange_for} onChange={e => setForm(p => ({ ...p, exchange_for: e.target.value }))}>
+                    <option value="New Purchase">Adjust in New Invoice / Purchase</option>
+                    <option value="Cash Payout">Cash Payout to Customer</option>
+                    <option value="Store Credit">Store Credit / Customer Ledger</option>
+                  </Select>
+                </FormGroup>
+              </FormGrid>
+              <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
+                <BtnPrimary type="submit" disabled={loading} style={{ flex: 1 }}>
+                  {loading ? "Recording..." : "✓ Confirm & Issue Exchange Voucher"}
+                </BtnPrimary>
+              </div>
+            </form>
           </Card>
 
-          <Card t={t} style={{ marginBottom:0 }}>
-            <CardHeader title="Valuation Result" t={t} />
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
-              {[["Net Weight","—"],["Purity %","—"],["Fine Metal Weight","—"],["Base Value","—"]].map(([l,v]) => (
-                <div key={l} style={{ background:t.card2||t.card,
-                  border:`1px solid ${t.borderDash}`, borderRadius:9,
-                  padding:12, textAlign:"center" }}>
-                  <div style={{ fontSize:10, color:t.textFaint, marginBottom:4 }}>{l}</div>
-                  <div style={{ fontSize:16, fontWeight:800, color:BRAND.purple }}>{v}</div>
-                </div>
-              ))}
+          {/* Live Valuation Card */}
+          <Card t={t}>
+            <CardHeader title="Real-Time Metal Valuation" t={t} />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              <div style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: t.subtext, marginBottom: 4, textTransform: "uppercase" }}>Net Metal Weight</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: t.text }}>{calculated.net_weight}g</div>
+              </div>
+              <div style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: t.subtext, marginBottom: 4, textTransform: "uppercase" }}>Fine Metal (24K Equiv)</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "#f0c040" }}>{calculated.fine_weight}g</div>
+              </div>
+              <div style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: t.subtext, marginBottom: 4, textTransform: "uppercase" }}>Tested Purity</div>
+                <div style={{ fontSize: 18, fontWeight: 600, color: BRAND.blue }}>{calculated.purity_pct}</div>
+              </div>
+              <div style={{ background: t.card, border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: t.subtext, marginBottom: 4, textTransform: "uppercase" }}>Base Valuation</div>
+                <div style={{ fontSize: 18, fontWeight: 600, color: t.text }}>{fmt(calculated.base_value)}</div>
+              </div>
             </div>
-            <div style={{ background:`linear-gradient(135deg,${BRAND.blue}22,${BRAND.purple}11)`,
-              border:`1px solid ${t.borderDash}`, borderRadius:12,
-              padding:20, textAlign:"center" }}>
-              <div style={{ fontSize:11, color:t.textFaint, marginBottom:6 }}>EXCHANGE VALUE</div>
-              <div style={{ fontSize:32, fontWeight:900, color:BRAND.purple }}>₹0</div>
-              <div style={{ fontSize:11, color:t.textFaint, marginTop:4 }}>Amount to be given to customer</div>
-            </div>
-            <div style={{ marginTop:12, background:t.card2||t.card,
-              border:`1px solid ${t.borderDash}`, borderRadius:9, padding:12 }}>
-              <div style={{ fontSize:11, color:t.textMuted }}>
-                Gold Members get <strong style={{ color:"#2ecc71" }}>₹200/g bonus</strong>
-                &nbsp;· Platinum: <strong style={{ color:BRAND.purple }}>₹400/g bonus</strong>
+
+            <div style={{
+              background: "linear-gradient(135deg, rgba(59,85,230,0.12) 0%, rgba(139,59,200,0.12) 100%)",
+              border: `1px solid ${BRAND.purple}`,
+              borderRadius: 12,
+              padding: 24,
+              textAlign: "center"
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: t.subtext, textTransform: "uppercase", letterSpacing: 1 }}>Final Exchange Credit</div>
+              <div style={{ fontSize: 36, fontWeight: 900, color: BRAND.purple, margin: "8px 0" }}>
+                {fmt(calculated.final_value)}
+              </div>
+              <div style={{ fontSize: 12, color: "#2ecc71", fontWeight: 600 }}>
+                {calculated.deduction > 0 ? `After deduction of ${fmt(calculated.deduction)} (${form.wastage_pct}%)` : "No melting deductions applied"}
               </div>
             </div>
           </Card>
         </div>
       )}
 
+      {/* TAB 2: REGISTER */}
       {tab === "list" && (
         <Card t={t}>
-          <CardHeader title="Exchange Register" t={t}
-            actions={<BtnSm t={t}>Export</BtnSm>} />
-          <DataTable
-            columns={["ID","Date","Customer","Item","Metal","Gross Wt","Fine Wt","Rate","Value","Exchange For","Status","Actions"]}
-            t={t} emptyMsg="exchange data will load from backend" />
+          <CardHeader title="Old Gold Exchange History" t={t} />
+          {loading ? (
+            <p style={{ textAlign: "center", padding: 36, color: t.subtext }}>Loading exchange register...</p>
+          ) : exchanges.length === 0 ? (
+            <p style={{ textAlign: "center", padding: 36, color: t.subtext }}>No old gold exchanges recorded yet.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${t.border}` }}>
+                    {["ID", "Date", "Customer", "Metal", "Gross Wt", "Stone Wt", "Net Wt", "Fine Wt", "Rate/g", "Total Value", "Exchange Mode"].map(h => (
+                      <th key={h} style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontWeight: 600, fontSize: 11, textTransform: "uppercase" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {exchanges.map(x => (
+                    <tr key={x.id} style={{ borderBottom: `1px solid ${t.border}` }}>
+                      <td style={{ padding: "11px 12px", fontFamily: "monospace", color: BRAND.blue }}>#{x.id}</td>
+                      <td style={{ padding: "11px 12px", color: t.subtext }}>{fmtDate(x.created_at)}</td>
+                      <td style={{ padding: "11px 12px", fontWeight: 600, color: t.text }}>{x.customer_name || "Walk-in"}</td>
+                      <td style={{ padding: "11px 12px", color: t.subtext }}>{x.metal_type}</td>
+                      <td style={{ padding: "11px 12px", color: t.text }}>{x.gross_weight}g</td>
+                      <td style={{ padding: "11px 12px", color: t.subtext }}>{x.stone_weight || x.dust_stone_weight || 0}g</td>
+                      <td style={{ padding: "11px 12px", color: t.text, fontWeight: 600 }}>{x.net_weight}g</td>
+                      <td style={{ padding: "11px 12px", color: "#f0c040", fontWeight: 700 }}>{x.fine_weight ? `${x.fine_weight}g` : "—"}</td>
+                      <td style={{ padding: "11px 12px", color: t.subtext }}>{fmt(x.rate)}</td>
+                      <td style={{ padding: "11px 12px", color: "#2ecc71", fontWeight: 700 }}>{fmt(x.final_value || x.valuation_amount)}</td>
+                      <td style={{ padding: "11px 12px", color: t.text }}>{x.exchange_for || "New Purchase"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       )}
 
+      {/* TAB 3: PURITY STANDARDS */}
       {tab === "purity" && (
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-          <Card t={t} style={{ marginBottom:0 }}>
-            <CardHeader title="Purity Calculator" t={t} />
-            <FormGrid>
-              <FormGroup label="Karat / Fineness" t={t}>
-                <Select t={t}>
-                  <option value="24">24K (999)</option><option value="22">22K (916)</option>
-                  <option value="18">18K (750)</option><option value="14">14K (583)</option>
-                </Select>
-              </FormGroup>
-              <FormGroup label="Gross Weight (g)" t={t}>
-                <Input t={t} type="number" step="0.001" placeholder="0.000" />
-              </FormGroup>
-            </FormGrid>
-            <BtnPrimary style={{ width:"100%", marginBottom:14 }}>Calculate Purity</BtnPrimary>
-            {[["Purity %","—"],["Fine Gold Weight","—"],["Alloy Weight","—"],["Approx Value","—"]].map(([l,v]) => (
-              <div key={l} style={{ display:"flex", justifyContent:"space-between",
-                padding:"9px 12px", background:t.card2||t.card,
-                border:`1px solid ${t.borderDash}`, borderRadius:8, marginBottom:8 }}>
-                <span style={{ color:t.textMuted, fontSize:13 }}>{l}</span>
-                <span style={{ fontWeight:700, color:BRAND.purple }}>{v}</span>
-              </div>
-            ))}
-          </Card>
-          <Card t={t} style={{ marginBottom:0 }}>
-            <CardHeader title="Purity Reference Chart" t={t} />
-            <DataTable
-              columns={["Karat","Fineness","Purity %","Applications"]}
-              rows={PURITY_CHART.map(p => ({
-                "Karat":p.karat, "Fineness":p.fineness,
-                "Purity %":p.pct, "Applications":p.use
-              }))}
-              t={t} />
-          </Card>
-        </div>
+        <Card t={t}>
+          <CardHeader title="Official BIS & International Hallmarking Standards" t={t} />
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${t.border}` }}>
+                  {["Karat / Grade", "Fineness (Parts per 1000)", "Purity Percentage", "Conversion Factor", "Primary Applications"].map(h => (
+                    <th key={h} style={{ textAlign: "left", padding: "11px 14px", color: t.subtext, fontWeight: 600 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {PURITY_CHART.map(p => (
+                  <tr key={p.karat} style={{ borderBottom: `1px solid ${t.border}` }}>
+                    <td style={{ padding: "12px 14px", fontWeight: 700, color: BRAND.blue }}>{p.karat}</td>
+                    <td style={{ padding: "12px 14px", fontFamily: "monospace" }}>{p.fineness}</td>
+                    <td style={{ padding: "12px 14px", color: "#f0c040", fontWeight: 600 }}>{p.pct}</td>
+                    <td style={{ padding: "12px 14px", fontFamily: "monospace", color: t.subtext }}>{p.factor}</td>
+                    <td style={{ padding: "12px 14px", color: t.text }}>{p.use}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
+      {/* TAB 4: MELTING LOSS CALCULATOR */}
       {tab === "melt" && (
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
-          <Card t={t} style={{ marginBottom:0 }}>
-            <CardHeader title="Melting Calculation" t={t} />
-            <FormGrid>
-              <FormGroup label="Input Metal Purity" t={t}>
-                <Select t={t}><option>22K (91.67%)</option><option>18K (75%)</option><option>24K (99.9%)</option></Select>
-              </FormGroup>
-              <FormGroup label="Input Weight (g)" t={t}>
-                <Input t={t} type="number" step="0.001" placeholder="0.000" />
-              </FormGroup>
-              <FormGroup label="Target Purity (Output)" t={t}>
-                <Select t={t}><option>22K (91.67%)</option><option>18K (75%)</option><option>24K (99.9%)</option></Select>
-              </FormGroup>
-              <FormGroup label="Melting Loss % (Wastage)" t={t}>
-                <Input t={t} type="number" defaultValue="1.5" step="0.1" />
-              </FormGroup>
-            </FormGrid>
-            <BtnPrimary style={{ width:"100%" }}>Calculate Melting</BtnPrimary>
-          </Card>
-          <Card t={t} style={{ marginBottom:0 }}>
-            <CardHeader title="Melting Reference" t={t} />
-            {[["Plain Gold Items","0.5% – 1.0%"],["Hallmarked Gold","0.3% – 0.8%"],
-              ["Stone-set Items","1.5% – 3.0%"],["Old / Unknown Purity","2.0% – 5.0%"],
-              ["Silver Items","0.5% – 1.5%"]].map(([k,v]) => (
-              <div key={k} style={{ display:"flex", justifyContent:"space-between",
-                padding:"9px 12px", background:t.card2||t.card,
-                border:`1px solid ${t.borderDash}`, borderRadius:8, marginBottom:8, fontSize:13 }}>
-                <span style={{ color:t.textSub }}>{k}</span>
-                <span style={{ fontWeight:700, color:BRAND.purple }}>{v}</span>
+        <Card t={t} style={{ maxWidth: 650 }}>
+          <CardHeader title="Crucible Melting & Refining Loss Calculator" t={t} />
+          <FormGrid>
+            <FormGroup label="Total Scrap Gross Weight (g)" t={t} half>
+              <Input t={t} type="number" step="0.001" placeholder="e.g. 100.000" value={meltGross} onChange={e => setMeltGross(e.target.value)} />
+            </FormGroup>
+            <FormGroup label="Estimated Touch / Purity" t={t} half>
+              <Select t={t} value={meltPurity} onChange={e => setMeltPurity(e.target.value)}>
+                <option value="0.9167">22K (91.67%)</option>
+                <option value="0.750">18K (75.0%)</option>
+                <option value="0.5833">14K (58.33%)</option>
+                <option value="0.999">24K (99.9%)</option>
+              </Select>
+            </FormGroup>
+            <FormGroup label="Expected Furnace Loss (%)" t={t} half>
+              <Input t={t} type="number" step="0.1" value={meltLossPct} onChange={e => setMeltLossPct(e.target.value)} />
+            </FormGroup>
+          </FormGrid>
+          {meltGross && Number(meltGross) > 0 && (
+            <div style={{ marginTop: 20, padding: 18, background: t.card, border: `1px solid ${t.border}`, borderRadius: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, textAlign: "center" }}>
+                <div>
+                  <div style={{ fontSize: 11, color: t.subtext }}>Estimated Loss (g)</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#e74c3c" }}>
+                    {(Number(meltGross) * (Number(meltLossPct) / 100)).toFixed(3)}g
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: t.subtext }}>Expected Post-Melt Bar</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: t.text }}>
+                    {(Number(meltGross) * (1 - Number(meltLossPct) / 100)).toFixed(3)}g
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: t.subtext }}>Fine 24K Pure Gold Yield</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: "#f0c040" }}>
+                    {(Number(meltGross) * (1 - Number(meltLossPct) / 100) * Number(meltPurity)).toFixed(3)}g
+                  </div>
+                </div>
               </div>
-            ))}
-          </Card>
-        </div>
+            </div>
+          )}
+        </Card>
       )}
     </div>
   );

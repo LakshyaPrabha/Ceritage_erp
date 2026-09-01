@@ -9,8 +9,8 @@ import Dashboard from "./pages/Dashboard";
 window.__CERITAGE_API__ = "http://localhost:5000/api";
 
 function PrivateRoute({ children }) {
-  const token = sessionStorage.getItem("ceritage_token");
-  const auth = sessionStorage.getItem("ceritage_auth");
+  const token = localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
+  const auth = localStorage.getItem("ceritage_auth") || sessionStorage.getItem("ceritage_auth");
   return token || auth === "true" ? children : <Navigate to="/" replace />;
 }
 

@@ -92,9 +92,18 @@ async function getKpis(req, res) {
 // GET /api/customers
 // ─────────────────────────────────────────────────────────────
 async function getAll(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.user?.branch_id || 1;
   try {
-    const { search, tier, city, kyc_status, status = "active", page = 1, limit = 100 } = req.query;
+    // Ensure branch_id column exists
+    try {
+      const [cols] = await db.query("SHOW COLUMNS FROM customers");
+      const existingCols = new Set(cols.map((c) => c.Field.toLowerCase()));
+      if (!existingCols.has("branch_id")) {
+        await db.query("ALTER TABLE customers ADD COLUMN branch_id INT DEFAULT 1 AFTER customer_id");
+      }
+    } catch { /* silent */ }
+
+    const { search, tier, city, kyc_status, status = "active", branch, page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
     const conditions = [];
     const params = [];
@@ -103,6 +112,11 @@ async function getAll(req, res) {
       conditions.push("c.status = 'ACTIVE'");
     } else if (status === "archived") {
       conditions.push("c.status = 'ARCHIVED'");
+    }
+
+    if (branch) {
+      conditions.push("c.branch_id = ?");
+      params.push(branch);
     }
 
     if (search) {
@@ -119,9 +133,12 @@ async function getAll(req, res) {
 
     const [rows] = await db.query(
       `SELECT c.*,
+              COALESCE(b.name, 'Main Showroom') AS branch_name,
+              COALESCE(b.city, '') AS branch_city,
               COALESCE(SUM(i.grand_total), 0) AS total_purchase,
               COUNT(DISTINCT i.id) AS total_orders
        FROM customers c
+       LEFT JOIN branches b ON c.branch_id = b.id
        LEFT JOIN invoices i ON i.customer_id = c.id
        ${whereClause}
        GROUP BY c.id
@@ -246,14 +263,16 @@ async function create(req, res) {
       preferred_channel = "WHATSAPP"
     } = req.body;
 
+    const assignedBranchId = Number(req.body.branch_id || req.user?.branch_id || 1);
+
     const [result] = await db.query(
       `INSERT INTO customers
-       (customer_id, full_name, phone, email, date_of_birth, anniversary, tier,
+       (customer_id, branch_id, full_name, phone, email, date_of_birth, anniversary, tier,
         city, state, pan, aadhaar, gst_number, credit_limit, loyalty_points,
         wallet_balance, kyc_status, opt_in_whatsapp, opt_in_sms, opt_in_marketing, preferred_channel, status, balance_due)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0)`,
       [
-        customer_id, full_name.trim(), normalizedPhone, email ? email.trim() : null,
+        customer_id, assignedBranchId, full_name.trim(), normalizedPhone, email ? email.trim() : null,
         date_of_birth || null, anniversary || null, tier,
         city ? city.trim() : null, state ? state.trim() : null,
         pan ? pan.trim().toUpperCase() : null,

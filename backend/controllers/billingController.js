@@ -2,12 +2,19 @@ const db = require("../config/db");
 
 // GET /api/billing — all invoices
 async function getAll(req, res) {
-  const branch_id = req.user.branch_id;
+  const userBranchId = req.user?.branch_id || 1;
+  const userId = req.user?.id || 1;
   try {
-    const { search, type, status, payment_mode, page = 1, limit = 50 } = req.query;
+    const { search, type, status, payment_mode, branch, page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
-    let where = "WHERE i.branch_id = ?";
-    const params = [branch_id];
+    
+    let where = "WHERE (i.branch_id IN (SELECT id FROM branches WHERE id = ? OR parent_branch_id = ? OR created_by = ?) OR i.branch_id = ?)";
+    const params = [userBranchId, userBranchId, userId, userBranchId];
+
+    if (branch && branch !== "all") {
+      where += " AND i.branch_id = ?";
+      params.push(branch);
+    }
 
     if (search) {
       where += " AND (i.invoice_no LIKE ? OR c.full_name LIKE ?)";
@@ -18,11 +25,16 @@ async function getAll(req, res) {
     if (payment_mode) { where += " AND i.payment_mode = ?";   params.push(payment_mode); }
 
     const [rows] = await db.query(
-      `SELECT i.*, c.full_name AS customer_name, c.phone AS customer_phone
+      `SELECT i.*, 
+              c.full_name AS customer_name, 
+              c.phone AS customer_phone,
+              COALESCE(b.name, 'Main Showroom') AS branch_name,
+              COALESCE(b.city, '') AS branch_city
        FROM invoices i
        LEFT JOIN customers c ON i.customer_id = c.id
+       LEFT JOIN branches b ON i.branch_id = b.id
        ${where}
-       ORDER BY i.invoice_date DESC
+       ORDER BY i.invoice_date DESC, i.id DESC
        LIMIT ? OFFSET ?`,
       [...params, parseInt(limit), parseInt(offset)]
     );

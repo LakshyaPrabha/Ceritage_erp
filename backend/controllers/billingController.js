@@ -1,13 +1,18 @@
 const db = require("../config/db");
+const accounting = require("../services/accountingPostingService");
 
 // GET /api/billing — all invoices
 async function getAll(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.branchId ?? req.user.branch_id;
   try {
     const { search, type, status, payment_mode, page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
-    let where = "WHERE i.branch_id = ?";
-    const params = [branch_id];
+    let where = "WHERE 1=1";
+    const params = [];
+    if (branch_id) {
+      where += " AND i.branch_id = ?";
+      params.push(branch_id);
+    }
 
     if (search) {
       where += " AND (i.invoice_no LIKE ? OR c.full_name LIKE ?)";
@@ -51,7 +56,15 @@ async function getById(req, res) {
     const [items] = await db.query(
       "SELECT * FROM invoice_items WHERE invoice_id = ?", [req.params.id]
     );
-    res.json({ success: true, data: { ...inv[0], items } });
+    const [tenders] = await db.query(
+      `SELECT it.*, a.code AS account_code, a.name AS account_name
+       FROM invoice_tenders it
+       LEFT JOIN accounts a ON a.id = it.account_id
+       WHERE it.invoice_id = ?
+       ORDER BY it.id ASC`,
+      [req.params.id]
+    ).catch(() => [[]]);
+    res.json({ success: true, data: { ...inv[0], items, tenders } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -65,27 +78,53 @@ async function create(req, res) {
     coupon_code, gift_voucher, old_gold_exchange,
     cgst, sgst, igst, tcs, grand_total, paid_amount,
     wallet_amount, redeem_points, notes, credit_days, items = [],
+    split_payments, tenders, payments, advance_lock_id, advance_amount, advance_applications,
   } = req.body;
 
+  const requestedBranchId = Number(branch_id || req.user.branch_id || 1);
+  if (req.user.role !== "admin" && requestedBranchId !== Number(req.user.branch_id || 1)) {
+    return res.status(403).json({ success: false, message: "Cannot create invoice for another branch" });
+  }
+  const activeBranchId = Number(req.branchId || requestedBranchId || req.user.branch_id || 1);
   const invoiceGrandTotal = Number(grand_total || 0);
-  const isCreditSale = payment_mode === "Credit";
+  const paymentModeText = String(payment_mode || "").trim().toLowerCase();
+  const isCreditSale = paymentModeText === "credit" || paymentModeText === "credit sale";
   const usedWalletAmount = payment_mode === "Wallet" ? invoiceGrandTotal : Number(wallet_amount || 0);
   const pointsToRedeem = Number(redeem_points || 0);
+  const tenderInput = split_payments || tenders || payments || [];
+  const normalizedTenders = Array.isArray(tenderInput)
+    ? tenderInput
+        .map((t) => ({
+          payment_mode: t.payment_mode || t.mode || "Cash",
+          amount: accounting.money(t.amount),
+          reference_no: t.reference_no || t.reference || null,
+        }))
+        .filter((t) => t.amount > 0)
+    : [];
+  const advanceRequests = Array.isArray(advance_applications)
+    ? advance_applications
+    : (advance_lock_id && Number(advance_amount || 0) > 0
+        ? [{ rate_lock_id: advance_lock_id, amount: Number(advance_amount) }]
+        : []);
+  const requestedAdvanceTotal = accounting.money(
+    advanceRequests.reduce((sum, row) => sum + Number(row.amount || 0), 0)
+  );
 
   // Total paid calculation
-  let actualPaidAmount = 0;
-  if (isCreditSale) {
-    actualPaidAmount = 0;
-  } else if (payment_mode === "Wallet") {
-    actualPaidAmount = usedWalletAmount;
-  } else {
-    actualPaidAmount = (paid_amount !== undefined ? Number(paid_amount) : (invoiceGrandTotal - usedWalletAmount)) + usedWalletAmount;
+  let actualPaidAmount = normalizedTenders.length > 0
+    ? accounting.money(normalizedTenders.reduce((sum, tender) => sum + tender.amount, 0))
+    : accounting.money(payment_mode === "Wallet"
+        ? usedWalletAmount
+        : (paid_amount !== undefined ? Number(paid_amount) : (isCreditSale ? 0 : invoiceGrandTotal - usedWalletAmount)) + usedWalletAmount);
+  const unpaidAmount = accounting.money(invoiceGrandTotal - actualPaidAmount - requestedAdvanceTotal);
+  if (unpaidAmount < -0.01) {
+    return res.status(400).json({ success: false, message: "Payments and advances exceed invoice total" });
   }
 
   // Credit due date calculation for credit/partial invoices
-  let numCreditDays = Number(credit_days || (isCreditSale ? 30 : 0));
+  let numCreditDays = Number(credit_days || (isCreditSale || unpaidAmount > 0 ? 30 : 0));
   let creditDueDate = null;
-  if (isCreditSale || actualPaidAmount < invoiceGrandTotal) {
+  if (isCreditSale || unpaidAmount > 0) {
     if (!numCreditDays || numCreditDays <= 0) numCreditDays = 30;
     const baseDate = invoice_date ? new Date(invoice_date) : new Date();
     creditDueDate = new Date(baseDate.getTime() + numCreditDays * 86400000).toISOString().slice(0, 10);
@@ -93,9 +132,9 @@ async function create(req, res) {
 
   // Status calculation
   let invoiceStatus = "Paid";
-  if (isCreditSale || actualPaidAmount === 0) {
+  if (unpaidAmount > 0 && actualPaidAmount === 0 && requestedAdvanceTotal === 0) {
     invoiceStatus = "Credit";
-  } else if (actualPaidAmount < invoiceGrandTotal) {
+  } else if (unpaidAmount > 0) {
     invoiceStatus = "Partial";
   }
 
@@ -142,7 +181,6 @@ async function create(req, res) {
     const makingDiscountAmt = (totalMakingCharges * makingDiscountPct) / 100;
 
     // 2. CREDIT LIMIT ENFORCEMENT (with row-level lock)
-    const unpaidAmount = invoiceGrandTotal - actualPaidAmount;
     if (customer_id && unpaidAmount > 0) {
       const [custLockRows] = await conn.query(
         "SELECT id, full_name, credit_limit, balance_due FROM customers WHERE id = ? FOR UPDATE",
@@ -167,7 +205,7 @@ async function create(req, res) {
     // 3. Generate invoice number
     const [[{ count }]] = await conn.query(
       "SELECT COUNT(*) AS count FROM invoices WHERE branch_id = ? AND YEAR(invoice_date) = YEAR(NOW())",
-      [req.user.branch_id]
+      [activeBranchId]
     );
     const invoice_no = `INV-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 
@@ -178,10 +216,10 @@ async function create(req, res) {
         hsn_code, payment_mode, credit_days, credit_due_date, discount_pct, discount_amt,
         coupon_code, gift_voucher, old_gold_exchange, cgst, sgst, igst, tcs,
         grand_total, paid_amount, status, membership_tier, loyalty_multiplier,
-        making_discount_pct, making_discount_amt, notes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        making_discount_pct, making_discount_amt, wallet_used, points_redeemed, points_earned, balance_due, notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        invoice_no, invoice_type || "Retail Invoice", customer_id || null, branch_id,
+        invoice_no, invoice_type || "Retail Invoice", customer_id || null, activeBranchId,
         invoice_date || new Date().toISOString().slice(0, 10),
         salesperson_id || null, hsn_code || "7113", payment_mode,
         numCreditDays, creditDueDate,
@@ -190,6 +228,7 @@ async function create(req, res) {
         cgst || 0, sgst || 0, igst || 0, tcs || 0,
         invoiceGrandTotal, actualPaidAmount, invoiceStatus,
         membershipTier, loyaltyMultiplier, makingDiscountPct, makingDiscountAmt,
+        usedWalletAmount, pointsToRedeem, 0, Math.max(0, unpaidAmount),
         notes || null
       ]
     );
@@ -221,6 +260,66 @@ async function create(req, res) {
       }
     }
 
+    let appliedAdvanceTotal = 0;
+    for (const app of advanceRequests) {
+      const appAmount = accounting.money(app.amount);
+      if (!app.rate_lock_id || appAmount <= 0) continue;
+
+      const [lockRows] = await conn.query("SELECT * FROM rate_locks WHERE id = ? FOR UPDATE", [app.rate_lock_id]);
+      if (lockRows.length === 0) throw new Error(`Advance rate lock ${app.rate_lock_id} not found`);
+      const lock = lockRows[0];
+      if (customer_id && lock.customer_id && Number(lock.customer_id) !== Number(customer_id)) {
+        throw new Error(`Advance ${lock.lock_no || lock.id} belongs to another customer`);
+      }
+
+      const [[appliedRow]] = await conn.query(
+        "SELECT COALESCE(SUM(amount),0) AS applied FROM customer_advance_applications WHERE rate_lock_id = ?",
+        [app.rate_lock_id]
+      );
+      const available = accounting.money(Number(lock.advance_paid || 0) - Number(appliedRow.applied || 0));
+      if (appAmount > available) {
+        throw new Error(`Advance application ${appAmount} exceeds available advance ${available}`);
+      }
+
+      await conn.query(
+        `INSERT INTO customer_advance_applications (rate_lock_id, invoice_id, branch_id, amount)
+         VALUES (?, ?, ?, ?)`,
+        [app.rate_lock_id, invoiceId, activeBranchId, appAmount]
+      );
+      if (accounting.money(available - appAmount) <= 0) {
+        await conn.query(
+          "UPDATE rate_locks SET status = 'Redeemed', invoice_ref = ?, redeemed_at = CURRENT_TIMESTAMP WHERE id = ?",
+          [invoice_no, app.rate_lock_id]
+        );
+      }
+      appliedAdvanceTotal = accounting.money(appliedAdvanceTotal + appAmount);
+    }
+
+    const journalTenders = normalizedTenders.length > 0
+      ? normalizedTenders
+      : (actualPaidAmount > 0 ? [{ payment_mode: payment_mode || "Cash", amount: actualPaidAmount, reference_no: null }] : []);
+    const salePosting = await accounting.postInvoiceSale(conn, {
+      branch_id: activeBranchId,
+      invoice_id: invoiceId,
+      invoice_no,
+      entry_date: invoice_date || new Date().toISOString().slice(0, 10),
+      grand_total: invoiceGrandTotal,
+      cgst,
+      sgst,
+      igst,
+      advance_applied: appliedAdvanceTotal,
+      tenders: journalTenders,
+      created_by: req.user?.full_name || req.user?.username || "Admin",
+    });
+
+    for (const tender of salePosting.tenders) {
+      await conn.query(
+        `INSERT INTO invoice_tenders (invoice_id, branch_id, payment_mode, amount, account_id, reference_no)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [invoiceId, activeBranchId, tender.payment_mode, tender.amount, tender.account_id, tender.reference_no]
+      );
+    }
+
     // 6. ATOMIC CUSTOMER PROCESSING (Ledger, Wallet, Loyalty Multiplier)
     if (customer_id) {
       const [custRows] = await conn.query(
@@ -243,7 +342,7 @@ async function create(req, res) {
           await conn.query(
             `INSERT INTO customer_wallet_transactions
              (customer_id, transaction_type, amount, balance_after, reference_type, reference_id, description, performed_by)
-             VALUES (?, 'DEBIT', ?, ?, 'INVOICE', ?, ?, ?)`,
+             VALUES (?, 'DEBIT_INVOICE', ?, ?, 'INVOICE', ?, ?, ?)`,
             [
               customer_id, usedWalletAmount, newWalletBalance, invoice_no,
               `Wallet payment towards invoice ${invoice_no}`, performedBy
@@ -266,7 +365,7 @@ async function create(req, res) {
           await conn.query(
             `INSERT INTO customer_loyalty_transactions
              (customer_id, transaction_type, points, balance_after, reference_type, reference_id, description, performed_by)
-             VALUES (?, 'REDEEM', ?, ?, 'INVOICE', ?, ?, ?)`,
+             VALUES (?, 'REDEEM_INVOICE', ?, ?, 'INVOICE', ?, ?, ?)`,
             [
               customer_id, pointsToRedeem, newPointsBalance, invoice_no,
               `Redeemed ${pointsToRedeem} loyalty points on invoice ${invoice_no}`, performedBy
@@ -289,7 +388,7 @@ async function create(req, res) {
           await conn.query(
             `INSERT INTO customer_loyalty_transactions
              (customer_id, transaction_type, points, balance_after, reference_type, reference_id, description, performed_by)
-             VALUES (?, 'EARN', ?, ?, 'INVOICE', ?, ?, ?)`,
+             VALUES (?, 'EARN_INVOICE', ?, ?, 'INVOICE', ?, ?, ?)`,
             [
               customer_id, earnedPoints, newPointsBalance, invoice_no,
               `Earned ${earnedPoints} loyalty points (${loyaltyMultiplier}X for ${membershipTier}) on ${invoice_no}`,
@@ -326,6 +425,9 @@ async function create(req, res) {
         if (actualPaidAmount > 0) {
           runningBalance -= actualPaidAmount;
           let paymentLabel = `Payment received via ${payment_mode || 'Cash'} against ${invoice_no}`;
+          if (journalTenders.length > 1) {
+            paymentLabel = `Payment received via Split (${journalTenders.map(t => `${t.payment_mode}: ${t.amount}`).join(", ")}) against ${invoice_no}`;
+          }
           if (usedWalletAmount > 0 && actualPaidAmount > usedWalletAmount) {
             paymentLabel = `Payment received via Split (Wallet: ₹${usedWalletAmount}, ${payment_mode}: ₹${actualPaidAmount - usedWalletAmount}) against ${invoice_no}`;
           } else if (usedWalletAmount > 0) {
@@ -338,6 +440,19 @@ async function create(req, res) {
             [
               customer_id, entryDate,
               paymentLabel, actualPaidAmount, runningBalance, `PAY-${invoice_no}`
+            ]
+          );
+        }
+
+        if (appliedAdvanceTotal > 0) {
+          runningBalance -= appliedAdvanceTotal;
+          await conn.query(
+            `INSERT INTO customer_ledger (customer_id, date, particulars, debit, credit, balance, reference)
+             VALUES (?, ?, ?, 0, ?, ?, ?)`,
+            [
+              customer_id, entryDate,
+              `Customer advance applied against ${invoice_no}`,
+              appliedAdvanceTotal, Math.max(0, runningBalance), `ADV-${invoice_no}`
             ]
           );
         }
@@ -358,7 +473,10 @@ async function create(req, res) {
         id: invoiceId,
         invoice_no,
         grand_total: invoiceGrandTotal,
+        paid_amount: actualPaidAmount,
+        balance_due: Math.max(0, unpaidAmount),
         status: invoiceStatus,
+        journal_voucher_no: salePosting.journal.voucher_no,
         membership_tier: membershipTier,
         loyalty_multiplier: loyaltyMultiplier,
         making_discount_pct: makingDiscountPct,
@@ -504,7 +622,10 @@ async function getReturns(req, res) {
 // POST /api/billing/returns
 async function createReturn(req, res) {
   const branch_id = req.user.branch_id;
-  const { customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, item_condition } = req.body;
+  const {
+    customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, item_condition,
+    cgst = 0, sgst = 0, igst = 0, taxable_amount
+  } = req.body;
   const refAmount = Number(refund_amount || 0);
 
   const conn = await db.getConnection();
@@ -519,6 +640,23 @@ async function createReturn(req, res) {
        VALUES (?,?,?,?,?,?,?,?)`,
       [return_no, customer_id || null, invoice_ref || null, item_description, reason, refAmount, refund_mode, item_condition || null]
     );
+
+    if (refAmount > 0) {
+      await accounting.postSalesRefund(conn, {
+        branch_id,
+        amount: refAmount,
+        refund_mode: refund_mode || "Cash",
+        reference_no: return_no,
+        source_id: result.insertId,
+        entry_date: new Date().toISOString().slice(0, 10),
+        created_by: req.user?.full_name || req.user?.username || "Admin",
+        narration: `Sales return refund ${return_no}${invoice_ref ? ` against ${invoice_ref}` : ""}`,
+        cgst,
+        sgst,
+        igst,
+        taxable_amount,
+      });
+    }
 
     if (customer_id && refAmount > 0) {
       const [custRows] = await conn.query("SELECT id, wallet_balance, loyalty_points FROM customers WHERE id = ?", [customer_id]);
@@ -536,7 +674,7 @@ async function createReturn(req, res) {
           await conn.query(
             `INSERT INTO customer_wallet_transactions
              (customer_id, transaction_type, amount, balance_after, reference_type, reference_id, description, performed_by)
-             VALUES (?, 'REFUND', ?, ?, 'RETURN', ?, ?, ?)`,
+             VALUES (?, 'CREDIT_REFUND', ?, ?, 'RETURN', ?, ?, ?)`,
             [
               customer_id, refAmount, newWalletBalance, return_no,
               `Refund to store wallet for return ${return_no}${invoice_ref ? ` (Invoice ${invoice_ref})` : ''}`,
@@ -559,7 +697,7 @@ async function createReturn(req, res) {
           await conn.query(
             `INSERT INTO customer_loyalty_transactions
              (customer_id, transaction_type, points, balance_after, reference_type, reference_id, description, performed_by)
-             VALUES (?, 'REVERSAL', ?, ?, 'RETURN', ?, ?, ?)`,
+             VALUES (?, 'REVERSAL_RETURN', ?, ?, 'RETURN', ?, ?, ?)`,
             [
               customer_id, pointsToReverse, newPointsBalance, return_no,
               `Reversal of ${pointsToReverse} loyalty points for return ${return_no}`, performedBy

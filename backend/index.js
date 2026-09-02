@@ -1,4 +1,4 @@
-const express = require("express");
+﻿const express = require("express");
 const cors    = require("cors");
 const helmet  = require("helmet");
 const morgan  = require("morgan");
@@ -8,14 +8,18 @@ const db = require("./config/db");
 
 const app = express();
 
-// ── Middleware ─────────────────────────────────────────────
+// â”€â”€ Middleware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use(cors({
   origin: "*",
   credentials: false,
 }));
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(morgan("dev"));
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 // Disable 304 caching for API routes
 app.use("/api", (req, res, next) => {
@@ -23,7 +27,7 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
-// ── Health check ───────────────────────────────────────────
+// â”€â”€ Health check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get("/", (req, res) => {
   res.json({ message: "Ceritage ERP Backend is running", version: "2.0" });
 });
@@ -37,7 +41,7 @@ app.get("/api/db-test", async (req, res) => {
   }
 });
 
-// ── API Routes ─────────────────────────────────────────────
+// â”€â”€ API Routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use("/api/auth",          require("./routes/auth"));
 app.use("/api/dashboard",     require("./routes/dashboard"));
 app.use("/api/analytics",     require("./routes/analytics"));
@@ -69,20 +73,53 @@ app.use("/api/tunch",         require("./routes/tunch"));
 app.use("/api/advance",       require("./routes/advance"));
 app.use("/api/rfid",          require("./routes/rfid"));
 
-// ── 404 handler ────────────────────────────────────────────
+// â”€â”€ 404 handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` });
 });
 
-// ── Global error handler ───────────────────────────────────
+// â”€â”€ Global error handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({ success: false, message: "Internal server error", error: err.message });
 });
 
-// ── Start server ───────────────────────────────────────────
+// â”€â”€ Start server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PORT = process.env.PORT || 5000;
-const server = app.listen(PORT, () => {
+const server = 
+// ── Startup payment gateway configuration check ─────────────────────────────
+// Validates env vars WITHOUT printing secrets. Warns if missing.
+(function validatePaymentConfig() {
+  const provider = (process.env.PAYMENT_GATEWAY_PROVIDER || "mock").toLowerCase();
+  if (provider === "razorpay") {
+    const hasKey = Boolean(process.env.RAZORPAY_KEY_ID);
+    const hasSecret = Boolean(process.env.RAZORPAY_KEY_SECRET);
+    const hasWebhook = Boolean(process.env.RAZORPAY_WEBHOOK_SECRET);
+    const mode = (process.env.RAZORPAY_MODE || "test").toLowerCase();
+    if (!hasKey || !hasSecret) {
+      console.warn("[Ceritage] WARNING: RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is not set. Online payments will fail.");
+    }
+    if (!hasWebhook) {
+      console.warn("[Ceritage] WARNING: RAZORPAY_WEBHOOK_SECRET is not set. Webhook signature verification will fail.");
+    }
+    if (hasKey && hasSecret) {
+      // Validate consistency: test key with test mode, live key with live mode
+      const keyIsTest = process.env.RAZORPAY_KEY_ID.startsWith("rzp_test_");
+      const keyIsLive = process.env.RAZORPAY_KEY_ID.startsWith("rzp_live_");
+      if (mode === "live" && keyIsTest) {
+        console.error("[Ceritage] CRITICAL: RAZORPAY_MODE=live but RAZORPAY_KEY_ID is a TEST key. Fix .env immediately.");
+      }
+      if (mode === "test" && keyIsLive) {
+        console.warn("[Ceritage] WARNING: RAZORPAY_MODE=test but RAZORPAY_KEY_ID is a LIVE key. Payment charges are REAL.");
+      }
+      // Log mode only — never log key values
+      console.log(`[Ceritage] Razorpay: ${mode.toUpperCase()} mode, credentials configured.`);
+    }
+  } else {
+    console.log(`[Ceritage] Payment gateway: ${provider.toUpperCase()} mode (mock/sandbox — no real charges).`);
+  }
+})();
+app.listen(PORT, () => {
   console.log(`Ceritage ERP Backend running on port ${PORT}`);
   console.log(`DB: ${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`);
 });
@@ -91,7 +128,7 @@ server.on("error", (err) => {
   console.error("Server error:", err);
 });
 
-// ── Metals.Dev Automated Twice-Daily Scheduler (Day & Evening Slots) ──
+// â”€â”€ Metals.Dev Automated Twice-Daily Scheduler (Day & Evening Slots) â”€â”€
 const metalRateService = require("./services/metalRateService");
 
 setInterval(async () => {
@@ -113,7 +150,7 @@ setInterval(async () => {
     if (hours === dayHour && minutes >= dayMin && minutes <= dayMin + 4) {
       const quota = await metalRateService.getDailySyncStatus();
       if (!quota.daySlotCompleted && quota.canRequest) {
-        console.log(`[Auto Scheduler] ☀️ Triggering Day Slot Market Rate Sync (${dayTime} IST)...`);
+        console.log(`[Auto Scheduler] â˜€ï¸ Triggering Day Slot Market Rate Sync (${dayTime} IST)...`);
         await metalRateService.refreshRates({ slot: "DAY", updatedBy: "Automated Day Scheduler" });
       }
     }
@@ -122,7 +159,7 @@ setInterval(async () => {
     if (hours === eveHour && minutes >= eveMin && minutes <= eveMin + 4) {
       const quota = await metalRateService.getDailySyncStatus();
       if (!quota.eveningSlotCompleted && quota.canRequest) {
-        console.log(`[Auto Scheduler] 🌙 Triggering Evening Slot Market Rate Sync (${eveningTime} IST)...`);
+        console.log(`[Auto Scheduler] ðŸŒ™ Triggering Evening Slot Market Rate Sync (${eveningTime} IST)...`);
         await metalRateService.refreshRates({ slot: "EVENING", updatedBy: "Automated Evening Scheduler" });
       }
     }
@@ -130,6 +167,7 @@ setInterval(async () => {
     console.warn("[Auto Scheduler] Background sync notice:", err.message);
   }
 }, 60 * 1000); // Check every 60 seconds
+
 
 
 

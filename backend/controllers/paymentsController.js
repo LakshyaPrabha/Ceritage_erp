@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const accounting = require("../services/accountingPostingService");
 
 // ── GET /api/payments/kpis ──────────────────────────────────────────────────
 async function getKpis(req, res) {
@@ -117,7 +118,16 @@ async function getKpis(req, res) {
 // ── GET /api/payments/modes ──────────────────────────────────────────────────
 async function getModes(req, res) {
   try {
-    const [rows] = await db.query("SELECT * FROM payment_modes ORDER BY id ASC");
+    const [rows] = await db.query(`
+      SELECT pm.*, pam.receipt_account_id, pam.settlement_account_id, pam.clearing_account_id, pam.fee_account_id,
+             ra.code AS receipt_account_code, ra.name AS receipt_account_name,
+             sa.code AS settlement_account_code, sa.name AS settlement_account_name
+      FROM payment_modes pm
+      LEFT JOIN payment_account_mappings pam ON pam.mode_code COLLATE utf8mb4_unicode_ci = pm.mode_code COLLATE utf8mb4_unicode_ci AND pam.is_active = 1
+      LEFT JOIN accounts ra ON ra.id = pam.receipt_account_id
+      LEFT JOIN accounts sa ON sa.id = pam.settlement_account_id
+      ORDER BY pm.id ASC
+    `);
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -128,7 +138,10 @@ async function getModes(req, res) {
 async function updateMode(req, res) {
   try {
     const { id } = req.params;
-    const { is_active, mdr_pct, vpa_id, account_no, terminal_id, description } = req.body;
+    const {
+      is_active, mdr_pct, vpa_id, account_no, terminal_id, description,
+      gateway_provider, gateway_environment, gateway_status, webhook_status, settlement_status
+    } = req.body;
 
     const updates = [];
     const params = [];
@@ -139,6 +152,11 @@ async function updateMode(req, res) {
     if (account_no !== undefined) { updates.push("account_no = ?"); params.push(account_no || null); }
     if (terminal_id !== undefined) { updates.push("terminal_id = ?"); params.push(terminal_id || null); }
     if (description !== undefined) { updates.push("description = ?"); params.push(description || null); }
+    if (gateway_provider !== undefined) { updates.push("gateway_provider = ?"); params.push(gateway_provider || null); }
+    if (gateway_environment !== undefined) { updates.push("gateway_environment = ?"); params.push(gateway_environment || "TEST"); }
+    if (gateway_status !== undefined) { updates.push("gateway_status = ?"); params.push(gateway_status || "NOT_CONFIGURED"); }
+    if (webhook_status !== undefined) { updates.push("webhook_status = ?"); params.push(webhook_status || "UNKNOWN"); }
+    if (settlement_status !== undefined) { updates.push("settlement_status = ?"); params.push(settlement_status || "NOT_STARTED"); }
 
     if (updates.length === 0) {
       return res.status(400).json({ success: false, message: "No fields provided to update" });
@@ -341,13 +359,22 @@ async function recordPayment(req, res) {
         return res.status(400).json({ success: false, message: "Customer is required for customer dues payment." });
       }
 
-      const [custRows] = await conn.query("SELECT id, full_name, balance_due FROM customers WHERE id = ? FOR UPDATE", [customer_id]);
+      const [custRows] = await conn.query("SELECT id, full_name, branch_id, balance_due FROM customers WHERE id = ? FOR UPDATE", [customer_id]);
       if (custRows.length === 0) {
         await conn.rollback();
         return res.status(404).json({ success: false, message: "Customer not found" });
       }
       const customer = custRows[0];
+      const activeBranchId = Number(req.branchId || req.user.branch_id || customer.branch_id || 1);
+      if (req.user.role !== "admin" && Number(customer.branch_id || 1) !== Number(req.user.branch_id || 1)) {
+        await conn.rollback();
+        return res.status(403).json({ success: false, message: "Cannot collect payment for another branch" });
+      }
       const currentDue = Number(customer.balance_due || 0);
+      if (numAmount > currentDue + 0.01) {
+        await conn.rollback();
+        return res.status(400).json({ success: false, message: "Customer dues payment cannot exceed current receivable balance." });
+      }
       const newDue = Math.max(0, currentDue - numAmount);
 
       // 1. Update customer balance due
@@ -360,6 +387,16 @@ async function recordPayment(req, res) {
          VALUES (?, CURRENT_DATE, ?, 0, ?, ?, ?)`,
         [customer_id, `Payment received via ${payment_mode}${remark ? ' - ' + remark : ''}`, numAmount, newDue, ref]
       );
+
+      const journal = await accounting.postCustomerReceipt(conn, {
+        branch_id: activeBranchId,
+        amount: numAmount,
+        payment_mode,
+        reference_no: ref,
+        source_id: ledResult.insertId,
+        created_by: performedBy,
+        narration: `Customer dues receipt ${ref}`,
+      });
 
       // 3. Audit log
       try {
@@ -383,7 +420,8 @@ async function recordPayment(req, res) {
         amount_paid: numAmount,
         previous_balance: currentDue,
         new_balance: newDue,
-        payment_mode
+        payment_mode,
+        journal_voucher_no: journal.voucher_no
       };
 
     } else if (type === "SUPPLIER_PAYMENT") {
@@ -392,12 +430,16 @@ async function recordPayment(req, res) {
         return res.status(400).json({ success: false, message: "Supplier is required for supplier settlement." });
       }
 
-      const [supRows] = await conn.query("SELECT id, company_name, outstanding FROM suppliers WHERE id = ? FOR UPDATE", [supplier_id]);
+      const [supRows] = await conn.query("SELECT id, company_name, branch_id, outstanding FROM suppliers WHERE id = ? FOR UPDATE", [supplier_id]);
       if (supRows.length === 0) {
         await conn.rollback();
         return res.status(404).json({ success: false, message: "Supplier not found" });
       }
       const supplier = supRows[0];
+      if (req.user.role !== "admin" && Number(supplier.branch_id || 1) !== Number(req.user.branch_id || 1)) {
+        await conn.rollback();
+        return res.status(403).json({ success: false, message: "Cannot pay supplier from another branch" });
+      }
       const currentOut = Number(supplier.outstanding || 0);
       const newOut = Math.max(0, currentOut - numAmount);
 
@@ -409,10 +451,10 @@ async function recordPayment(req, res) {
       const pay_id = `PAY-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
       const ref = reference_no || `UTR-${Date.now().toString().slice(-6)}`;
 
-      await conn.query(
-        `INSERT INTO supplier_payments (pay_id, supplier_id, amount, payment_mode, reference, remark)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [pay_id, supplier_id, numAmount, payment_mode, ref, remark || null]
+      const [paymentResult] = await conn.query(
+        `INSERT INTO supplier_payments (branch_id, pay_id, supplier_id, amount, payment_mode, reference, remark)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [req.branchId || req.user?.branch_id || 1, pay_id, supplier_id, numAmount, payment_mode, ref, remark || null]
       );
 
       // 3. Insert supplier_ledger entry
@@ -422,6 +464,16 @@ async function recordPayment(req, res) {
         [supplier_id, ref, `Payment disbursed via ${payment_mode}`, numAmount, newOut]
       );
 
+      const journal = await accounting.postSupplierPayment(conn, {
+        branch_id: req.branchId || req.user?.branch_id || 1,
+        amount: numAmount,
+        payment_mode,
+        reference_no: pay_id,
+        source_id: paymentResult.insertId,
+        created_by: performedBy,
+        narration: `Supplier payment ${pay_id} for ${supplier.company_name}`,
+      });
+
       transactionResult = {
         pay_id,
         supplier_id,
@@ -429,7 +481,8 @@ async function recordPayment(req, res) {
         amount_paid: numAmount,
         previous_outstanding: currentOut,
         new_outstanding: newOut,
-        payment_mode
+        payment_mode,
+        journal_voucher_no: journal.voucher_no
       };
     } else {
       await conn.rollback();

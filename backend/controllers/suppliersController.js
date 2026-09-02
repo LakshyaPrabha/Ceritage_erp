@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const accounting = require("../services/accountingPostingService");
 
 // ── GET /api/suppliers/kpis ───────────────────────────────────────────────────
 async function getKpis(req, res) {
@@ -265,7 +266,7 @@ async function makePayment(req, res) {
     await conn.beginTransaction();
 
     const [supRows] = await conn.query(
-      "SELECT id, company_name, outstanding FROM suppliers WHERE id = ? FOR UPDATE",
+      "SELECT id, company_name, branch_id, outstanding FROM suppliers WHERE id = ? FOR UPDATE",
       [supplier_id]
     );
     if (supRows.length === 0) {
@@ -273,6 +274,10 @@ async function makePayment(req, res) {
       return res.status(404).json({ success: false, message: "Supplier not found." });
     }
     const supplier = supRows[0];
+    if (req.user.role !== "admin" && Number(supplier.branch_id || 1) !== Number(req.user.branch_id || 1)) {
+      await conn.rollback();
+      return res.status(403).json({ success: false, message: "Cannot pay supplier from another branch" });
+    }
 
     const [[{ count }]] = await conn.query(
       "SELECT COUNT(*) AS count FROM supplier_payments WHERE branch_id = ?", [branch_id]
@@ -280,7 +285,7 @@ async function makePayment(req, res) {
     const pay_id = `SP${new Date().getFullYear()}${String(count + 1).padStart(4, "0")}`;
 
     // 1. Insert Payment Record
-    await conn.query(
+    const [paymentResult] = await conn.query(
       `INSERT INTO supplier_payments
          (branch_id, pay_id, supplier_id, amount, payment_mode, reference, po_ref, remark)
        VALUES (?,?,?,?,?,?,?,?)`,
@@ -315,6 +320,18 @@ async function makePayment(req, res) {
       ]
     );
 
+    const performedBy = req.user?.full_name || req.user?.username || "Admin";
+    const journal = await accounting.postSupplierPayment(conn, {
+      branch_id,
+      amount: paymentAmt,
+      payment_mode,
+      reference_no: pay_id,
+      source_id: paymentResult.insertId,
+      entry_date: new Date().toISOString().slice(0, 10),
+      created_by: performedBy,
+      narration: `Supplier payment ${pay_id} for ${supplier.company_name}`,
+    });
+
     await conn.commit();
     res.status(201).json({
       success: true,
@@ -323,7 +340,8 @@ async function makePayment(req, res) {
         pay_id,
         supplier_id,
         paid_amount: paymentAmt,
-        new_outstanding: newOutstanding
+        new_outstanding: newOutstanding,
+        journal_voucher_no: journal.voucher_no
       }
     });
   } catch (err) {

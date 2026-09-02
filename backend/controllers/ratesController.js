@@ -1,9 +1,9 @@
-const db = require("../config/db");
+﻿const db = require("../config/db");
 const metalRateService = require("../services/metalRateService");
 
 // Legacy support: GET /api/rates/current
 async function getCurrent(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.branchId ?? req.user.branch_id;
   try {
     const [rows] = await db.query(
       `SELECT * FROM gold_rates
@@ -20,7 +20,7 @@ async function getCurrent(req, res) {
 
 // Legacy support: GET /api/rates/history
 async function getHistory(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.branchId ?? req.user.branch_id;
   try {
     const { days = 30 } = req.query;
     const [rows] = await db.query(
@@ -38,7 +38,7 @@ async function getHistory(req, res) {
 
 // POST /api/rates (Manual update)
 async function updateRates(req, res) {
-  const branch_id = req.user.branch_id;
+  const branch_id = req.branchId ?? req.user.branch_id;
   const {
     rate_22k, rate_24k, rate_18k, rate_14k,
     silver_rate, platinum_rate, usd_inr,

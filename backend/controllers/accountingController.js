@@ -265,60 +265,33 @@ async function getBankBook(req, res) {
 // ── GET /api/accounting/trial-balance ────────────────────────────────────────
 async function getTrialBalance(req, res) {
   try {
-    const [accounts] = await db.query("SELECT * FROM accounts ORDER BY code ASC");
-
-    // Fetch real-time aggregates
-    const [[inv]] = await db.query(`
-      SELECT
-        COALESCE(SUM(CASE WHEN payment_mode = 'Cash' THEN paid_amount ELSE 0 END), 0) AS cash_in,
-        COALESCE(SUM(CASE WHEN payment_mode != 'Cash' THEN paid_amount ELSE 0 END), 0) AS bank_in,
-        COALESCE(SUM(balance_due), 0) AS receivables,
-        COALESCE(SUM(grand_total - (COALESCE(cgst, 0) + COALESCE(sgst, 0) + COALESCE(igst, 0))), 0) AS sales_taxable,
-        COALESCE(SUM(cgst + sgst + igst), 0) AS gst_output
-      FROM invoices WHERE status != 'Cancelled'
-    `);
-
-    const [[sup]] = await db.query(`
-      SELECT COALESCE(SUM(outstanding), 0) AS payables FROM suppliers
-    `);
-
-    const [[stock]] = await db.query(`
-      SELECT COALESCE(SUM(stock_qty * purchase_price), 0) AS stock_val FROM products WHERE status = 'Active' OR status IS NULL
-    `);
-
-    const [[karigar]] = await db.query(`
-      SELECT COALESCE(SUM(amount), 0) AS labour FROM karigar_payments
-    `);
-
+    const branchId = req.branchId || null;
+    let accounts;
+    if (branchId) {
+      [accounts] = await db.query(
+        `SELECT a.code, a.name, a.group_name, a.type,
+                COALESCE(tb.balance, 0) AS current_balance
+         FROM accounts a
+         LEFT JOIN (
+           SELECT jl.account_id, COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS balance
+           FROM journal_entry_lines jl
+           JOIN journal_entries j ON j.id = jl.journal_id
+           WHERE j.branch_id = ?
+           GROUP BY jl.account_id
+         ) tb ON tb.account_id = a.id
+         ORDER BY a.code ASC`,
+        [branchId]
+      );
+    } else {
+      [accounts] = await db.query("SELECT * FROM accounts ORDER BY code ASC");
+    }
     let totalDebit = 0;
     let totalCredit = 0;
 
     const tbRows = accounts.map(a => {
-      let debit = 0;
-      let credit = 0;
-
-      if (a.code === '1010') { // Cash in Hand
-        debit = Number(inv.cash_in) + (Number(a.current_balance) > 0 ? Number(a.current_balance) : 0);
-      } else if (a.code === '1020') { // Bank
-        debit = Number(inv.bank_in);
-      } else if (a.code === '1030') { // Receivables
-        debit = Number(inv.receivables);
-      } else if (a.code === '1040') { // Stock
-        debit = Number(stock.stock_val);
-      } else if (a.code === '2010') { // Payables
-        credit = Number(sup.payables);
-      } else if (a.code === '2020') { // GST Output
-        credit = Number(inv.gst_output);
-      } else if (a.code === '4010') { // Sales Revenue
-        credit = Number(inv.sales_taxable);
-      } else if (a.code === '5020') { // Karigar Expenses
-        debit = Number(karigar.labour);
-      } else if (a.code === '3010') { // Owner Equity
-        credit = Number(a.current_balance < 0 ? Math.abs(a.current_balance) : 0);
-      } else {
-        debit = Number(a.current_balance > 0 ? a.current_balance : 0);
-        credit = Number(a.current_balance < 0 ? Math.abs(a.current_balance) : 0);
-      }
+      const balance = Number(a.current_balance || 0);
+      const debit = balance > 0 ? balance : 0;
+      const credit = balance < 0 ? Math.abs(balance) : 0;
 
       totalDebit += debit;
       totalCredit += credit;
@@ -332,18 +305,6 @@ async function getTrialBalance(req, res) {
         credit
       };
     });
-
-    // Equity / Balancing Entry (Retained Earnings) to guarantee Trial Balance invariant
-    const diff = totalDebit - totalCredit;
-    if (diff > 0) {
-      const reAcc = tbRows.find(r => r.code === '3020');
-      if (reAcc) reAcc.credit += diff;
-      totalCredit += diff;
-    } else if (diff < 0) {
-      const reAcc = tbRows.find(r => r.code === '3020');
-      if (reAcc) reAcc.debit += Math.abs(diff);
-      totalDebit += Math.abs(diff);
-    }
 
     res.json({
       success: true,

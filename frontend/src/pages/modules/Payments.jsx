@@ -22,7 +22,8 @@ function fmtDate(d) {
 const TABS = [
   { id: "overview",     label: "Mode Breakdown & Analytics" },
   { id: "transactions", label: "Unified Transactions Log" },
-  { id: "modes",        label: "Payment Modes Configuration" }
+  { id: "modes",        label: "Payment Modes Configuration" },
+  { id: "gateway",      label: "Gateway Configuration" }
 ];
 
 const EMPTY_RECORD = {
@@ -53,6 +54,8 @@ export default function Payments({ t }) {
 
   const [modes, setModes] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [gatewayConfig, setGatewayConfig] = useState(null);
+  const [settlements, setSettlements] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -101,6 +104,18 @@ export default function Payments({ t }) {
     }
   }, [modeFilter, search]);
 
+  const loadGateway = useCallback(async () => {
+    try {
+      const [configRes, settlementRes] = await Promise.all([
+        fetch(`${API}/payments/gateway/config?provider=mock`, { headers: authHeaders() }),
+        fetch(`${API}/payments/settlements`, { headers: authHeaders() })
+      ]);
+      const [configData, settlementData] = await Promise.all([configRes.json(), settlementRes.json()]);
+      if (configData.success) setGatewayConfig(configData.data);
+      if (settlementData.success) setSettlements(settlementData.data || []);
+    } catch { /* silent */ }
+  }, []);
+
   const loadParties = useCallback(async () => {
     try {
       const [cRes, sRes] = await Promise.all([
@@ -116,8 +131,9 @@ export default function Payments({ t }) {
   useEffect(() => {
     loadKpis();
     loadModes();
+    loadGateway();
     loadParties();
-  }, [loadKpis, loadModes, loadParties]);
+  }, [loadKpis, loadModes, loadGateway, loadParties]);
 
   useEffect(() => {
     if (tab === "transactions") {
@@ -193,7 +209,12 @@ export default function Payments({ t }) {
           vpa_id: selectedMode.vpa_id,
           account_no: selectedMode.account_no,
           terminal_id: selectedMode.terminal_id,
-          description: selectedMode.description
+          description: selectedMode.description,
+          gateway_provider: selectedMode.gateway_provider,
+          gateway_environment: selectedMode.gateway_environment,
+          gateway_status: selectedMode.gateway_status,
+          webhook_status: selectedMode.webhook_status,
+          settlement_status: selectedMode.settlement_status
         })
       });
       const d = await r.json();
@@ -201,6 +222,7 @@ export default function Payments({ t }) {
         setEditModeModal(false);
         setSelectedMode(null);
         loadModes();
+        loadGateway();
       } else {
         alert(d.message || "Failed to update configuration.");
       }
@@ -408,6 +430,7 @@ export default function Payments({ t }) {
                   <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Payment Mode</th>
                   <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>MDR / Fee %</th>
                   <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Merchant Identifier (VPA / A/C)</th>
+                  <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Gateway</th>
                   <th style={{ textAlign: "left", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Status</th>
                   <th style={{ textAlign: "right", padding: "10px 12px", color: t.subtext, fontSize: 11, textTransform: "uppercase" }}>Action</th>
                 </tr>
@@ -419,6 +442,9 @@ export default function Payments({ t }) {
                     <td style={{ padding: "10px 12px", fontWeight: 600, color: t.text }}>{m.mode_name}</td>
                     <td style={{ padding: "10px 12px", color: t.subtext }}>{Number(m.mdr_pct || 0).toFixed(2)}%</td>
                     <td style={{ padding: "10px 12px", color: t.text }}>{m.vpa_id || m.account_no || m.terminal_id || "—"}</td>
+                    <td style={{ padding: "10px 12px", color: t.subtext }}>
+                      {m.gateway_provider ? `${m.gateway_provider} / ${m.gateway_environment || "TEST"}` : "-"}
+                    </td>
                     <td style={{ padding: "10px 12px" }}>
                       <span
                         onClick={() => toggleModeActive(m)}
@@ -453,6 +479,40 @@ export default function Payments({ t }) {
             </table>
           </div>
         </Card>
+      )}
+
+      {tab === "gateway" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 16 }}>
+          <Card t={t} style={{ marginBottom: 0 }}>
+            <CardHeader title="Gateway Runtime Status" t={t} actions={<BtnOutline t={t} onClick={loadGateway}>Refresh</BtnOutline>} />
+            <div style={{ display: "grid", gap: 12, fontSize: 13 }}>
+              <div><strong>Provider:</strong> {gatewayConfig?.provider || "mock"}</div>
+              <div><strong>Environment:</strong> {gatewayConfig?.environment || "TEST"}</div>
+              <div><strong>Credentials:</strong> {gatewayConfig?.configured ? "Configured" : "Pending"}</div>
+              <div><strong>Webhook:</strong> {gatewayConfig?.webhook_configured ? "Ready" : "Pending"}</div>
+              <div><strong>Captured Payments:</strong> {Number(gatewayConfig?.counts?.captured || 0)}</div>
+              <div><strong>Failed Payments:</strong> {Number(gatewayConfig?.counts?.failed || 0)}</div>
+            </div>
+          </Card>
+
+          <Card t={t} style={{ marginBottom: 0 }}>
+            <CardHeader title="Settlement Reconciliation" t={t} />
+            <DataTable
+              columns={["Settlement ID", "Provider", "Gross", "Fees", "Net", "Date", "Status"]}
+              rows={(settlements || []).map(s => ({
+                "Settlement ID": <code>{s.settlement_id}</code>,
+                "Provider": s.provider,
+                "Gross": fmt(s.gross_amount),
+                "Fees": fmt(Number(s.gateway_fee || 0) + Number(s.gateway_fee_tax || 0)),
+                "Net": <strong>{fmt(s.net_amount)}</strong>,
+                "Date": fmtDate(s.settlement_date),
+                "Status": badge(s.status)
+              }))}
+              t={t}
+              emptyMsg="No gateway settlements recorded"
+            />
+          </Card>
+        </div>
       )}
 
       {/* ── MODAL: RECORD PAYMENT / SETTLEMENT ─────────────────────────────── */}
@@ -631,6 +691,55 @@ export default function Payments({ t }) {
                 value={selectedMode.description || ""}
                 onChange={(e) => setSelectedMode(prev => ({ ...prev, description: e.target.value }))}
               />
+            </FormGroup>
+
+            <FormGroup label="Gateway Provider" t={t} half>
+              <Select
+                t={t}
+                value={selectedMode.gateway_provider || ""}
+                onChange={(e) => setSelectedMode(prev => ({ ...prev, gateway_provider: e.target.value }))}
+              >
+                <option value="">None</option>
+                <option value="mock">Mock / Sandbox</option>
+                <option value="razorpay">Razorpay</option>
+              </Select>
+            </FormGroup>
+
+            <FormGroup label="Gateway Environment" t={t} half>
+              <Select
+                t={t}
+                value={selectedMode.gateway_environment || "TEST"}
+                onChange={(e) => setSelectedMode(prev => ({ ...prev, gateway_environment: e.target.value }))}
+              >
+                <option value="TEST">TEST</option>
+                <option value="LIVE">LIVE</option>
+              </Select>
+            </FormGroup>
+
+            <FormGroup label="Gateway Status" t={t} half>
+              <Select
+                t={t}
+                value={selectedMode.gateway_status || "NOT_CONFIGURED"}
+                onChange={(e) => setSelectedMode(prev => ({ ...prev, gateway_status: e.target.value }))}
+              >
+                <option value="NOT_CONFIGURED">Not Configured</option>
+                <option value="CONFIGURED">Configured</option>
+                <option value="ACTIVE">Active</option>
+                <option value="DISABLED">Disabled</option>
+                <option value="ERROR">Error</option>
+              </Select>
+            </FormGroup>
+
+            <FormGroup label="Webhook Status" t={t} half>
+              <Select
+                t={t}
+                value={selectedMode.webhook_status || "UNKNOWN"}
+                onChange={(e) => setSelectedMode(prev => ({ ...prev, webhook_status: e.target.value }))}
+              >
+                <option value="UNKNOWN">Unknown</option>
+                <option value="HEALTHY">Healthy</option>
+                <option value="FAILING">Failing</option>
+              </Select>
             </FormGroup>
           </FormGrid>
         </Modal>

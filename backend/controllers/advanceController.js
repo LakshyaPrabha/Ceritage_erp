@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const accounting = require("../services/accountingPostingService");
 
 let tablesReady = false;
 
@@ -252,6 +253,7 @@ exports.getById = async (req, res) => {
 
 // ── POST /api/advance ─────────────────────────────────────────────────────────
 exports.create = async (req, res) => {
+  let conn;
   try {
     await ensureTables();
     const {
@@ -283,12 +285,10 @@ exports.create = async (req, res) => {
     const rateNum = parseFloat(locked_rate) || 0;
     const lockedValue = weightNum * rateNum;
     const advanceNum = parseFloat(advance_paid) || 0;
-
-    // Generate unique lock number (e.g. RL-2026-0001)
+    const activeBranchId = Number(req.branchId || req.user?.branch_id || 1);
     const lockNo = `RL-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
-
     const lockDateVal = lock_date || new Date().toISOString().slice(0, 10);
-    // Default valid_till to 30 days if omitted
+
     let validTillVal = valid_till;
     if (!validTillVal) {
       const d = new Date(lockDateVal);
@@ -296,17 +296,23 @@ exports.create = async (req, res) => {
       validTillVal = d.toISOString().slice(0, 10);
     }
 
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
     let resolvedCustName = customer_name;
     let resolvedCustPhone = customer_phone;
     if (customer_id && (!resolvedCustName || !resolvedCustPhone)) {
-      const [cust] = await db.query("SELECT full_name, phone FROM customers WHERE id = ?", [customer_id]);
+      const [cust] = await conn.query("SELECT full_name, phone, branch_id FROM customers WHERE id = ? FOR UPDATE", [customer_id]);
       if (cust.length > 0) {
+        if (req.user.role !== "admin" && Number(cust[0].branch_id || 1) !== Number(req.user.branch_id || 1)) {
+          throw new Error("Cannot create advance for another branch");
+        }
         resolvedCustName = cust[0].full_name;
         resolvedCustPhone = cust[0].phone;
       }
     }
 
-    const [result] = await db.query(`
+    const [result] = await conn.query(`
       INSERT INTO rate_locks 
         (lock_no, order_id, customer_id, customer_name, customer_phone, metal_type, purity, item_description, locked_rate, weight_g, locked_value, advance_paid, payment_mode, payment_ref, lock_date, valid_till, status, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?)
@@ -331,10 +337,10 @@ exports.create = async (req, res) => {
     ]);
 
     const lockId = result.insertId;
+    let journal = null;
 
-    // Record initial advance payment receipt if > 0
     if (advanceNum > 0) {
-      await db.query(`
+      await conn.query(`
         INSERT INTO rate_lock_advances 
           (rate_lock_id, amount, payment_mode, payment_ref, payment_date, collected_by, notes)
         VALUES (?, ?, ?, ?, ?, ?, 'Initial Booking Advance')
@@ -346,20 +352,34 @@ exports.create = async (req, res) => {
         lockDateVal,
         req.user?.username || "Staff",
       ]);
+      journal = await accounting.postAdvanceReceipt(conn, {
+        branch_id: activeBranchId,
+        amount: advanceNum,
+        payment_mode,
+        reference_no: payment_ref || lockNo,
+        source_id: lockId,
+        entry_date: lockDateVal,
+        created_by: req.user?.full_name || req.user?.username || "Staff",
+        narration: `Advance receipt for ${lockNo}`,
+      });
     }
 
+    await conn.commit();
     return res.status(201).json({
       success: true,
-      message: `Gold rate locked at ₹${rateNum}/g for ${weightNum}g (Lock #${lockNo})`,
-      data: { id: lockId, lock_no: lockNo },
+      message: `Gold rate locked at INR ${rateNum}/g for ${weightNum}g (Lock #${lockNo})`,
+      data: { id: lockId, lock_no: lockNo, journal_voucher_no: journal?.voucher_no || null },
     });
   } catch (err) {
+    if (conn) await conn.rollback();
     return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    if (conn) conn.release();
   }
 };
 
-// ── POST /api/advance/:id/add-payment ─────────────────────────────────────────
 exports.addAdvancePayment = async (req, res) => {
+  let conn;
   try {
     await ensureTables();
     const { id } = req.params;
@@ -370,36 +390,61 @@ exports.addAdvancePayment = async (req, res) => {
       return res.status(400).json({ success: false, message: "Valid advance amount is required" });
     }
 
-    const [locks] = await db.query("SELECT * FROM rate_locks WHERE id = ?", [id]);
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    const [locks] = await conn.query("SELECT * FROM rate_locks WHERE id = ? FOR UPDATE", [id]);
     if (locks.length === 0) {
+      await conn.rollback();
       return res.status(404).json({ success: false, message: "Rate lock not found" });
+    }
+    const lock = locks[0];
+    const activeBranchId = Number(req.branchId || req.user?.branch_id || 1);
+    if (req.user.role !== "admin" && lock.customer_id) {
+      const [cust] = await conn.query("SELECT branch_id FROM customers WHERE id = ?", [lock.customer_id]);
+      if (cust.length > 0 && Number(cust[0].branch_id || 1) !== Number(req.user.branch_id || 1)) {
+        throw new Error("Cannot add advance for another branch");
+      }
     }
 
     const payDate = payment_date || new Date().toISOString().slice(0, 10);
 
-    // 1. Insert advance payment receipt
-    await db.query(`
+    await conn.query(`
       INSERT INTO rate_lock_advances (rate_lock_id, amount, payment_mode, payment_ref, payment_date, collected_by, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [id, amt, payment_mode, payment_ref, payDate, req.user?.username || "Staff", notes || "Top-up Advance"]);
 
-    // 2. Update total advance_paid on rate lock
-    await db.query(`
+    await conn.query(`
       UPDATE rate_locks 
       SET advance_paid = advance_paid + ?
       WHERE id = ?
     `, [amt, id]);
 
+    const journal = await accounting.postAdvanceReceipt(conn, {
+      branch_id: activeBranchId,
+      amount: amt,
+      payment_mode,
+      reference_no: payment_ref || lock.lock_no,
+      source_id: id,
+      entry_date: payDate,
+      created_by: req.user?.full_name || req.user?.username || "Staff",
+      narration: `Advance top-up for ${lock.lock_no}`,
+    });
+
+    await conn.commit();
     return res.json({
       success: true,
-      message: `₹${amt.toLocaleString("en-IN")} advance recorded for Lock #${locks[0].lock_no}`,
+      message: `INR ${amt.toLocaleString("en-IN")} advance recorded for Lock #${lock.lock_no}`,
+      data: { journal_voucher_no: journal.voucher_no },
     });
   } catch (err) {
+    if (conn) await conn.rollback();
     return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    if (conn) conn.release();
   }
 };
 
-// ── PUT /api/advance/:id/redeem ───────────────────────────────────────────────
 exports.redeemLock = async (req, res) => {
   try {
     await ensureTables();

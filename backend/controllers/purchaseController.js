@@ -1,7 +1,7 @@
-const db = require("../config/db");
-const { branchFilter } = require("../utils/branchScope");
+﻿const db = require("../config/db");
+const accounting = require("../services/accountingPostingService");
 
-// ─── KPIs ─────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ KPIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getKpis(req, res) {
   try {
     const bf = branchFilter(req);
@@ -21,7 +21,7 @@ async function getKpis(req, res) {
   }
 }
 
-// ─── PURCHASE ORDERS ──────────────────────────────────────────────────────────
+// â”€â”€â”€ PURCHASE ORDERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getAll(req, res) {
   try {
     const { supplier_id, status, search, page = 1, limit = 50 } = req.query;
@@ -64,7 +64,7 @@ async function getAll(req, res) {
   }
 }
 
-// ── GET /api/purchases/orders/:id (PO Detail with Items) ─────────────────────
+// â”€â”€ GET /api/purchases/orders/:id (PO Detail with Items) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getById(req, res) {
   const branch_id = req.user?.branch_id || 1;
   try {
@@ -82,8 +82,9 @@ async function getById(req, res) {
   }
 }
 
-// ── POST /api/purchases/orders (Create PO with Multi-Items) ──────────────────
+// â”€â”€ POST /api/purchases/orders (Create PO with Multi-Items) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function create(req, res) {
+  const branch_id = req.user?.branch_id || 1;
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -102,17 +103,29 @@ async function create(req, res) {
     const gst_amount = amount * (parseFloat(gst_pct) / 100);
     const total      = amount + gst_amount;
 
+    if (supplier_id) {
+      const [supRows] = await conn.query("SELECT id, branch_id FROM suppliers WHERE id = ? FOR UPDATE", [supplier_id]);
+      if (!supRows.length) {
+        await conn.rollback();
+        return res.status(404).json({ success: false, message: "Supplier not found" });
+      }
+      if (req.user.role !== "admin" && Number(supRows[0].branch_id || 1) !== Number(req.user.branch_id || 1)) {
+        await conn.rollback();
+        return res.status(403).json({ success: false, message: "Cannot create purchase for another branch supplier" });
+      }
+    }
+
     const [result] = await conn.query(
       `INSERT INTO purchase_orders
          (po_no, supplier_id, purchase_date, material_type, item_description,
           purity, weight_qty, rate, amount, gst_pct, gst_amount, total,
-          payment_mode, expected_delivery, remarks)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          payment_mode, expected_delivery, remarks, branch_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [po_no, supplier_id || null,
        purchase_date || new Date().toISOString().slice(0, 10),
        material_type, item_description, purity || null,
        weight_qty || 0, rate || 0, amount, gst_pct, gst_amount, total,
-       payment_mode, expected_delivery || null, remarks || null]
+       payment_mode, expected_delivery || null, remarks || null, branch_id]
     );
 
     // Update supplier outstanding
@@ -129,6 +142,18 @@ async function create(req, res) {
          po_no, item_description, total, total]
       );
     }
+
+    await accounting.postPurchaseAccrual(conn, {
+      branch_id,
+      taxable_amount: amount,
+      gst_amount,
+      total_amount: total,
+      reference_no: po_no,
+      source_id: result.insertId,
+      entry_date: purchase_date || new Date().toISOString().slice(0, 10),
+      created_by: req.user?.full_name || req.user?.username || "Admin",
+      narration: `Purchase order ${po_no}`,
+    });
 
     await conn.commit();
     res.status(201).json({ success: true, data: { id: result.insertId, po_no } });
@@ -157,7 +182,7 @@ async function updatePO(req, res) {
   }
 }
 
-// ─── GRNs ─────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ GRNs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getGRNs(req, res) {
   const branch_id = req.user?.branch_id || 1;
   try {
@@ -177,12 +202,16 @@ async function getGRNs(req, res) {
 
     const whereClause = "WHERE " + conditions.join(" AND ");
 
+
     const [rows] = await db.query(
       `SELECT g.*, s.company_name AS supplier_name, po.po_no
        FROM grns g
        LEFT JOIN suppliers s ON g.supplier_id = s.id
        LEFT JOIN purchase_orders po ON g.po_id = po.id
-       ORDER BY g.received_date DESC, g.created_at DESC`
+       ${whereClause}
+       ORDER BY g.received_date DESC, g.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, parseInt(limit), parseInt(offset)]
     );
 
     const [[{ totalCount }]] = await db.query(
@@ -191,7 +220,6 @@ async function getGRNs(req, res) {
        ${whereClause}`,
       params
     );
-
     res.json({
       success: true,
       data: rows,
@@ -245,7 +273,7 @@ async function createGRN(req, res) {
   }
 }
 
-// ─── PURCHASE RETURNS ─────────────────────────────────────────────────────────
+// â”€â”€â”€ PURCHASE RETURNS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getPurchaseReturns(req, res) {
   try {
     const [rows] = await db.query(
@@ -283,7 +311,7 @@ async function createPurchaseReturn(req, res) {
   }
 }
 
-// ─── SUPPLIER PAYMENTS ────────────────────────────────────────────────────────
+// â”€â”€â”€ SUPPLIER PAYMENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getSupplierPayments(req, res) {
   try {
     const { supplier_id } = req.query;
@@ -305,6 +333,7 @@ async function getSupplierPayments(req, res) {
 }
 
 async function createSupplierPayment(req, res) {
+  const branch_id = req.user?.branch_id || 1;
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -316,14 +345,35 @@ async function createSupplierPayment(req, res) {
 
     const [result] = await conn.query(
       `INSERT INTO supplier_payments
-         (pay_id, supplier_id, amount, payment_mode, reference, po_ref, remark)
-       VALUES (?,?,?,?,?,?,?)`,
-      [pay_id, supplier_id || null, amount || 0, payment_mode,
+         (branch_id, pay_id, supplier_id, amount, payment_mode, reference, po_ref, remark)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [branch_id,
+       pay_id, supplier_id || null, amount || 0, payment_mode,
        reference || null, po_ref || null, remark || null]
     );
 
+    const journal = await accounting.postSupplierPayment(conn, {
+      branch_id,
+      amount,
+      payment_mode,
+      reference_no: pay_id,
+      source_id: result.insertId,
+      entry_date: paid_date || new Date().toISOString().slice(0, 10),
+      created_by: req.user?.full_name || req.user?.username || "Admin",
+      narration: `Supplier payment ${pay_id}`,
+    });
+
     // Reduce supplier outstanding
     if (supplier_id) {
+      const [supRows] = await conn.query("SELECT id, branch_id FROM suppliers WHERE id = ? FOR UPDATE", [supplier_id]);
+      if (!supRows.length) {
+        await conn.rollback();
+        return res.status(404).json({ success: false, message: "Supplier not found" });
+      }
+      if (req.user.role !== "admin" && Number(supRows[0].branch_id || 1) !== Number(req.user.branch_id || 1)) {
+        await conn.rollback();
+        return res.status(403).json({ success: false, message: "Cannot pay supplier from another branch" });
+      }
       await conn.query(
         "UPDATE suppliers SET outstanding = GREATEST(0, COALESCE(outstanding,0) - ?) WHERE id = ?",
         [amount || 0, supplier_id]
@@ -344,7 +394,7 @@ async function createSupplierPayment(req, res) {
     }
 
     await conn.commit();
-    res.status(201).json({ success: true, data: { id: result.insertId, pay_id } });
+    res.status(201).json({ success: true, data: { id: result.insertId, pay_id, journal_voucher_no: journal.voucher_no } });
   } catch (err) {
     await conn.rollback();
     res.status(500).json({ success: false, message: err.message });
@@ -353,7 +403,7 @@ async function createSupplierPayment(req, res) {
   }
 }
 
-// ─── SUPPLIER LEDGER ──────────────────────────────────────────────────────────
+// â”€â”€â”€ SUPPLIER LEDGER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getSupplierLedger(req, res) {
   try {
     const { supplier_id } = req.params;
@@ -376,7 +426,7 @@ async function getSupplierLedger(req, res) {
   }
 }
 
-// ─── OLD METAL PURCHASES ──────────────────────────────────────────────────────
+// â”€â”€â”€ OLD METAL PURCHASES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getOldMetalPurchases(req, res) {
   try {
     const [rows] = await db.query(
@@ -425,7 +475,7 @@ async function createOldMetalPurchase(req, res) {
   }
 }
 
-// ─── SUPPLIER LIST (for dropdowns) ────────────────────────────────────────────
+// â”€â”€â”€ SUPPLIER LIST (for dropdowns) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getSuppliersList(req, res) {
   try {
     const [rows] = await db.query(

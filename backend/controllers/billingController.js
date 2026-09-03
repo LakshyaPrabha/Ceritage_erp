@@ -1,17 +1,19 @@
 const db = require("../config/db");
-const accounting = require("../services/accountingPostingService");
+const { branchFilter } = require("../utils/branchScope");
 
 // GET /api/billing — all invoices
 async function getAll(req, res) {
-  const branch_id = req.branchId ?? req.user.branch_id;
   try {
-    const { search, type, status, payment_mode, page = 1, limit = 50 } = req.query;
+    const { search, type, status, payment_mode, branch, page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
-    let where = "WHERE 1=1";
-    const params = [];
-    if (branch_id) {
+    
+    const bf = branchFilter(req, "i.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
+
+    if (branch && branch !== "all") {
       where += " AND i.branch_id = ?";
-      params.push(branch_id);
+      params.push(branch);
     }
 
     if (search) {
@@ -23,11 +25,16 @@ async function getAll(req, res) {
     if (payment_mode) { where += " AND i.payment_mode = ?";   params.push(payment_mode); }
 
     const [rows] = await db.query(
-      `SELECT i.*, c.full_name AS customer_name, c.phone AS customer_phone
+      `SELECT i.*, 
+              c.full_name AS customer_name, 
+              c.phone AS customer_phone,
+              COALESCE(b.name, 'Main Showroom') AS branch_name,
+              COALESCE(b.city, '') AS branch_city
        FROM invoices i
        LEFT JOIN customers c ON i.customer_id = c.id
+       LEFT JOIN branches b ON i.branch_id = b.id
        ${where}
-       ORDER BY i.invoice_date DESC
+       ORDER BY i.invoice_date DESC, i.id DESC
        LIMIT ? OFFSET ?`,
       [...params, parseInt(limit), parseInt(offset)]
     );
@@ -73,7 +80,7 @@ async function getById(req, res) {
 // POST /api/billing — create invoice (with atomic Customer Ledger, Credit-Limit Enforcement, Membership Benefits, Wallet & Loyalty posting)
 async function create(req, res) {
   const {
-    invoice_type, customer_id, invoice_date, salesperson_id, branch_id = 1,
+    invoice_type, customer_id, invoice_date, salesperson_id,
     hsn_code, payment_mode, discount_pct, discount_amt,
     coupon_code, gift_voucher, old_gold_exchange,
     cgst, sgst, igst, tcs, grand_total, paid_amount,
@@ -124,28 +131,74 @@ async function create(req, res) {
   // Credit due date calculation for credit/partial invoices
   let numCreditDays = Number(credit_days || (isCreditSale || unpaidAmount > 0 ? 30 : 0));
   let creditDueDate = null;
-  if (isCreditSale || unpaidAmount > 0) {
-    if (!numCreditDays || numCreditDays <= 0) numCreditDays = 30;
+  if (isCreditSale || actualPaidAmount < invoiceGrandTotal) {
     const baseDate = invoice_date ? new Date(invoice_date) : new Date();
-    creditDueDate = new Date(baseDate.getTime() + numCreditDays * 86400000).toISOString().slice(0, 10);
-  }
-
-  // Status calculation
-  let invoiceStatus = "Paid";
-  if (unpaidAmount > 0 && actualPaidAmount === 0 && requestedAdvanceTotal === 0) {
-    invoiceStatus = "Credit";
-  } else if (unpaidAmount > 0) {
-    invoiceStatus = "Partial";
+    baseDate.setDate(baseDate.getDate() + numCreditDays);
+    creditDueDate = baseDate.toISOString().slice(0, 10);
   }
 
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
-    // 1. LOOKUP ACTIVE MEMBERSHIP BENEFITS (TIER, MULTIPLIER, MAKING DISCOUNT)
+    // 1. Fetch customer details with row-level lock for atomic balance calculations
+    let cust = null;
+    let customerOldBalanceDue = 0;
+    let currentWalletBalance = 0;
+    let currentLoyaltyPoints = 0;
+
+    if (customer_id) {
+      const [cRows] = await conn.query(
+        "SELECT * FROM customers WHERE id = ? FOR UPDATE",
+        [customer_id]
+      );
+      if (cRows.length === 0) {
+        await conn.rollback();
+        return res.status(404).json({ success: false, message: "Selected customer not found" });
+      }
+      cust = cRows[0];
+      customerOldBalanceDue = Number(cust.balance_due || 0);
+      currentWalletBalance = Number(cust.wallet_balance || 0);
+      currentLoyaltyPoints = Number(cust.loyalty_points || 0);
+
+      // Check credit limit if sale is unpaid/credit
+      const balanceDueFromThisInvoice = Math.max(0, invoiceGrandTotal - actualPaidAmount);
+      if (balanceDueFromThisInvoice > 0) {
+        const totalNewDue = customerOldBalanceDue + balanceDueFromThisInvoice;
+        const maxCredit = Number(cust.credit_limit || 0);
+        if (maxCredit > 0 && totalNewDue > maxCredit) {
+          await conn.rollback();
+          return res.status(400).json({
+            success: false,
+            message: `Credit limit exceeded. Customer limit is ₹${maxCredit.toLocaleString('en-IN')}, current due is ₹${customerOldBalanceDue.toLocaleString('en-IN')}, this invoice adds ₹${balanceDueFromThisInvoice.toLocaleString('en-IN')}.`
+          });
+        }
+      }
+
+      // Check wallet balance if wallet payment
+      if (usedWalletAmount > 0 && currentWalletBalance < usedWalletAmount) {
+        await conn.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient store wallet balance. Available: ₹${currentWalletBalance.toLocaleString('en-IN')}, Requested: ₹${usedWalletAmount.toLocaleString('en-IN')}`
+        });
+      }
+
+      // Check loyalty points if redeeming
+      if (pointsToRedeem > 0 && currentLoyaltyPoints < pointsToRedeem) {
+        await conn.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient loyalty points. Available: ${currentLoyaltyPoints} pts, Requested: ${pointsToRedeem} pts`
+        });
+      }
+    }
+
+    // 2. Resolve Active VIP Membership & Benefits Snapshot
     let membershipTier = "Regular";
-    let loyaltyMultiplier = 1.00;
-    let makingDiscountPct = 0.00;
+    let loyaltyMultiplier = 1.0;
+    let makingDiscountPct = 0;
+    let makingDiscountAmt = 0;
 
     if (customer_id) {
       const [memRows] = await conn.query(
@@ -178,34 +231,20 @@ async function create(req, res) {
     items.forEach(item => {
       totalMakingCharges += Number(item.making || item.making_charges || 0);
     });
-    const makingDiscountAmt = (totalMakingCharges * makingDiscountPct) / 100;
+    makingDiscountAmt = (totalMakingCharges * makingDiscountPct) / 100;
 
-    // 2. CREDIT LIMIT ENFORCEMENT (with row-level lock)
-    if (customer_id && unpaidAmount > 0) {
-      const [custLockRows] = await conn.query(
-        "SELECT id, full_name, credit_limit, balance_due FROM customers WHERE id = ? FOR UPDATE",
-        [customer_id]
-      );
-      if (custLockRows.length > 0) {
-        const cust = custLockRows[0];
-        const creditLimit = Number(cust.credit_limit || 0);
-        const currentDue = Number(cust.balance_due || 0);
-        const projectedDue = currentDue + unpaidAmount;
-        const availableCredit = Math.max(0, creditLimit - currentDue);
-
-        if (creditLimit <= 0) {
-          throw new Error(`Credit sale rejected: Customer ${cust.full_name} does not have an active credit limit (Credit Limit: ₹0.00).`);
-        }
-        if (projectedDue > creditLimit) {
-          throw new Error(`Credit Limit Exceeded for ${cust.full_name}. Credit Limit: ₹${creditLimit.toLocaleString('en-IN')}, Current Due: ₹${currentDue.toLocaleString('en-IN')}, New Credit Amount: ₹${unpaidAmount.toLocaleString('en-IN')}, Projected Due: ₹${projectedDue.toLocaleString('en-IN')}, Available Credit: ₹${availableCredit.toLocaleString('en-IN')}.`);
-        }
-      }
+    // Determine status
+    let invoiceStatus = "Paid";
+    if (isCreditSale || actualPaidAmount === 0) {
+      invoiceStatus = "Credit";
+    } else if (actualPaidAmount < invoiceGrandTotal) {
+      invoiceStatus = "Partial";
     }
 
-    // 3. Generate invoice number
+    // 3. Generate sequential invoice number for this branch
     const [[{ count }]] = await conn.query(
       "SELECT COUNT(*) AS count FROM invoices WHERE branch_id = ? AND YEAR(invoice_date) = YEAR(NOW())",
-      [activeBranchId]
+      [targetBranchId]
     );
     const invoice_no = `INV-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 

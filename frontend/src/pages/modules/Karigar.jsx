@@ -341,13 +341,13 @@ export default function Karigar({ t }) {
     <div>
       <PageHeader
         title="Karigar (Artisan & Workshop) Management"
-        subtitle="Artisan Directory · Work Orders · Gold Issue & Receive · Wastage Tracking · Labour Payments"
+        subtitle="Artisan Directory · Work Orders · Gold Issue & Receive"
         t={t}
         actions={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <BtnOutline t={t} onClick={() => setAddModal(true)}>+ Add Karigar</BtnOutline>
-            <BtnOutline t={t} onClick={() => setIssueModal(true)}>⚡ Issue Raw Gold</BtnOutline>
-            <BtnOutline t={t} onClick={() => setReceiveModal(true)}>📥 Receive Jewellery</BtnOutline>
+            <BtnOutline t={t} onClick={() => setIssueModal(true)}>Issue Raw Gold</BtnOutline>
+            <BtnOutline t={t} onClick={() => setReceiveModal(true)}>Receive Jewellery</BtnOutline>
             <BtnPrimary onClick={() => setWoModal(true)}>+ New Work Order</BtnPrimary>
           </div>
         }
@@ -355,13 +355,13 @@ export default function Karigar({ t }) {
 
       {successMsg && (
         <div style={{ background: "rgba(46,204,113,0.15)", border: "1px solid #2ecc71", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#2ecc71", fontSize: 13, fontWeight: 600 }}>
-          ✓ {successMsg}
+          {successMsg}
         </div>
       )}
 
       {error && (
-        <div style={{ background: "rgba(231,76,60,0.15)", border: "1px solid #e74c3c", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#e74c3c", fontSize: 13 }}>
-          ⚠️ {error}
+        <div style={{ background: "rgba(231,76,60,0.15)", border: "1px solid #e74c3c", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#e74c3c", fontSize: 13, fontWeight: 600 }}>
+          {error}
         </div>
       )}
 
@@ -507,7 +507,7 @@ export default function Karigar({ t }) {
           <CardHeader
             title="Raw Metal Issue Register"
             t={t}
-            actions={<BtnSm t={t} primary onClick={() => setIssueModal(true)}>⚡ Issue Raw Gold</BtnSm>}
+            actions={<BtnSm t={t} primary onClick={() => setIssueModal(true)}>Issue Raw Gold</BtnSm>}
           />
           {goldIssues.length === 0 ? (
             <p style={{ textAlign: "center", padding: 36, color: t.subtext }}>No metal issues logged yet.</p>
@@ -548,7 +548,7 @@ export default function Karigar({ t }) {
           <CardHeader
             title="Finished Jewellery Inward & Wastage Reconciliation"
             t={t}
-            actions={<BtnSm t={t} primary onClick={() => setReceiveModal(true)}>📥 Receive Jewellery</BtnSm>}
+            actions={<BtnSm t={t} primary onClick={() => setReceiveModal(true)}>Receive Jewellery</BtnSm>}
           />
           {goldReceives.length === 0 ? (
             <p style={{ textAlign: "center", padding: 36, color: t.subtext }}>No finished jewellery received yet.</p>
@@ -587,7 +587,7 @@ export default function Karigar({ t }) {
           <CardHeader
             title="Labour Charges Payment Vouchers"
             t={t}
-            actions={<BtnSm t={t} primary onClick={() => setPayModal(true)}>💳 Pay Labour Charges</BtnSm>}
+            actions={<BtnSm t={t} primary onClick={() => setPayModal(true)}>Pay Labour Charges</BtnSm>}
           />
           {payments.length === 0 ? (
             <p style={{ textAlign: "center", padding: 36, color: t.subtext }}>No labour payments recorded yet.</p>

@@ -1,8 +1,11 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // ── GET /api/accounting/summary ──────────────────────────────────────────────
 async function getSummary(req, res) {
   try {
+    const bf = branchFilter(req);
+
     // 1. Sales & Revenue
     const [[invStats]] = await db.query(`
       SELECT
@@ -14,48 +17,54 @@ async function getSummary(req, res) {
         COALESCE(SUM(CASE WHEN payment_mode = 'Cash' THEN paid_amount ELSE 0 END), 0) AS cash_inflow,
         COALESCE(SUM(CASE WHEN payment_mode != 'Cash' THEN paid_amount ELSE 0 END), 0) AS bank_inflow
       FROM invoices
-      WHERE status != 'Cancelled'
-    `);
+      WHERE status != 'Cancelled' AND ${bf.sql}
+    `, bf.params);
 
     // 2. Customer Ledger Cash/Bank Receipts
     const [[custLedgerStats]] = await db.query(`
       SELECT
-        COALESCE(SUM(credit), 0) AS total_dues_collected,
-        COALESCE(SUM(CASE WHEN particulars LIKE '%Cash%' THEN credit ELSE 0 END), 0) AS ledger_cash,
-        COALESCE(SUM(CASE WHEN particulars NOT LIKE '%Cash%' THEN credit ELSE 0 END), 0) AS ledger_bank
-      FROM customer_ledger
-      WHERE credit > 0
-    `);
+        COALESCE(SUM(cl.credit), 0) AS total_dues_collected,
+        COALESCE(SUM(CASE WHEN cl.particulars LIKE '%Cash%' THEN cl.credit ELSE 0 END), 0) AS ledger_cash,
+        COALESCE(SUM(CASE WHEN cl.particulars NOT LIKE '%Cash%' THEN cl.credit ELSE 0 END), 0) AS ledger_bank
+      FROM customer_ledger cl
+      JOIN customers c ON cl.customer_id = c.id
+      WHERE cl.credit > 0 AND ${branchFilter(req, 'c.branch_id').sql}
+    `, branchFilter(req, 'c.branch_id').params);
 
     // 3. Supplier Purchases & Payables
     const [[supStats]] = await db.query(`
       SELECT
         COALESCE(SUM(outstanding), 0) AS total_payables
       FROM suppliers
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     const [[supPayStats]] = await db.query(`
       SELECT
-        COALESCE(SUM(amount), 0) AS total_disbursed,
-        COALESCE(SUM(CASE WHEN payment_mode = 'Cash' THEN amount ELSE 0 END), 0) AS cash_outflow,
-        COALESCE(SUM(CASE WHEN payment_mode != 'Cash' THEN amount ELSE 0 END), 0) AS bank_outflow
-      FROM supplier_payments
-    `);
+        COALESCE(SUM(sp.amount), 0) AS total_disbursed,
+        COALESCE(SUM(CASE WHEN sp.payment_mode = 'Cash' THEN sp.amount ELSE 0 END), 0) AS cash_outflow,
+        COALESCE(SUM(CASE WHEN sp.payment_mode != 'Cash' THEN sp.amount ELSE 0 END), 0) AS bank_outflow
+      FROM supplier_payments sp
+      JOIN suppliers s ON sp.supplier_id = s.id
+      WHERE ${branchFilter(req, 's.branch_id').sql}
+    `, branchFilter(req, 's.branch_id').params);
 
     // 4. Karigar Payments & Labour
     const [[karigarStats]] = await db.query(`
       SELECT
-        COALESCE(SUM(amount), 0) AS karigar_labour
-      FROM karigar_payments
-    `);
+        COALESCE(SUM(kp.amount), 0) AS karigar_labour
+      FROM karigar_payments kp
+      JOIN karigars k ON kp.karigar_id = k.id
+      WHERE ${branchFilter(req, 'k.branch_id').sql}
+    `, branchFilter(req, 'k.branch_id').params);
 
     // 5. Inventory Valuation from products
     const [[stockStats]] = await db.query(`
       SELECT
         COALESCE(SUM(stock_qty * purchase_price), 0) AS stock_value
       FROM products
-      WHERE status = 'Active' OR status IS NULL
-    `);
+      WHERE (status = 'Active' OR status IS NULL) AND ${bf.sql}
+    `, bf.params);
 
     // 6. Manual Expenses from Journal
     const [[expStats]] = await db.query(`

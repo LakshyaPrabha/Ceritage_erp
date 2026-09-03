@@ -1,4 +1,4 @@
-﻿import { BRAND } from "../../theme.js";
+import { BRAND } from "../../theme.js";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
          BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid,
@@ -654,6 +654,15 @@ export default function Products({ t }) {
 
   const productRows = products.map(p => ({
     "Product":     p.name,
+    "Store / Branch": (
+      <span style={{
+        padding: "3px 8px", borderRadius: 12, fontSize: 11, fontWeight: 700,
+        background: "rgba(59,85,230,0.1)", color: BRAND.blue,
+        display: "inline-flex", alignItems: "center", gap: 4
+      }}>
+         {p.branch_name || "Main Showroom"}
+      </span>
+    ),
     "SKU":         p.sku,
     "Type":        p.product_category,
     "Metal":       p.metal_type,
@@ -891,7 +900,7 @@ export default function Products({ t }) {
                   color: "#fff", fontSize: 12, fontWeight: 700,
                   padding: "8px 20px", cursor: "pointer", fontFamily: "inherit",
                 }}>
-                🖨 Print {bulkSelected.length > 0 ? `${bulkSelected.length} Selected` : bcSelected ? "Label" : "Labels"}
+                Print {bulkSelected.length > 0 ? `${bulkSelected.length} Selected` : bcSelected ? "Label" : "Labels"}
               </button>
               {/* Print qty */}
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -997,7 +1006,7 @@ export default function Products({ t }) {
                           color: "#fff", fontSize: 12, fontWeight: 700,
                           padding: "6px 18px", cursor: "pointer", fontFamily: "inherit",
                         }}>
-                        🖨 Print Label
+                        Print Label
                       </button>
                     }
                   />
@@ -1109,7 +1118,6 @@ export default function Products({ t }) {
                 </div>
               ) : (
                 <div style={{ textAlign: "center", padding: "48px 24px" }}>
-                  <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
                   <div style={{ fontSize: 15, fontWeight: 600, color: t.textSub, marginBottom: 6 }}>
                     Select a product
                   </div>
@@ -1152,7 +1160,7 @@ export default function Products({ t }) {
                     color: "#fff", fontSize: 12, fontWeight: 700,
                     padding: "6px 18px", cursor: "pointer", fontFamily: "inherit",
                   }}>
-                  🖨 Print {bulkSelected.length * printQty} Labels
+                  Print {bulkSelected.length * printQty} Labels
                 </button>
               </div>
             </div>
@@ -1304,7 +1312,7 @@ export default function Products({ t }) {
               <button
                 onClick={() => selProduct && printLabel([selProduct], printQty, bcLabelSize)}
                 style={{ background: BRAND.gradBtn, border: "none", borderRadius: 9, color: "#fff", fontSize: 13, fontWeight: 700, padding: "8px 24px", cursor: "pointer", fontFamily: "inherit" }}>
-                🖨 Print Label
+                Print Label
               </button>
             </div>
           </div>

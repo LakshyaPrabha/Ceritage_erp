@@ -1,8 +1,10 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // GET /api/orders/kpis
 async function getKpis(req, res) {
   try {
+    const bf = branchFilter(req);
     const [[kpis]] = await db.query(`
       SELECT
         COUNT(CASE WHEN status NOT IN ('Delivered', 'Cancelled') THEN 1 END) AS active_orders,
@@ -10,7 +12,8 @@ async function getKpis(req, res) {
         COUNT(CASE WHEN status = 'Ready' THEN 1 END) AS ready_to_deliver,
         COUNT(CASE WHEN due_date < CURDATE() AND status NOT IN ('Delivered', 'Cancelled') THEN 1 END) AS overdue
       FROM orders
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     res.json({
       success: true,
@@ -30,8 +33,9 @@ async function getKpis(req, res) {
 async function getAll(req, res) {
   try {
     const { status, search } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req, "o.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (status && status !== "ALL" && status !== "All Status") {
       where += " AND o.status = ?";
@@ -46,9 +50,11 @@ async function getAll(req, res) {
     const [rows] = await db.query(
       `SELECT o.*,
               (COALESCE(o.estimated_total, 0) - COALESCE(o.advance_paid, 0)) AS balance_amount,
-              c.full_name AS customer_name, c.phone AS customer_phone
+              c.full_name AS customer_name, c.phone AS customer_phone,
+              COALESCE(b.name, 'Main Showroom') AS branch_name
        FROM orders o
        LEFT JOIN customers c ON o.customer_id = c.id
+       LEFT JOIN branches b ON o.branch_id = b.id
        ${where}
        ORDER BY o.created_at DESC`,
       params

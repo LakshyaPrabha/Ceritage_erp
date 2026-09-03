@@ -1,8 +1,9 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 async function getKpis(req, res) {
-  const branch_id = req.user?.branch_id || 1;
   try {
+    const bf = branchFilter(req);
     const [[kpis]] = await db.query(
       `SELECT
          COUNT(*) AS total,
@@ -14,8 +15,8 @@ async function getKpis(req, res) {
          COALESCE(SUM(estimated_cost),0) AS total_estimated,
          COALESCE(SUM(actual_cost),0) AS total_actual,
          COALESCE(SUM(advance_paid),0) AS total_advance
-       FROM repair_jobs WHERE branch_id = ?`,
-      [branch_id]
+       FROM repair_jobs WHERE ${bf.sql}`,
+      bf.params
     );
     res.json({ success: true, data: kpis });
   } catch (err) {
@@ -24,12 +25,12 @@ async function getKpis(req, res) {
 }
 
 async function getAll(req, res) {
-  const branch_id = req.user?.branch_id || 1;
   try {
     const { search, status, page = 1, limit = 100 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    let where = "WHERE r.branch_id = ?";
-    const params = [branch_id];
+    const bf = branchFilter(req, "r.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (status)  { where += " AND r.status = ?"; params.push(status); }
     if (search)  {
@@ -39,9 +40,11 @@ async function getAll(req, res) {
     }
 
     const [rows] = await db.query(
-      `SELECT r.*, c.full_name AS customer_name, c.phone AS customer_phone
+      `SELECT r.*, c.full_name AS customer_name, c.phone AS customer_phone,
+              COALESCE(b.name, 'Main Showroom') AS branch_name
        FROM repair_jobs r
        LEFT JOIN customers c ON r.customer_id = c.id
+       LEFT JOIN branches b ON r.branch_id = b.id
        ${where}
        ORDER BY r.created_at DESC
        LIMIT ? OFFSET ?`,

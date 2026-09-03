@@ -1,8 +1,10 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // GET /api/karigar/kpis
 async function getKpis(req, res) {
   try {
+    const bf = branchFilter(req);
     const [[stats]] = await db.query(`
       SELECT
         COUNT(*) AS total_karigars,
@@ -11,7 +13,8 @@ async function getKpis(req, res) {
         COALESCE(SUM(silver_balance_grams), 0) AS total_silver_at_hand,
         COALESCE(SUM(making_charges_due), 0) AS total_charges_payable
       FROM karigars
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     const [[woStats]] = await db.query(`
       SELECT
@@ -19,7 +22,8 @@ async function getKpis(req, res) {
         COUNT(CASE WHEN status IN ('ISSUED', 'IN_PROGRESS') THEN 1 END) AS active_jobs,
         COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) AS completed_jobs
       FROM work_orders
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     res.json({
       success: true,
@@ -42,8 +46,9 @@ async function getKpis(req, res) {
 async function getAll(req, res) {
   try {
     const { status, search } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req);
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (status && status !== "ALL") {
       where += " AND status = ?";

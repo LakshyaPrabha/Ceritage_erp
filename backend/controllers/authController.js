@@ -98,17 +98,138 @@ async function login(req, res) {
       [user.role]
     );
 
-    const permissions = {};
-    permRows.forEach((p) => {
-      permissions[p.module] = {
-        view:   !!p.can_view,
-        edit:   !!p.can_edit,
-        delete: !!p.can_delete,
-      };
-    });
+    const DEFAULT_PERMISSIONS = {
+      admin: {
+        dashboard: { view: true, edit: true, delete: true },
+        analytics: { view: true, edit: true, delete: true },
+        customers: { view: true, edit: true, delete: true },
+        products: { view: true, edit: true, delete: true },
+        billing: { view: true, edit: true, delete: true },
+        sales: { view: true, edit: true, delete: true },
+        purchase: { view: true, edit: true, delete: true },
+        "gold-exchange": { view: true, edit: true, delete: true },
+        repair: { view: true, edit: true, delete: true },
+        orders: { view: true, edit: true, delete: true },
+        karigar: { view: true, edit: true, delete: true },
+        jangad: { view: true, edit: true, delete: true },
+        accounting: { view: true, edit: true, delete: true },
+        payments: { view: true, edit: true, delete: true },
+        emi: { view: true, edit: true, delete: true },
+        gst: { view: true, edit: true, delete: true },
+        tunch: { view: true, edit: true, delete: true },
+        compliance: { view: true, edit: true, delete: true },
+        inventory: { view: true, edit: true, delete: true },
+        hallmark: { view: true, edit: true, delete: true },
+        rates: { view: true, edit: true, delete: true },
+        rfid: { view: true, edit: true, delete: true },
+        advance: { view: true, edit: true, delete: true },
+        employees: { view: true, edit: true, delete: true },
+        suppliers: { view: true, edit: true, delete: true },
+        branch: { view: true, edit: true, delete: true },
+        reports: { view: true, edit: true, delete: true },
+        users: { view: true, edit: true, delete: true },
+        security: { view: true, edit: true, delete: true },
+        ai: { view: true, edit: true, delete: true },
+        communication: { view: true, edit: true, delete: true },
+      },
+      sales: {
+        dashboard: { view: true, edit: true, delete: false },
+        customers: { view: true, edit: true, delete: false },
+        products: { view: true, edit: false, delete: false },
+        billing: { view: true, edit: true, delete: false },
+        sales: { view: true, edit: true, delete: false },
+        "gold-exchange": { view: true, edit: true, delete: false },
+        repair: { view: true, edit: true, delete: false },
+        orders: { view: true, edit: true, delete: false },
+        rates: { view: true, edit: false, delete: false },
+        advance: { view: true, edit: true, delete: false },
+        jangad: { view: true, edit: true, delete: false },
+        inventory: { view: true, edit: false, delete: false },
+      },
+      cashier: {
+        dashboard: { view: true, edit: false, delete: false },
+        billing: { view: true, edit: true, delete: false },
+        sales: { view: true, edit: true, delete: false },
+        payments: { view: true, edit: true, delete: false },
+        emi: { view: true, edit: true, delete: false },
+        advance: { view: true, edit: true, delete: false },
+        "gold-exchange": { view: true, edit: true, delete: false },
+      },
+      accountant: {
+        dashboard: { view: true, edit: true, delete: false },
+        accounting: { view: true, edit: true, delete: false },
+        billing: { view: true, edit: true, delete: false },
+        sales: { view: true, edit: true, delete: false },
+        purchase: { view: true, edit: true, delete: false },
+        suppliers: { view: true, edit: true, delete: false },
+        gst: { view: true, edit: true, delete: false },
+        tunch: { view: true, edit: true, delete: false },
+        compliance: { view: true, edit: true, delete: false },
+        reports: { view: true, edit: true, delete: false },
+        payments: { view: true, edit: true, delete: false },
+      },
+      branch_manager: {
+        dashboard: { view: true, edit: true, delete: true },
+        analytics: { view: true, edit: true, delete: true },
+        customers: { view: true, edit: true, delete: true },
+        products: { view: true, edit: true, delete: true },
+        billing: { view: true, edit: true, delete: true },
+        sales: { view: true, edit: true, delete: true },
+        purchase: { view: true, edit: true, delete: true },
+        "gold-exchange": { view: true, edit: true, delete: true },
+        repair: { view: true, edit: true, delete: true },
+        orders: { view: true, edit: true, delete: true },
+        karigar: { view: true, edit: true, delete: true },
+        jangad: { view: true, edit: true, delete: true },
+        accounting: { view: true, edit: true, delete: false },
+        payments: { view: true, edit: true, delete: true },
+        emi: { view: true, edit: true, delete: true },
+        gst: { view: true, edit: true, delete: false },
+        tunch: { view: true, edit: true, delete: true },
+        compliance: { view: true, edit: true, delete: false },
+        inventory: { view: true, edit: true, delete: true },
+        hallmark: { view: true, edit: true, delete: true },
+        rates: { view: true, edit: true, delete: true },
+        rfid: { view: true, edit: true, delete: true },
+        advance: { view: true, edit: true, delete: true },
+        employees: { view: true, edit: true, delete: true },
+        suppliers: { view: true, edit: true, delete: true },
+        branch: { view: true, edit: true, delete: false },
+        reports: { view: true, edit: true, delete: false },
+      }
+    };
+
+    let permissions = {};
+    if (permRows.length > 0) {
+      permRows.forEach((p) => {
+        permissions[p.module] = {
+          view:   !!p.can_view,
+          edit:   !!p.can_edit,
+          delete: !!p.can_delete,
+        };
+      });
+    } else {
+      permissions = DEFAULT_PERMISSIONS[user.role] || DEFAULT_PERMISSIONS.sales;
+    }
 
     // Update last_login
     await db.query("UPDATE users SET last_login = NOW() WHERE id = ?", [user.id]);
+
+    // Record live session & audit log for Security module
+    try {
+      const sessionId = `sess-${Date.now().toString(36)}`;
+      await db.query(`
+        INSERT INTO user_sessions (user_id, username, token_id, device_name, browser, ip_address, status)
+        VALUES (?, ?, ?, 'POS Counter Terminal', 'Chrome Desktop', ?, 'ACTIVE')
+      `, [user.id, user.username, sessionId, req.ip || '127.0.0.1']);
+
+      await db.query(`
+        INSERT INTO audit_logs (user_id, username, action, module, description, ip_address, severity, branch_id)
+        VALUES (?, ?, 'LOGIN_SUCCESS', 'AUTH', 'User authenticated into showroom session', ?, 'INFO', ?)
+      `, [user.id, user.username, req.ip || '127.0.0.1', user.branch_id || 1]);
+    } catch (logErr) {
+      console.warn("Audit log insert warning:", logErr.message);
+    }
 
     const token = jwt.sign(
       {

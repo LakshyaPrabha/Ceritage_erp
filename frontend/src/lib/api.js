@@ -4,8 +4,23 @@ export function getAuthToken() {
   return localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
 }
 
+export function getActiveBranchId() {
+  return localStorage.getItem("ceritage_branch_id") || sessionStorage.getItem("ceritage_branch_id") || "";
+}
+
+export function setActiveBranchId(branchId) {
+  if (branchId) {
+    localStorage.setItem("ceritage_branch_id", String(branchId));
+    sessionStorage.setItem("ceritage_branch_id", String(branchId));
+  } else {
+    localStorage.removeItem("ceritage_branch_id");
+    sessionStorage.removeItem("ceritage_branch_id");
+  }
+}
+
 export async function apiRequest(path, options = {}) {
   const token = getAuthToken();
+  const activeBranchId = getActiveBranchId();
   const headers = {
     "Content-Type": "application/json",
     ...(options.headers || {}),
@@ -13,6 +28,10 @@ export async function apiRequest(path, options = {}) {
 
   if (token) {
     headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (activeBranchId) {
+    headers["x-branch-id"] = activeBranchId;
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {

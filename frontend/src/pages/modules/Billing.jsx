@@ -1,4 +1,4 @@
-﻿﻿// ─── Ceritage ERP — Billing & GST Invoice ────────────────────────────────────
+﻿// ─── Ceritage ERP — Billing & GST Invoice ────────────────────────────────────
 import { BRAND } from "../../theme.js";
 import { useState, useEffect, useCallback } from "react";
 import {
@@ -1041,11 +1041,20 @@ export default function Billing({ t }) {
           {listLoading
              ? <div style={{ textAlign:"center", padding:32, color:t.textFaint }}>Loading invoices...</div>
             : <DataTable
-                columns={["Invoice No","Type","Date","Customer","Total","GST","Payment","Status","Actions"]}
+                columns={["Invoice No","Type","Date","Showroom Branch","Customer","Total","GST","Payment","Status","Actions"]}
                 rows={invoices.map(inv => ({
                   "Invoice No": <span style={{ fontFamily:"monospace", fontWeight:700, color:BRAND.purple }}>{inv.invoice_no}</span>,
                   "Type":       inv.invoice_type,
                   "Date":       new Date(inv.invoice_date).toLocaleDateString("en-IN"),
+                  "Showroom Branch": (
+                    <span style={{
+                      padding: "3px 8px", borderRadius: 12, fontSize: 11, fontWeight: 700,
+                      background: "rgba(59,85,230,0.1)", color: BRAND.blue,
+                      display: "inline-flex", alignItems: "center", gap: 4
+                    }}>
+                       {inv.branch_name || "Main Showroom"}
+                    </span>
+                  ),
                   "Customer":   inv.customer_name || "Walk-in",
                   "Total":      `₹${parseFloat(inv.grand_total).toLocaleString("en-IN")}`,
                   "GST":        `₹${(parseFloat(inv.cgst||0)+parseFloat(inv.sgst||0)+parseFloat(inv.igst||0)).toLocaleString("en-IN")}`,

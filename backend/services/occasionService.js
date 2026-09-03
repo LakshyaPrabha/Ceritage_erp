@@ -83,13 +83,25 @@ async function getCustomerOccasions(options = {}) {
   const istNow = getIstNow();
 
   // 1. Fetch active customers with active membership details
+  let branchClause = "";
+  let branchParams = [];
+  if (options.allowedBranchIds && options.allowedBranchIds.length > 0) {
+    if (options.allowedBranchIds.includes(1)) {
+      branchClause = "AND (c.branch_id IN (?) OR c.branch_id IS NULL)";
+    } else {
+      branchClause = "AND c.branch_id IN (?)";
+    }
+    branchParams = [options.allowedBranchIds];
+  }
+
   const [customers] = await db.query(
     `SELECT c.id, c.customer_id AS cust_code, c.full_name, c.phone, c.email, c.city,
             c.date_of_birth, c.anniversary, c.tier AS default_tier,
             c.opt_in_whatsapp, c.opt_in_sms, c.opt_in_marketing, c.preferred_channel
      FROM customers c
-     WHERE c.status IN ('ACTIVE', 'Active')
-     ORDER BY c.full_name ASC`
+     WHERE c.status IN ('ACTIVE', 'Active') ${branchClause}
+     ORDER BY c.full_name ASC`,
+    branchParams
   );
 
   // 2. Fetch existing reminder records for current & next year safely
@@ -232,9 +244,9 @@ async function getCustomerOccasions(options = {}) {
 /**
  * Get comprehensive occasion KPIs
  */
-async function getOccasionKpis() {
+async function getOccasionKpis(allowedBranchIds) {
   const istNow = getIstNow();
-  const allOccasions = await getCustomerOccasions({ range: "all", occasion: "all" });
+  const allOccasions = await getCustomerOccasions({ range: "all", occasion: "all", allowedBranchIds });
 
   const birthdaysToday = allOccasions.filter(o => o.occasionType === "BIRTHDAY" && o.daysUntil === 0).length;
   const anniversariesToday = allOccasions.filter(o => o.occasionType === "ANNIVERSARY" && o.daysUntil === 0).length;

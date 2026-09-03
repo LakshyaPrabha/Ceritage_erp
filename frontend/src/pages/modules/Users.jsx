@@ -74,11 +74,26 @@ export default function Users({ t }) {
   // Edit User Modal
   const [editModal, setEditModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [availableBranches, setAvailableBranches] = useState([]);
 
   const notify = (msg) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), 4000);
   };
+
+  // Load available showroom branches
+  const loadBranches = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/branch`, { headers: authHeaders() });
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setAvailableBranches(json.data);
+        if (json.data.length > 0 && !newUser.branch_id) {
+          setNewUser(p => ({ ...p, branch_id: json.data[0].id }));
+        }
+      }
+    } catch { /* silent */ }
+  }, [newUser.branch_id]);
 
   // Load all users
   const loadUsers = useCallback(async () => {
@@ -112,7 +127,8 @@ export default function Users({ t }) {
 
   useEffect(() => {
     loadUsers();
-  }, [loadUsers]);
+    loadBranches();
+  }, [loadUsers, loadBranches]);
 
   useEffect(() => {
     if (tab === "permissions") {
@@ -226,13 +242,13 @@ export default function Users({ t }) {
 
       {successMsg && (
         <div style={{ background: "rgba(46,204,113,0.15)", border: "1px solid #2ecc71", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#2ecc71", fontSize: 13, fontWeight: 600 }}>
-          ✓ {successMsg}
+          {successMsg}
         </div>
       )}
 
       {error && (
-        <div style={{ background: "rgba(231,76,60,0.15)", border: "1px solid #e74c3c", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#e74c3c", fontSize: 13 }}>
-          ⚠️ {error}
+        <div style={{ background: "rgba(231,76,60,0.15)", border: "1px solid #e74c3c", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#e74c3c", fontSize: 13, fontWeight: 600 }}>
+          {error}
         </div>
       )}
 
@@ -326,10 +342,17 @@ export default function Users({ t }) {
                   {ROLES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
                 </Select>
               </FormGroup>
-              <FormGroup label="Branch Assignment" t={t} half>
+              <FormGroup label="Branch Assignment *" t={t} half>
                 <Select t={t} value={newUser.branch_id} onChange={e => setNewUser(p => ({ ...p, branch_id: Number(e.target.value) }))}>
-                  <option value={1}>Main Store (Branch #1)</option>
-                  <option value={2}>Surat Workshop (Branch #2)</option>
+                  {availableBranches.length === 0 ? (
+                    <option value={1}>Main Store (Branch #1)</option>
+                  ) : (
+                    availableBranches.map(b => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.city || "Main"}) · ID: #{b.id}
+                      </option>
+                    ))
+                  )}
                 </Select>
               </FormGroup>
               <FormGroup label="Account Status" t={t} half>
@@ -356,7 +379,7 @@ export default function Users({ t }) {
               t={t}
               actions={
                 <BtnPrimary onClick={handleSavePermissions} disabled={permSaving}>
-                  {permSaving ? "Saving Matrix..." : "💾 Save Permission Changes"}
+                  {permSaving ? "Saving Matrix..." : "Save Permission Changes"}
                 </BtnPrimary>
               }
             />
@@ -447,6 +470,15 @@ export default function Users({ t }) {
                 <Select t={t} value={editingUser.status} onChange={e => setEditingUser(p => ({ ...p, status: e.target.value }))}>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
+                </Select>
+              </FormGroup>
+              <FormGroup label="Branch Assignment *" t={t} half>
+                <Select t={t} value={editingUser.branch_id || (availableBranches[0]?.id || 1)} onChange={e => setEditingUser(p => ({ ...p, branch_id: Number(e.target.value) }))}>
+                  {availableBranches.map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.city || "Main"}) · ID: #{b.id}
+                    </option>
+                  ))}
                 </Select>
               </FormGroup>
               <FormGroup label="Reset Password (Leave blank to keep current)" t={t} half>

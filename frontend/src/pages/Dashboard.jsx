@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import ceritageLogoSvg from "../assets/ceritage-logo.svg";
 import { BRAND } from "../theme.js";
-import { apiRequest } from "../lib/api";
+import { apiRequest, getActiveBranchId, setActiveBranchId } from "../lib/api";
 
 // ── All module imports ─────────────────────────────────────
 import DashboardHome  from "./modules/DashboardHome";
@@ -303,21 +303,104 @@ function LiveRateTicker({ t }) {
 export default function Dashboard() {
   const [active,      setActive]      = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [deniedModal, setDeniedModal] = useState({ open: false, moduleName: "", moduleId: "" });
+  const [branches,    setBranches]    = useState([]);
+  const [activeBranchId, setActiveBranch] = useState(() => getActiveBranchId());
+  const [moduleKey,   setModuleKey]   = useState(0);
+
   const navigate  = useNavigate();
   const dark      = useSystemTheme();
   const t         = getTheme(dark);
-  const username  = sessionStorage.getItem("ceritage_user") || "Admin";
+  
+  const username  = sessionStorage.getItem("ceritage_user") || localStorage.getItem("ceritage_user") || "Admin";
+  const userRole  = (sessionStorage.getItem("ceritage_role") || localStorage.getItem("ceritage_role") || "admin").toLowerCase();
+
+  const permissions = useMemo(() => {
+    try {
+      const raw = sessionStorage.getItem("ceritage_permissions") || localStorage.getItem("ceritage_permissions");
+      if (raw) return JSON.parse(raw);
+    } catch { /* silent */ }
+    return {};
+  }, []);
 
   useEffect(() => { document.body.style.background = t.bg; }, [dark]);
 
+  useEffect(() => {
+    async function loadBranches() {
+      try {
+        const res = await apiRequest("/branch");
+        if (res && res.data) {
+          setBranches(res.data);
+          const current = getActiveBranchId();
+          if (!current && res.user_branch_id) {
+            setActiveBranch(String(res.user_branch_id));
+            setActiveBranchId(res.user_branch_id);
+          }
+        }
+      } catch {
+        // silent
+      }
+    }
+    loadBranches();
+  }, []);
+
+  const handleBranchChange = (newBranchId) => {
+    setActiveBranch(newBranchId);
+    setActiveBranchId(newBranchId);
+    setModuleKey(prev => prev + 1);
+    window.dispatchEvent(new CustomEvent("branch-changed", { detail: { branchId: newBranchId } }));
+  };
+
   function handleLogout() {
-    sessionStorage.removeItem("ceritage_auth");
-    sessionStorage.removeItem("ceritage_token");
-    sessionStorage.removeItem("ceritage_user");
-    sessionStorage.removeItem("ceritage_role");
+    sessionStorage.clear();
+    localStorage.removeItem("ceritage_auth");
+    localStorage.removeItem("ceritage_token");
+    localStorage.removeItem("ceritage_user");
+    localStorage.removeItem("ceritage_role");
+    localStorage.removeItem("ceritage_permissions");
     navigate("/");
   }
 
+  // ── Permission Check Function ──────────────────────────────────────────────
+  const hasPermission = useCallback((moduleId) => {
+    if (userRole === "admin") return true;
+
+    // Check custom permissions object
+    if (permissions && Object.keys(permissions).length > 0) {
+      if (permissions[moduleId] !== undefined) {
+        return !!permissions[moduleId].view;
+      }
+    }
+
+    // Role-based fallbacks
+    if (userRole === "sales" || userRole === "sales_executive") {
+      const allowed = ["dashboard", "customers", "products", "billing", "sales", "gold-exchange", "repair", "orders", "rates", "advance", "jangad", "inventory"];
+      return allowed.includes(moduleId);
+    }
+    if (userRole === "cashier") {
+      const allowed = ["dashboard", "billing", "sales", "payments", "emi", "advance", "gold-exchange"];
+      return allowed.includes(moduleId);
+    }
+    if (userRole === "accountant") {
+      const allowed = ["dashboard", "accounting", "billing", "sales", "purchase", "suppliers", "gst", "tunch", "compliance", "reports", "payments"];
+      return allowed.includes(moduleId);
+    }
+    if (userRole === "branch_manager") {
+      return moduleId !== "security";
+    }
+
+    return false;
+  }, [userRole, permissions]);
+
+  function handleNavClick(item) {
+    if (hasPermission(item.id)) {
+      setActive(item.id);
+    } else {
+      setDeniedModal({ open: true, moduleName: item.label, moduleId: item.id });
+    }
+  }
+
+  const isCurrentModuleAllowed = hasPermission(active);
   const ActiveModule = MODULE_MAP[active] || DashboardHome;
 
   return (
@@ -351,21 +434,46 @@ export default function Dashboard() {
             </div>
             {section.items.map((item) => {
               const isActive = active === item.id;
+              const permitted = hasPermission(item.id);
+
               return (
-                <button key={item.id} onClick={() => setActive(item.id)}
-                  style={{ display:"flex", alignItems:"center", width:"100%",
+                <button
+                  key={item.id}
+                  onClick={() => handleNavClick(item)}
+                  title={permitted ? item.label : ` Restricted (${item.label}) — Click to view details`}
+                  style={{
+                    display:"flex",
+                    alignItems:"center",
+                    width:"100%",
                     padding:"8px 18px",
-                    background: isActive  ? t.navActive : "none",
+                    background: isActive ? t.navActive : "none",
                     border:"none",
-                    borderLeft: isActive  ? `3px solid ${t.navActiveBorder}` : "3px solid transparent",
-                    color: isActive  ? t.navActiveColor : t.navColor,
-                    fontSize:13, textAlign:"left", cursor:"pointer",
-                    transition:"all 0.15s", fontFamily:"inherit",
-                    fontWeight: isActive  ? 600 : 400 }}>
-                  <span style={{ flex:1, whiteSpace:"nowrap",
-                    overflow:"hidden", textOverflow:"ellipsis" }}>
+                    borderLeft: isActive ? `3px solid ${t.navActiveBorder}` : "3px solid transparent",
+                    color: isActive ? t.navActiveColor : permitted ? t.navColor : t.textMuted,
+                    opacity: permitted ? 1 : 0.6,
+                    fontSize:13,
+                    textAlign:"left",
+                    cursor:"pointer",
+                    transition:"all 0.15s",
+                    fontFamily:"inherit",
+                    fontWeight: isActive ? 600 : 400
+                  }}
+                >
+                  <span style={{ flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                     {item.label}
                   </span>
+                  {!permitted && (
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      background: "rgba(230,59,138,0.12)",
+                      color: BRAND.pink,
+                      borderRadius: 4,
+                      padding: "1px 5px",
+                      marginLeft: 6
+                    }}>
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -386,7 +494,9 @@ export default function Dashboard() {
                 whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
                 {username.charAt(0).toUpperCase() + username.slice(1)}
               </div>
-              <div style={{ fontSize:10, color:t.textMuted, marginTop:1 }}>Administrator</div>
+              <div style={{ fontSize:10, color:t.textMuted, marginTop:1, textTransform: "capitalize" }}>
+                {userRole.replace("_", " ")}
+              </div>
             </div>
             <button onClick={handleLogout}
               style={{ background:"none", border:`1px solid ${t.logoutBorder}`,
@@ -424,6 +534,34 @@ export default function Dashboard() {
             </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+            {/* ── Active Branch Switcher (Consolidated HQ vs Specific Sub-Branch) ── */}
+            {branches.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Branch:</span>
+                <select
+                  value={activeBranchId || ""}
+                  onChange={(e) => handleBranchChange(e.target.value)}
+                  style={{
+                    background: t.inputBg,
+                    color: t.inputColor,
+                    border: `1px solid ${t.inputBorder}`,
+                    borderRadius: 8,
+                    padding: "5px 10px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    outline: "none"
+                  }}
+                >
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.is_main_branch ? `[Main HQ] ${b.name} (${b.city || "All Sub-Branches"})` : `[Branch] ${b.name} (${b.city || ""})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* ── Live rate ticker — fetches real data ── */}
             <LiveRateTicker t={t} />
             <div style={{ width:30, height:30, borderRadius:"50%",
@@ -435,9 +573,149 @@ export default function Dashboard() {
         </header>
 
         <main style={{ flex:1, padding:"22px", overflowY:"auto" }}>
-          <ActiveModule t={t} onNavigate={setActive} />
+          {isCurrentModuleAllowed ? (
+            <ActiveModule key={`${active}-${activeBranchId}-${moduleKey}`} t={t} onNavigate={setActive} />
+          ) : (
+            <div style={{
+              padding: "48px 24px",
+              textAlign: "center",
+              background: t.card,
+              border: `1.5px solid ${BRAND.pink}44`,
+              borderRadius: 16,
+              maxWidth: 600,
+              margin: "40px auto",
+              boxShadow: dark ? "none" : "0 8px 30px rgba(0,0,0,0.06)"
+            }}>
+              <div style={{ fontSize: 44, marginBottom: 12 }}></div>
+              <h2 style={{ fontSize: 20, fontWeight: 800, color: t.text, marginBottom: 8 }}>
+                Access Restricted · Permission Required
+              </h2>
+              <p style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginBottom: 20 }}>
+                Your current role (<strong>{userRole.replace("_", " ").toUpperCase()}</strong>) does not have access permissions for the <strong>{TITLES[active] || active}</strong> module.
+              </p>
+              <div style={{
+                background: "rgba(230,59,138,0.08)",
+                border: "1px solid rgba(230,59,138,0.2)",
+                borderRadius: 8,
+                padding: "12px 16px",
+                fontSize: 12,
+                color: BRAND.pink,
+                marginBottom: 24,
+                textAlign: "left"
+              }}>
+                <strong>Need access to this feature?</strong> Please contact your Showroom Administrator to enable view/edit permissions in <em>Users & Roles › Role Permission Matrix</em>.
+              </div>
+              <button
+                onClick={() => setActive("dashboard")}
+                style={{
+                  background: BRAND.gradBtn,
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "10px 24px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer"
+                }}
+              >
+                ← Return to Dashboard
+              </button>
+            </div>
+          )}
         </main>
       </div>
+
+      {/* ── ACCESS RESTRICTED POPUP MODAL ── */}
+      {deniedModal.open && (
+        <div
+          onClick={() => setDeniedModal({ open: false, moduleName: "", moduleId: "" })}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.65)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 16
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: t.card,
+              border: `1.5px solid ${BRAND.pink}55`,
+              borderRadius: 16,
+              padding: 24,
+              maxWidth: 480,
+              width: "100%",
+              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
+              animation: "fadeIn 0.2s ease-out"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 16 }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                background: "rgba(230,59,138,0.12)",
+                border: "1px solid rgba(230,59,138,0.3)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 22,
+                flexShrink: 0
+              }}>
+                
+              </div>
+              <div>
+                <h3 style={{ fontSize: 17, fontWeight: 800, color: t.text, margin: "0 0 4px 0" }}>
+                  Access Restricted
+                </h3>
+                <div style={{ fontSize: 12, color: BRAND.pink, fontWeight: 600 }}>
+                  Feature: {deniedModal.moduleName}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 13, color: t.textSub, lineHeight: 1.6, marginBottom: 18 }}>
+              Aapke account (Role: <strong style={{ color: BRAND.blue, textTransform: "capitalize" }}>{userRole.replace("_", " ")}</strong>) ko <strong>{deniedModal.moduleName}</strong> module access karne ki permission nahi hai.
+            </div>
+
+            <div style={{
+              background: t.card2 || t.card,
+              border: `1px solid ${t.borderDash}`,
+              borderRadius: 10,
+              padding: "12px 14px",
+              fontSize: 12,
+              color: t.textMuted,
+              lineHeight: 1.5,
+              marginBottom: 20
+            }}>
+               <strong>Administrator Contact:</strong> Agar aapko billing, purchase ya reporting ke liye yeh feature chahiye, toh kripya apne Main Admin se <em>Users & Roles › Role Permission Matrix</em> mein jakar permission grant karne ko kahein.
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setDeniedModal({ open: false, moduleName: "", moduleId: "" })}
+                style={{
+                  background: BRAND.gradBtn,
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "9px 22px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer"
+                }}
+              >
+                Theek Hai (Understood)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

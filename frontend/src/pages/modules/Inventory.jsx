@@ -249,7 +249,7 @@ export default function Inventory({ t }) {
             borderRadius: 10, padding: "14px 18px", marginBottom: 16,
             display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <div style={{ fontWeight: 700, color: t.text }}>⚠ Low Stock Alert</div>
+              <div style={{ fontWeight: 700, color: t.text }}>Low Stock Alert</div>
               <div style={{ fontSize: 12, color: t.textMuted, marginTop: 3 }}>
                 {lowStock.length} items need restocking
               </div>

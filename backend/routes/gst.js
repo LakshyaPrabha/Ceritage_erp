@@ -5,13 +5,15 @@ const c = require("../controllers/gstController");
 
 router.use(verifyToken);
 
-// GST Summary & Returns
-router.get("/summary",          checkPermission("gst"), c.getSummary);
-router.get("/gstr-1",           checkPermission("gst"), c.getGstr1);
-router.get("/gstr-3b",          checkPermission("gst"), c.getGstr3b);
-router.get("/hsn-summary",      checkPermission("gst"), c.getHsnSummary);
-router.post("/hsn-codes",       checkPermission("gst", "edit"), c.addHsnCode);
-router.get("/filing-calendar",  checkPermission("gst"), c.getFilingCalendar);
-router.post("/calculate",       checkPermission("gst"), c.calculateTax);
+// ── Complete GST Reporting & Control Suite (Untitled document (8).pdf) ──
+router.post("/validate-complete",       checkPermission("gst"),         c.executeCompleteValidation);
+router.get("/errors",                   checkPermission("gst"),         c.getGstErrors);
+router.post("/recalculate-invoice/:id", checkPermission("gst", "edit"), c.recalculateInvoiceGst);
+router.get("/gstr2b",                   checkPermission("gst"),         c.getGstr2b);
+router.get("/tax-master",               checkPermission("gst"),         c.getTaxMaster);
+router.post("/tax-master",              checkPermission("gst", "edit"), c.createTaxRule);
+router.get("/returns-working",          checkPermission("gst"),         c.getReturnsWorking);
+router.post("/close-period",            checkPermission("gst", "edit"), c.closeGstPeriod);
+router.post("/ca-review-pack",          checkPermission("gst"),         c.generateCaReviewPack);
 
 module.exports = router;

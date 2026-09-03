@@ -125,7 +125,7 @@ function LiveRatesCard({ t, onNavigate }) {
               onClick={handleRefresh}
               disabled={refreshing}
             >
-              {refreshing ? "Refreshing..." : "↻ Refresh"}
+              {refreshing ? "Refreshing..." : "Refresh"}
             </BtnOutline>
             <BtnOutline
               t={t}
@@ -332,7 +332,7 @@ export default function DashboardHome({ t, onNavigate }) {
       <div style={{ marginBottom:20 }}>
         <Card t={t}>
           <CardHeader
-            title="🎂 Customer Milestones & Occasion Reminders"
+            title="Customer Milestones & Occasion Reminders"
             t={t}
             actions={
               <BtnOutline t={t} onClick={() => onNavigate("customers")} style={{ padding:"4px 12px", fontSize:12 }}>
@@ -348,7 +348,7 @@ export default function DashboardHome({ t, onNavigate }) {
                 borderRadius:10, padding:"12px 14px", cursor:"pointer", transition:"transform 0.15s ease"
               }}
             >
-              <div style={{ fontSize:11, color:t.textMuted }}>🎂 Birthdays Today</div>
+              <div style={{ fontSize:11, color:t.textMuted }}>Birthdays Today</div>
               <div style={{ fontSize:22, fontWeight:800, color:BRAND.purple, marginTop:4 }}>
                 {occasionKpis.birthdaysToday ?? 0}
               </div>
@@ -362,7 +362,7 @@ export default function DashboardHome({ t, onNavigate }) {
                 borderRadius:10, padding:"12px 14px", cursor:"pointer"
               }}
             >
-              <div style={{ fontSize:11, color:t.textMuted }}>💍 Anniversaries Today</div>
+              <div style={{ fontSize:11, color:t.textMuted }}>Anniversaries Today</div>
               <div style={{ fontSize:22, fontWeight:800, color:"#e67e22", marginTop:4 }}>
                 {occasionKpis.anniversariesToday ?? 0}
               </div>
@@ -376,7 +376,7 @@ export default function DashboardHome({ t, onNavigate }) {
                 borderRadius:10, padding:"12px 14px", cursor:"pointer"
               }}
             >
-              <div style={{ fontSize:11, color:t.textMuted }}>📅 Next 7 Days</div>
+              <div style={{ fontSize:11, color:t.textMuted }}>Next 7 Days</div>
               <div style={{ fontSize:22, fontWeight:800, color:BRAND.blue, marginTop:4 }}>
                 {occasionKpis.upcoming7Days ?? 0}
               </div>
@@ -390,7 +390,7 @@ export default function DashboardHome({ t, onNavigate }) {
                 borderRadius:10, padding:"12px 14px", cursor:"pointer"
               }}
             >
-              <div style={{ fontSize:11, color:t.textMuted }}>⭐ VIP Occasions</div>
+              <div style={{ fontSize:11, color:t.textMuted }}>VIP Occasions</div>
               <div style={{ fontSize:22, fontWeight:800, color:"#f1c40f", marginTop:4 }}>
                 {occasionKpis.vipOccasionsThisMonth ?? 0}
               </div>

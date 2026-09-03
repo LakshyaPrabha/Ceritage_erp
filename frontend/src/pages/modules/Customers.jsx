@@ -15,7 +15,7 @@ function authHeaders() {
 const TABS = [
   { id:"list",       label:"All Customers" },
   { id:"membership", label:"Membership & VIP Tiers" },
-  { id:"reminders",  label:"🎂 Occasion Reminders" },
+  { id:"reminders",  label:"Occasion Reminders" },
   { id:"notes",      label:"Customer Notes (CRM)" },
   { id:"history",    label:"Purchases & Returns" },
   { id:"ledger",     label:"Financial Ledger" },
@@ -875,8 +875,8 @@ export default function Customers({ t }) {
       {/* ── KPI Stat Cards ── */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))", gap:12, marginBottom:22 }}>
         <StatCard label="Active Customers"    value={kpis.total_customers ?? 0} color={BRAND.blue}   t={t} />
-        <StatCard label="🎂 Birthdays Today"  value={occasionKpis.birthdaysToday ?? 0} color={BRAND.purple} t={t} />
-        <StatCard label="💍 Anniversaries Today" value={occasionKpis.anniversariesToday ?? 0} color="#e67e22" t={t} />
+        <StatCard label="Birthdays Today"     value={occasionKpis.birthdaysToday ?? 0} color={BRAND.purple} t={t} />
+        <StatCard label="Anniversaries Today" value={occasionKpis.anniversariesToday ?? 0} color="#e67e22" t={t} />
         <StatCard label="Pending Dues"        value={kpis.pending_dues ?? 0}    color={BRAND.pink}   t={t} />
         <StatCard label="Total VIP Members"   value={membershipKpis.total_vip_members ?? 0} color="#f1c40f" t={t} />
         <StatCard label="Archived Customers"  value={kpis.archived_customers ?? 0} color="#95a5a6"    t={t} />
@@ -884,7 +884,7 @@ export default function Customers({ t }) {
 
       {error && (
         <div style={{ color:BRAND.pink, fontSize:13, marginBottom:16 }}>
-          ⚠ {error}
+          {error}
         </div>
       )}
 
@@ -929,16 +929,25 @@ export default function Customers({ t }) {
                 <option value="archived">Archived Customers</option>
                 <option value="all">All (Active & Archived)</option>
               </Select>
-              <BtnOutline t={t} onClick={loadCustomers}>↻ Refresh</BtnOutline>
+              <BtnOutline t={t} onClick={loadCustomers}>Refresh</BtnOutline>
             </>}
             t={t}
           />
           <DataTable
-            columns={["Customer ID", "Full Name", "Phone", "Tier", "City", "Wallet", "Points", "Balance Due", "Actions"]}
+            columns={["Customer ID", "Full Name", "Phone", "Registered Branch", "Tier", "City", "Wallet", "Points", "Balance Due", "Actions"]}
             rows={customers.map(c => ({
               "Customer ID": <code>{c.customer_id || `CUST-${c.id}`}</code>,
               "Full Name": <strong>{c.full_name}</strong>,
               "Phone": c.phone,
+              "Registered Branch": (
+                <span style={{
+                  padding: "3px 8px", borderRadius: 12, fontSize: 11, fontWeight: 700,
+                  background: "rgba(59,85,230,0.1)", color: BRAND.blue,
+                  display: "inline-flex", alignItems: "center", gap: 4
+                }}>
+                   {c.branch_name || "Main Showroom"}
+                </span>
+              ),
               "Tier": (
                 <span style={{
                   padding:"2px 8px", borderRadius:6, fontSize:11, fontWeight:700,
@@ -992,7 +1001,7 @@ export default function Customers({ t }) {
               t={t}
               actions={<>
                 <BtnOutline t={t} onClick={handleEvaluateTierUpgrades} disabled={evaluatingUpgrades}>
-                  {evaluatingUpgrades ? "Scanning Spend..." : "⚡ Evaluate Tier Upgrades"}
+                  {evaluatingUpgrades ? "Scanning Spend..." : "Evaluate Tier Upgrades"}
                 </BtnOutline>
                 <BtnPrimary onClick={() => openEnrollModal()}>
                   + Enroll Member
@@ -1027,7 +1036,7 @@ export default function Customers({ t }) {
                   </div>
 
                   <div style={{ fontSize:11, color:t.text, borderTop:`1px solid ${t.borderDash}`, paddingTop:8, lineHeight:1.4 }}>
-                    🎁 {p.perks_description || "Standard loyalty and invoicing"}
+                    {p.perks_description || "Standard loyalty and invoicing"}
                   </div>
                 </div>
               ))}
@@ -1092,10 +1101,10 @@ export default function Customers({ t }) {
       {tab === "reminders" && (
         <div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(160px, 1fr))", gap:12, marginBottom:16 }}>
-            <StatCard label="🎂 Birthdays Today"      value={occasionKpis.birthdaysToday ?? 0}     color={BRAND.purple} t={t} />
-            <StatCard label="💍 Anniversaries Today"  value={occasionKpis.anniversariesToday ?? 0} color="#e67e22"      t={t} />
-            <StatCard label="📅 Next 7 Days"          value={occasionKpis.upcoming7Days ?? 0}      color={BRAND.blue}   t={t} />
-            <StatCard label="⭐ VIP Occasions"        value={occasionKpis.vipOccasionsThisMonth ?? 0} color="#f1c40f"  t={t} />
+            <StatCard label="Birthdays Today"      value={occasionKpis.birthdaysToday ?? 0}     color={BRAND.purple} t={t} />
+            <StatCard label="Anniversaries Today"  value={occasionKpis.anniversariesToday ?? 0} color="#e67e22"      t={t} />
+            <StatCard label="Next 7 Days"          value={occasionKpis.upcoming7Days ?? 0}      color={BRAND.blue}   t={t} />
+            <StatCard label="VIP Occasions"        value={occasionKpis.vipOccasionsThisMonth ?? 0} color="#f1c40f"  t={t} />
           </div>
 
           <Card t={t}>
@@ -1123,11 +1132,11 @@ export default function Customers({ t }) {
                   onChange={(e) => setOccFilter(e.target.value)}
                 >
                   <option value="all">All Event Types</option>
-                  <option value="birthday">🎂 Birthdays Only</option>
-                  <option value="anniversary">💍 Anniversaries Only</option>
+                  <option value="birthday">Birthdays Only</option>
+                  <option value="anniversary">Anniversaries Only</option>
                 </Select>
 
-                <BtnOutline t={t} onClick={loadOccasionsData}>↻ Refresh</BtnOutline>
+                <BtnOutline t={t} onClick={loadOccasionsData}>Refresh</BtnOutline>
               </>}
             />
 
@@ -1137,7 +1146,7 @@ export default function Customers({ t }) {
                 Customer: (
                   <div>
                     <strong>{o.customerName}</strong>
-                    <div style={{ fontSize:11, color:t.textMuted }}>{o.custCode} · 📱 {o.phone}</div>
+                    <div style={{ fontSize:11, color:t.textMuted }}>{o.custCode} · {o.phone}</div>
                   </div>
                 ),
                 "Event Type": (
@@ -1146,7 +1155,7 @@ export default function Customers({ t }) {
                     background: o.occasionType === "BIRTHDAY" ? `${BRAND.purple}22` : "#e67e2222",
                     color: o.occasionType === "BIRTHDAY" ? BRAND.purple : "#d35400"
                   }}>
-                    {o.occasionType === "BIRTHDAY" ? "🎂 Birthday" : "💍 Anniversary"}
+                    {o.occasionType === "BIRTHDAY" ? "Birthday" : "Anniversary"}
                   </span>
                 ),
                 "Event Date": o.occasionDate ? new Date(o.occasionDate).toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" }) : "-",
@@ -1155,7 +1164,7 @@ export default function Customers({ t }) {
                     fontWeight:800,
                     color: o.daysUntil === 0 ? "#27ae60" : (o.daysUntil <= 3 ? BRAND.purple : (o.daysUntil <= 7 ? BRAND.blue : t.textMuted))
                   }}>
-                    {o.daysUntil === 0 ? "🎉 TODAY!" : (o.daysUntil === 1 ? "Tomorrow" : `In ${o.daysUntil} days`)}
+                    {o.daysUntil === 0 ? "TODAY" : (o.daysUntil === 1 ? "Tomorrow" : `In ${o.daysUntil} days`)}
                   </span>
                 ),
                 Tier: (
@@ -1251,7 +1260,7 @@ export default function Customers({ t }) {
                           }}>
                             {n.category}
                           </span>
-                          {n.is_pinned && <span style={{ fontSize:11, color:BRAND.purple, fontWeight:700 }}>📌 Pinned Note</span>}
+                          {n.is_pinned && <span style={{ fontSize:11, color:BRAND.purple, fontWeight:700 }}>Pinned Note</span>}
                           <span style={{ fontSize:11, color:t.textMuted }}>by {n.created_by || 'Staff'} · {new Date(n.created_at).toLocaleDateString('en-IN')}</span>
                         </div>
                         <div style={{ fontSize:14, color:t.text, whiteSpace:"pre-wrap", marginTop:4 }}>
@@ -1512,7 +1521,6 @@ export default function Customers({ t }) {
                         {formatCurrency(walletDetails.balance || 0)}
                       </div>
                     </div>
-                    <span style={{ fontSize:28 }}>💳</span>
                   </div>
                 </div>
 
@@ -1524,7 +1532,6 @@ export default function Customers({ t }) {
                         {loyaltyDetails.points || 0} <span style={{ fontSize:15 }}>pts</span>
                       </div>
                     </div>
-                    <span style={{ fontSize:28 }}>🏆</span>
                   </div>
                   <div style={{ fontSize:12, color:t.textMuted, marginTop:8 }}>
                     Redeemable Value: <strong>{formatCurrency(loyaltyDetails.redeemable_value || 0)}</strong>
@@ -1628,7 +1635,7 @@ export default function Customers({ t }) {
                   {c360Data.customer.full_name} <span style={{ fontSize:12, fontWeight:600, color:t.textMuted }}>({c360Data.customer.customer_id})</span>
                 </div>
                 <div style={{ fontSize:12, color:t.textMuted, marginTop:2 }}>
-                  📱 {c360Data.customer.phone} · 📍 {c360Data.customer.city || 'Mumbai'}, {c360Data.customer.state || 'Maharashtra'} · PAN: {c360Data.customer.pan_masked || '-'}
+                  {c360Data.customer.phone} · {c360Data.customer.city || 'Mumbai'}, {c360Data.customer.state || 'Maharashtra'} · PAN: {c360Data.customer.pan_masked || '-'}
                 </div>
               </div>
               <div style={{ display:"flex", gap:8 }}>
@@ -1688,7 +1695,7 @@ export default function Customers({ t }) {
                     fontWeight:700, cursor:"pointer", textTransform:"capitalize"
                   }}
                 >
-                  {sub === "purchases" ? "Purchases & Returns" : (sub === "notes" ? "CRM Notes" : (sub === "comms" ? "📱 Message History" : (sub === "activity" ? "Activity Timeline" : "Overview")))}
+                  {sub === "purchases" ? "Purchases & Returns" : (sub === "notes" ? "CRM Notes" : (sub === "comms" ? "Message History" : (sub === "activity" ? "Activity Timeline" : "Overview")))}
                 </button>
               ))}
             </div>
@@ -1706,14 +1713,14 @@ export default function Customers({ t }) {
                     <div><strong>Expiry Date:</strong> {c360Data.membership?.expiry_date ? new Date(c360Data.membership.expiry_date).toLocaleDateString('en-IN') : 'No Expiry'}</div>
                   </div>
 
-                  <div style={{ fontWeight:700, fontSize:13, marginTop:14, marginBottom:8 }}>🎂 Upcoming Occasions</div>
+                  <div style={{ fontWeight:700, fontSize:13, marginTop:14, marginBottom:8 }}>Upcoming Occasions</div>
                   {(!c360Data.occasions || c360Data.occasions.length === 0) ? (
                     <div style={{ fontSize:12, color:t.textMuted }}>No dates recorded</div>
                   ) : (
                     <div style={{ display:"grid", gap:6 }}>
                       {c360Data.occasions.map((occ, idx) => (
                         <div key={idx} style={{ fontSize:12, padding:"6px 8px", background:t.card, borderRadius:6, border:`1px solid ${t.borderDash}` }}>
-                          <strong>{occ.type === 'BIRTHDAY' ? '🎂 Birthday' : '💍 Anniversary'}:</strong> {new Date(occ.date).toLocaleDateString('en-IN', { day:"numeric", month:"long" })} ({occ.daysUntil === 0 ? 'TODAY!' : `In ${occ.daysUntil} days`})
+                          <strong>{occ.type === 'BIRTHDAY' ? 'Birthday' : 'Anniversary'}:</strong> {new Date(occ.date).toLocaleDateString('en-IN', { day:"numeric", month:"long" })} ({occ.daysUntil === 0 ? 'TODAY' : `In ${occ.daysUntil} days`})
                         </div>
                       ))}
                     </div>
@@ -1777,7 +1784,7 @@ export default function Customers({ t }) {
                         <span style={{ fontSize:10, fontWeight:700, padding:"2px 6px", borderRadius:4, background:`${BRAND.purple}22`, color:BRAND.purple }}>
                           {n.category}
                         </span>
-                        {n.is_pinned && <span style={{ fontSize:11, marginLeft:6 }}>📌 Pinned</span>}
+                        {n.is_pinned && <span style={{ fontSize:11, marginLeft:6 }}>Pinned</span>}
                         <div style={{ fontSize:13, marginTop:4 }}>{n.note_text}</div>
                         <div style={{ fontSize:10, color:t.textMuted, marginTop:2 }}>by {n.created_by} · {new Date(n.created_at).toLocaleDateString('en-IN')}</div>
                       </div>
@@ -1804,7 +1811,7 @@ export default function Customers({ t }) {
                         background: ch.channel === "WHATSAPP" ? "#27ae6022" : "#3498db22",
                         color: ch.channel === "WHATSAPP" ? "#27ae60" : "#2980b9"
                       }}>
-                        {ch.channel === "WHATSAPP" ? "📱 WhatsApp" : "💬 SMS"}
+                        {ch.channel === "WHATSAPP" ? "WhatsApp" : "SMS"}
                       </span>
                     ),
                     "Template": <code>{ch.template_code}</code>,
@@ -1834,11 +1841,12 @@ export default function Customers({ t }) {
                   activityEvents.map((ev, idx) => (
                     <div key={idx} style={{
                       display:"flex", gap:12, padding:"10px 12px", background:t.card2||t.card,
-                      borderRadius:8, border:`1px solid ${t.borderDash}`
+                      borderRadius:8, border:`1px solid ${t.borderDash}`, alignItems: "center"
                     }}>
-                      <div style={{ fontSize:20 }}>
-                        {ev.type.includes("PAYMENT") ? "💳" : (ev.type.includes("INVOICE") ? "🧾" : (ev.type.includes("RETURN") ? "🔄" : (ev.type.includes("NOTE") ? "📝" : "⚡")))}
-                      </div>
+                      <div style={{
+                        width: 8, height: 8, borderRadius: "50%",
+                        background: ev.type.includes("PAYMENT") ? "#2ecc71" : ev.type.includes("INVOICE") ? BRAND.blue : BRAND.purple
+                      }} />
                       <div style={{ flex:1 }}>
                         <div style={{ display:"flex", justifyContent:"space-between" }}>
                           <strong style={{ fontSize:13 }}>{ev.title}</strong>
@@ -1864,14 +1872,14 @@ export default function Customers({ t }) {
       <Modal
         open={greetingModal}
         onClose={() => setGreetingModal(false)}
-        title={`Generate ${greetingCustomer?.occasionType === 'BIRTHDAY' ? '🎂 Birthday' : '💍 Anniversary'} Greeting`}
+        title={`Generate ${greetingCustomer?.occasionType === 'BIRTHDAY' ? 'Birthday' : 'Anniversary'} Greeting`}
         t={t}
         wide
         footer={<>
           <BtnOutline t={t} onClick={() => setGreetingModal(false)}>Close</BtnOutline>
           {greetingResult && (
             <BtnPrimary onClick={handleCopyGreeting}>
-              {copied ? "✓ Copied to Clipboard!" : "📋 Copy Greeting Text"}
+              {copied ? "Copied to Clipboard!" : "Copy Greeting Text"}
             </BtnPrimary>
           )}
         </>}
@@ -1879,7 +1887,7 @@ export default function Customers({ t }) {
         <div>
           {greetingCustomer && (
             <div style={{ background:t.card2||t.card, padding:"10px 14px", borderRadius:8, border:`1px solid ${t.borderDash}`, marginBottom:14 }}>
-              <strong>{greetingCustomer.customerName}</strong> ({greetingCustomer.tier} Tier) · 📱 {greetingCustomer.phone}
+              <strong>{greetingCustomer.customerName}</strong> ({greetingCustomer.tier} Tier) · {greetingCustomer.phone}
               <div style={{ fontSize:12, color:t.textMuted, marginTop:2 }}>
                 Event Date: {new Date(greetingCustomer.occasionDate).toLocaleDateString('en-IN', { day:"numeric", month:"long" })} ({greetingCustomer.daysUntil === 0 ? "TODAY" : `In ${greetingCustomer.daysUntil} days`})
               </div>
@@ -2106,11 +2114,10 @@ export default function Customers({ t }) {
         </form>
       </Modal>
 
-      {/* ── TIER UPGRADE SCAN RESULTS MODAL ── */}
       <Modal
         open={upgradeResultModal}
         onClose={() => setUpgradeResultModal(false)}
-        title="⚡ Auto-Tier Spend Evaluation Results"
+        title="Auto-Tier Spend Evaluation Results"
         t={t}
         footer={<BtnPrimary onClick={() => setUpgradeResultModal(false)}>Close Summary</BtnPrimary>}
       >
@@ -2119,22 +2126,22 @@ export default function Customers({ t }) {
             <div>Customers Evaluated: <strong>{upgradeResults?.customers_evaluated || 0}</strong></div>
             <div>Eligible Customers Promoted: <strong style={{ color:"#27ae60" }}>{upgradeResults?.customers_upgraded || 0}</strong></div>
           </div>
-          {(!upgradeResults?.upgrades || upgradeResults.upgrades.length === 0) ? (
-            <div style={{ textAlign:"center", padding:20, color:t.textMuted }}>
-              ✓ All customers are currently placed in their highest eligible tier based on cumulative net purchases.
-            </div>
-          ) : (
+          {upgradeResults?.upgrades?.length > 0 ? (
             <DataTable
-              columns={["Customer", "Old Tier", "Promoted Tier", "Qualifying Spend (₹)", "Expiry Date"]}
-              rows={upgradeResults.upgrades.map((u, i) => ({
-                "Customer": <strong>{u.customer_name}</strong>,
-                "Old Tier": u.old_tier,
-                "Promoted Tier": <strong style={{ color:BRAND.purple }}>{u.new_tier}</strong>,
-                "Qualifying Spend (₹)": formatCurrency(u.net_spend),
-                "Expiry Date": u.expiry_date ? new Date(u.expiry_date).toLocaleDateString("en-IN") : "-",
+              columns={["Customer Name", "Phone", "Old Tier", "New Promoted Tier", "Spend Threshold Met"]}
+              rows={upgradeResults.upgrades.map(u => ({
+                "Customer Name": <strong>{u.customer_name}</strong>,
+                "Phone": <span>{u.phone}</span>,
+                "Old Tier": <span>{u.old_tier}</span>,
+                "New Promoted Tier": <strong style={{ color:"#27ae60" }}>{u.new_tier}</strong>,
+                "Spend Threshold Met": <span>{formatCurrency(u.total_spend)}</span>,
               }))}
               t={t}
             />
+          ) : (
+            <div style={{ textAlign: "center", padding: "16px 0", color: t.textMuted }}>
+              No customer tier promotions were required based on spend thresholds.
+            </div>
           )}
         </div>
       </Modal>
@@ -2173,7 +2180,7 @@ export default function Customers({ t }) {
                 onChange={(e) => setNoteForm(f => ({ ...f, is_pinned: e.target.value === "true" }))}
               >
                 <option value="false">No (Normal)</option>
-                <option value="true">Yes 📌 Pin to Top</option>
+                <option value="true">Yes (Pin to Top)</option>
               </Select>
             </FormGroup>
             <FormGroup label="Note Content *" t={t}>
@@ -2443,7 +2450,7 @@ export default function Customers({ t }) {
             Are you sure you want to archive <u>{customerToArchive?.full_name}</u> ({customerToArchive?.customer_id})?
           </p>
           <div style={{ background:t.card2||t.card, border:`1px solid ${t.borderDash}`, borderRadius:8, padding:12, fontSize:13, color:t.textMuted }}>
-            <p style={{ margin:"0 0 6px 0" }}>🛡️ <strong>Safety Guarantee:</strong></p>
+            <p style={{ margin:"0 0 6px 0" }}><strong>Safety Guarantee:</strong></p>
             <ul style={{ margin:0, paddingLeft:18, lineHeight:1.5 }}>
               <li>This customer will be hidden from the active directory.</li>
               <li><strong>All historical invoices, ledger records, notes, and orders remain 100% preserved.</strong></li>

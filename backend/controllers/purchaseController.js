@@ -4,13 +4,16 @@ const accounting = require("../services/accountingPostingService");
 // â”€â”€â”€ KPIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getKpis(req, res) {
   try {
+    const bf = branchFilter(req);
     const [[kpis]] = await db.query(
       `SELECT
          COALESCE(SUM(total),0)                              AS total_purchase_value,
          COALESCE(SUM(total - COALESCE(paid_amount,0)),0)   AS pending_payments,
          COALESCE(SUM(total),0)                             AS purchase_amount,
          COUNT(*)                                           AS total_orders
-       FROM purchase_orders`
+       FROM purchase_orders
+       WHERE ${bf.sql}`,
+      bf.params
     );
     res.json({ success: true, data: kpis });
   } catch (err) {
@@ -20,12 +23,12 @@ async function getKpis(req, res) {
 
 // â”€â”€â”€ PURCHASE ORDERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getAll(req, res) {
-  const branch_id = req.user?.branch_id || 1;
   try {
     const { supplier_id, status, search, page = 1, limit = 50 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    const conditions = ["po.branch_id = ?"];
-    const params = [branch_id];
+    const bf = branchFilter(req, "po.branch_id");
+    const conditions = [bf.sql];
+    const params = [...bf.params];
 
     if (supplier_id) {
       conditions.push("po.supplier_id = ?");
@@ -43,9 +46,11 @@ async function getAll(req, res) {
     const whereClause = "WHERE " + conditions.join(" AND ");
 
     const [rows] = await db.query(
-      `SELECT po.*, s.company_name AS supplier_name
+      `SELECT po.*, s.company_name AS supplier_name,
+              COALESCE(b.name, 'Main Showroom') AS branch_name
        FROM purchase_orders po
        LEFT JOIN suppliers s ON po.supplier_id = s.id
+       LEFT JOIN branches b ON po.branch_id = b.id
        ${whereClause} ORDER BY po.purchase_date DESC, po.id DESC
        LIMIT ? OFFSET ?`,
       [...params, parseInt(limit), parseInt(offset)]

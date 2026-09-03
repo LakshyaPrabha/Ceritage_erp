@@ -336,7 +336,7 @@ export default function Employees({ t }) {
         actions={
           <>
             <BtnOutline t={t} onClick={handleMarkAllPresent}>
-              ⚡ Quick Check-in (Mark All Present)
+              Quick Check-in (Mark All Present)
             </BtnOutline>
             <BtnOutline t={t} onClick={() => setLeaveModal(true)}>
               + Apply Leave
@@ -451,7 +451,7 @@ export default function Employees({ t }) {
                 }}
               />
               <BtnSm t={t} onClick={loadEmployees}>
-                ↻ Refresh
+                Refresh
               </BtnSm>
             </div>
           </div>
@@ -634,7 +634,7 @@ export default function Employees({ t }) {
                   }}
                 />
                 <BtnSm t={t} primary onClick={handleMarkAllPresent}>
-                  ⚡ Mark All Present
+                  Mark All Present
                 </BtnSm>
               </div>
             }
@@ -1289,7 +1289,7 @@ export default function Employees({ t }) {
             <BtnOutline t={t} onClick={() => setSlipModal(false)}>
               Close
             </BtnOutline>
-            <BtnPrimary onClick={() => window.print()}>🖨 Print Payslip</BtnPrimary>
+            <BtnPrimary onClick={() => window.print()}>Print Payslip</BtnPrimary>
           </>
         }
       >

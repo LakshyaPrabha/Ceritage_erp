@@ -6,11 +6,11 @@ import { apiRequest, formatCurrency } from "../../lib/api";
 
 const COMM_TABS = [
   { id:"overview",    label:"Overview & Campaigns" },
-  { id:"occasions",   label:"🎂 Birthday & Anniversary" },
-  { id:"emi_due",     label:"💳 EMI & Due Reminders" },
-  { id:"history",     label:"📜 Message History (Logs)" },
-  { id:"templates",   label:"📑 Message Templates" },
-  { id:"settings",    label:"⚙️ Provider Settings" },
+  { id:"occasions",   label:"Birthday & Anniversary" },
+  { id:"emi_due",     label:"EMI & Due Reminders" },
+  { id:"history",     label:"Message History (Logs)" },
+  { id:"templates",   label:"Message Templates" },
+  { id:"settings",    label:"Provider Settings" },
 ];
 
 export default function Communication({ t }) {
@@ -149,14 +149,14 @@ export default function Communication({ t }) {
       });
 
       if (res.success) {
-        setSendResultMsg(`✓ ${res.message || 'Message successfully sent!'}`);
+        setSendResultMsg(res.message || 'Message successfully sent!');
         await loadLogs();
         setTimeout(() => setSendModal(false), 1500);
       } else {
-        setSendResultMsg(`⚠ ${res.message}`);
+        setSendResultMsg(res.message);
       }
     } catch (err) {
-      setSendResultMsg(`✗ ${err.message}`);
+      setSendResultMsg(err.message);
     } finally {
       setSendingMsg(false);
     }
@@ -248,7 +248,7 @@ export default function Communication({ t }) {
           display:"flex", justifyContent:"space-between", alignItems:"center"
         }}>
           <div style={{ fontSize:13, color:t.text }}>
-            🛡️ <strong>Safe Test Mode Active:</strong> External network calls are safely emulated and logged to <code>communication_logs</code>. No real charges or customer SMS are triggered.
+            <strong>Safe Test Mode Active:</strong> External network calls are safely emulated and logged to <code>communication_logs</code>. No real charges or customer SMS are triggered.
           </div>
           <span style={{ fontSize:11, fontWeight:700, padding:"3px 8px", background:BRAND.blue, color:"#fff", borderRadius:6 }}>
             TEST_MODE=true
@@ -265,8 +265,8 @@ export default function Communication({ t }) {
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:12, marginBottom:20 }}>
             <StatCard label="Messages Today"   value={logMeta.sentToday ?? 0} color={BRAND.purple} t={t} />
             <StatCard label="Total Logged"     value={logMeta.total ?? 0}     color={BRAND.blue}   t={t} />
-            <StatCard label="🎂 Birthdays Today" value={occasionKpis.birthdaysToday ?? 0} color="#27ae60" t={t} />
-            <StatCard label="💍 Anniversaries Today" value={occasionKpis.anniversariesToday ?? 0} color="#e67e22" t={t} />
+            <StatCard label="Birthdays Today" value={occasionKpis.birthdaysToday ?? 0} color="#27ae60" t={t} />
+            <StatCard label="Anniversaries Today" value={occasionKpis.anniversariesToday ?? 0} color="#e67e22" t={t} />
             <StatCard label="Active Templates" value={templates.length}       color="#8e44ad"      t={t} />
           </div>
 
@@ -280,7 +280,7 @@ export default function Communication({ t }) {
                   borderRadius:10, padding:14, display:"flex", justifyContent:"space-between", alignItems:"center"
                 }}>
                   <div>
-                    <strong style={{ fontSize:14 }}>🎂 Daily Occasion Greetings (09:00 IST)</strong>
+                    <strong style={{ fontSize:14 }}>Daily Occasion Greetings (09:00 IST)</strong>
                     <div style={{ fontSize:12, color:t.textMuted, marginTop:2 }}>
                       Scans birthdays & anniversaries today and dispatches personalized greetings via customer's preferred channel.
                     </div>
@@ -290,7 +290,7 @@ export default function Communication({ t }) {
                     onClick={handleRunOccasionBatch}
                     disabled={batchLoading}
                   >
-                    {batchLoading ? "Running..." : "⚡ Run Now"}
+                    {batchLoading ? "Running..." : "Run Now"}
                   </BtnPrimary>
                 </div>
 
@@ -299,7 +299,7 @@ export default function Communication({ t }) {
                   borderRadius:10, padding:14, display:"flex", justifyContent:"space-between", alignItems:"center"
                 }}>
                   <div>
-                    <strong style={{ fontSize:14 }}>💳 Daily EMI Due Reminders (10:00 IST)</strong>
+                    <strong style={{ fontSize:14 }}>Daily EMI Due Reminders (10:00 IST)</strong>
                     <div style={{ fontSize:12, color:t.textMuted, marginTop:2 }}>
                       Alerts customers with installments due in the next 48 hours.
                     </div>
@@ -313,7 +313,7 @@ export default function Communication({ t }) {
                       await loadLogs();
                     }}
                   >
-                    ⚡ Run Now
+                    Run Now
                   </BtnOutline>
                 </div>
               </div>
@@ -328,7 +328,7 @@ export default function Communication({ t }) {
                   borderRadius:8, padding:"12px 14px", display:"flex", justifyContent:"space-between", alignItems:"center"
                 }}>
                   <div>
-                    <div style={{ fontWeight:700, fontSize:13 }}>💬 SMS Gateway (MSG91)</div>
+                    <div style={{ fontWeight:700, fontSize:13 }}>SMS Gateway (MSG91)</div>
                     <div style={{ fontSize:11, color:t.textMuted }}>DLT Template Compliant · Sender ID: {providerStatus.sms?.senderId}</div>
                   </div>
                   <span style={{
@@ -345,7 +345,7 @@ export default function Communication({ t }) {
                   borderRadius:8, padding:"12px 14px", display:"flex", justifyContent:"space-between", alignItems:"center"
                 }}>
                   <div>
-                    <div style={{ fontWeight:700, fontSize:13 }}>📱 WhatsApp API ({providerStatus.whatsapp?.provider})</div>
+                    <div style={{ fontWeight:700, fontSize:13 }}>WhatsApp API ({providerStatus.whatsapp?.provider})</div>
                     <div style={{ fontSize:11, color:t.textMuted }}>Template-based messaging · Phone ID: {providerStatus.whatsapp?.phoneId}</div>
                   </div>
                   <span style={{
@@ -380,7 +380,7 @@ export default function Communication({ t }) {
                 <option value="30d">Next 30 Days</option>
                 <option value="month">This Month</option>
               </Select>
-              <BtnOutline t={t} onClick={loadOccasions}>↻ Refresh</BtnOutline>
+              <BtnOutline t={t} onClick={loadOccasions}>Refresh</BtnOutline>
             </>}
           />
           <DataTable
@@ -389,7 +389,7 @@ export default function Communication({ t }) {
               Customer: (
                 <div>
                   <strong>{o.customerName}</strong>
-                  <div style={{ fontSize:11, color:t.textMuted }}>{o.custCode} · 📱 {o.phone}</div>
+                  <div style={{ fontSize:11, color:t.textMuted }}>{o.custCode} · {o.phone}</div>
                 </div>
               ),
               Occasion: (
@@ -398,28 +398,28 @@ export default function Communication({ t }) {
                   background: o.occasionType === "BIRTHDAY" ? `${BRAND.purple}22` : "#e67e2222",
                   color: o.occasionType === "BIRTHDAY" ? BRAND.purple : "#d35400"
                 }}>
-                  {o.occasionType === "BIRTHDAY" ? "🎂 Birthday" : "💍 Anniversary"}
+                  {o.occasionType === "BIRTHDAY" ? "Birthday" : "Anniversary"}
                 </span>
               ),
               "Celebration Date": o.occasionDate ? new Date(o.occasionDate).toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" }) : "-",
               Countdown: (
                 <strong style={{ color: o.daysUntil === 0 ? "#27ae60" : BRAND.purple }}>
-                  {o.daysUntil === 0 ? "🎉 TODAY!" : `In ${o.daysUntil} days`}
+                  {o.daysUntil === 0 ? "TODAY!" : `In ${o.daysUntil} days`}
                 </strong>
               ),
               Tier: <span style={{ fontWeight:700, color: o.badgeColor || BRAND.purple }}>{o.tier}</span>,
               "Consent Status": (
                 <span style={{ fontSize:11, color:t.textMuted }}>
-                  WA: {o.preferences.optInWhatsapp ? "✓" : "✗"} | SMS: {o.preferences.optInSms ? "✓" : "✗"}
+                  WA: {o.preferences.optInWhatsapp ? "Yes" : "No"} | SMS: {o.preferences.optInSms ? "Yes" : "No"}
                 </span>
               ),
               "Dispatch Actions": (
                 <div style={{ display:"flex", gap:6 }}>
                   <BtnSm t={t} primary onClick={() => handleQuickSendOccasion(o, "SMS")}>
-                    💬 Send SMS
+                    Send SMS
                   </BtnSm>
                   <BtnSm t={t} onClick={() => handleQuickSendOccasion(o, "WHATSAPP")}>
-                    📱 Send WhatsApp
+                    Send WhatsApp
                   </BtnSm>
                 </div>
               )
@@ -450,7 +450,7 @@ export default function Communication({ t }) {
                 ),
                 Action: (
                   <BtnSm t={t} primary onClick={() => handleQuickSendEmi(em)}>
-                    💬 Send EMI SMS
+                    Send EMI SMS
                   </BtnSm>
                 )
               }))}
@@ -484,7 +484,7 @@ export default function Communication({ t }) {
                     alert(res.message);
                     await loadLogs();
                   }}>
-                    💬 Send Due Reminder
+                    Send Due Reminder
                   </BtnSm>
                 )
               }))}
@@ -519,8 +519,8 @@ export default function Communication({ t }) {
                 onChange={(e) => setLogChannelFilter(e.target.value)}
               >
                 <option value="">All Channels</option>
-                <option value="SMS">💬 SMS</option>
-                <option value="WHATSAPP">📱 WhatsApp</option>
+                <option value="SMS">SMS</option>
+                <option value="WHATSAPP">WhatsApp</option>
               </Select>
               <Select
                 t={t}
@@ -534,7 +534,7 @@ export default function Communication({ t }) {
                 <option value="SKIPPED">SKIPPED</option>
                 <option value="FAILED">FAILED</option>
               </Select>
-              <BtnOutline t={t} onClick={loadLogs}>↻ Refresh</BtnOutline>
+              <BtnOutline t={t} onClick={loadLogs}>Refresh</BtnOutline>
             </>}
           />
           <DataTable
@@ -544,7 +544,7 @@ export default function Communication({ t }) {
               Customer: (
                 <div>
                   <strong>{l.customer_name}</strong>
-                  <div style={{ fontSize:11, color:t.textMuted }}>📱 {l.recipient}</div>
+                  <div style={{ fontSize:11, color:t.textMuted }}>{l.recipient}</div>
                 </div>
               ),
               Channel: (
@@ -553,7 +553,7 @@ export default function Communication({ t }) {
                   background: l.channel === "WHATSAPP" ? "#27ae6022" : "#3498db22",
                   color: l.channel === "WHATSAPP" ? "#27ae60" : "#2980b9"
                 }}>
-                  {l.channel === "WHATSAPP" ? "📱 WhatsApp" : "💬 SMS"}
+                  {l.channel === "WHATSAPP" ? "WhatsApp" : "SMS"}
                 </span>
               ),
               Template: <code>{l.template_code}</code>,
@@ -596,7 +596,7 @@ export default function Communication({ t }) {
                 <option value="REPAIR_READY">Repair Ready</option>
                 <option value="ORDER_READY">Order Ready</option>
               </Select>
-              <BtnOutline t={t} onClick={loadTemplates}>↻ Refresh</BtnOutline>
+              <BtnOutline t={t} onClick={loadTemplates}>Refresh</BtnOutline>
             </>}
           />
           <DataTable
@@ -633,7 +633,7 @@ export default function Communication({ t }) {
                 MSG91 is the primary Indian SMS gateway provider for transactional, DLT-compliant, and milestone messaging.
               </p>
               <div style={{ background:t.card2||t.card, padding:12, borderRadius:8, border:`1px solid ${t.borderDash}`, marginBottom:12 }}>
-                <div><strong>Status:</strong> {providerStatus.sms?.enabled ? "🟢 Enabled" : "⚪ Disabled (Controlled via .env)"}</div>
+                <div><strong>Status:</strong> {providerStatus.sms?.enabled ? "Enabled" : "Disabled (Controlled via .env)"}</div>
                 <div><strong>Sender ID:</strong> <code>{providerStatus.sms?.senderId}</code></div>
                 <div><strong>DLT Flow Templates:</strong> Verified</div>
               </div>
@@ -651,7 +651,7 @@ export default function Communication({ t }) {
               </p>
               <div style={{ background:t.card2||t.card, padding:12, borderRadius:8, border:`1px solid ${t.borderDash}`, marginBottom:12 }}>
                 <div><strong>Provider:</strong> {providerStatus.whatsapp?.provider}</div>
-                <div><strong>Status:</strong> {providerStatus.whatsapp?.enabled ? "🟢 Connected" : "⚪ Not Configured / Disabled"}</div>
+                <div><strong>Status:</strong> {providerStatus.whatsapp?.enabled ? "Connected" : "Not Configured / Disabled"}</div>
                 <div><strong>Phone Number ID:</strong> <code>{providerStatus.whatsapp?.phoneId}</code></div>
               </div>
               <div style={{ fontSize:12, color:t.textMuted }}>
@@ -699,8 +699,8 @@ export default function Communication({ t }) {
                 value={sendForm.channel}
                 onChange={(e) => setSendForm(f => ({ ...f, channel: e.target.value }))}
               >
-                <option value="SMS">💬 SMS (MSG91)</option>
-                <option value="WHATSAPP">📱 WhatsApp</option>
+                <option value="SMS">SMS (MSG91)</option>
+                <option value="WHATSAPP">WhatsApp</option>
               </Select>
             </FormGroup>
 

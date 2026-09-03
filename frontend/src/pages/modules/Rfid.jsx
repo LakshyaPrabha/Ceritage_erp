@@ -413,21 +413,21 @@ export default function Rfid({ t }) {
                 setLookupModal(true);
               }}
             >
-              🔍 Scan Tag / Gun Search
+              Scan Tag / Gun Search
             </BtnOutline>
             <BtnOutline
               t={t}
               style={{ borderColor: "#2ecc71", color: "#2ecc71" }}
               onClick={() => handleBulkTransfer("In Showcase")}
             >
-              ☀️ Day Opening (All to Showcase)
+              Day Opening (All to Showcase)
             </BtnOutline>
             <BtnOutline
               t={t}
               style={{ borderColor: BRAND.pink, color: BRAND.pink }}
               onClick={() => handleBulkTransfer("In Vault")}
             >
-              🌙 Day Closing (All to Vault)
+              Day Closing (All to Vault)
             </BtnOutline>
             <BtnPrimary onClick={() => setNewTrayModal(true)}>+ New Tray</BtnPrimary>
           </>
@@ -535,7 +535,7 @@ export default function Rfid({ t }) {
                 }}
               />
               <BtnSm t={t} onClick={loadTrays}>
-                ↻ Refresh
+                Refresh
               </BtnSm>
             </div>
           </div>
@@ -589,7 +589,7 @@ export default function Rfid({ t }) {
                         fontWeight: 700,
                       }}
                     >
-                      {isVault ? "🔒 In Vault" : "🟢 Showcase"}
+                      {isVault ? "In Vault" : "Showcase"}
                     </span>
                   </div>
 
@@ -652,7 +652,7 @@ export default function Rfid({ t }) {
                       style={{ flex: 1, padding: "7px 10px", fontSize: 12 }}
                       onClick={() => handleStartAuditForTray(tray)}
                     >
-                      ⚡ Audit Tray
+                      Audit Tray
                     </BtnPrimary>
                     <BtnOutline
                       t={t}
@@ -749,7 +749,7 @@ export default function Rfid({ t }) {
                   disabled={auditRunning || !auditTrayId}
                   style={{ width: "100%" }}
                 >
-                  {auditRunning ? "Scanning & Reconciling..." : "⚡ Execute RFID Verification"}
+                  {auditRunning ? "Scanning & Reconciling..." : "Execute RFID Verification"}
                 </BtnPrimary>
 
                 <div style={{ textAlign: "center", fontSize: 11, color: t.textMuted, margin: "4px 0" }}>
@@ -763,7 +763,7 @@ export default function Rfid({ t }) {
                     onClick={() => handleSimulateScan("100_MATCH")}
                     disabled={auditRunning || !auditTrayId}
                   >
-                    ✓ 100% Match
+                    100% Match
                   </BtnOutline>
                   <BtnOutline
                     t={t}
@@ -771,7 +771,7 @@ export default function Rfid({ t }) {
                     onClick={() => handleSimulateScan("MISSING_ONE")}
                     disabled={auditRunning || !auditTrayId}
                   >
-                    ⚠ 1 Missing Tag
+                    1 Missing Tag
                   </BtnOutline>
                 </div>
                 <BtnOutline
@@ -780,7 +780,7 @@ export default function Rfid({ t }) {
                   onClick={() => handleSimulateScan("MISPLACED_FOREIGN")}
                   disabled={auditRunning || !auditTrayId}
                 >
-                  ⚠ Misplaced Foreign Item
+                  Misplaced Foreign Item
                 </BtnOutline>
               </div>
             </Card>
@@ -790,7 +790,7 @@ export default function Rfid({ t }) {
           <div>
             {!auditResult ? (
               <Card t={t} style={{ textAlign: "center", padding: "60px 20px" }}>
-                <div style={{ fontSize: 36, marginBottom: 12 }}>📡</div>
+                <div style={{ fontSize: 36, marginBottom: 12 }}></div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: t.text, marginBottom: 6 }}>
                   Ready to Reconcile Tray
                 </div>
@@ -824,8 +824,8 @@ export default function Rfid({ t }) {
                       }}
                     >
                       {auditResult.is_clean_audit
-                        ? "✓ TRAY AUDIT PASSED: 100% VERIFIED"
-                        : "⚠ DISCREPANCY DETECTED IN TRAY"}
+                        ? "TRAY AUDIT PASSED: 100% VERIFIED"
+                        : "DISCREPANCY DETECTED IN TRAY"}
                     </div>
                     <div style={{ fontSize: 12, color: t.textSub, marginTop: 3 }}>
                       Session #{auditResult.session_no} · {auditResult.tray?.name}
@@ -833,10 +833,7 @@ export default function Rfid({ t }) {
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>
-                      Verified: {auditResult.summary?.matched} / {auditResult.summary?.expected} items
-                    </div>
-                    <div style={{ fontSize: 12, color: "#2ecc71", fontWeight: 600 }}>
-                      Valuation: {fmt(auditResult.summary?.matched_valuation)}
+                      {auditResult.is_clean_audit ? "All items present" : `${auditResult.missing_items?.length || 0} missing`}
                     </div>
                   </div>
                 </div>
@@ -847,7 +844,7 @@ export default function Rfid({ t }) {
                 {auditResult.missing_items?.length > 0 && (
                   <Card t={t} style={{ border: `1.5px solid ${BRAND.pink}`, marginBottom: 16 }}>
                     <CardHeader
-                      title={`🔴 Missing Items (${auditResult.missing_items.length})`}
+                      title={`Missing Items (${auditResult.missing_items.length})`}
                       t={t}
                       actions={
                         <span style={{ color: BRAND.pink, fontWeight: 700, fontSize: 12 }}>
@@ -921,7 +918,7 @@ export default function Rfid({ t }) {
                 {/* 3. Matched & Verified Items */}
                 <Card t={t}>
                   <CardHeader
-                    title={`🟢 Matched & Verified Items (${auditResult.matched_items?.length || 0})`}
+                    title={`Matched & Verified Items (${auditResult.matched_items?.length || 0})`}
                     t={t}
                   />
                   {auditResult.matched_items?.length === 0 ? (
@@ -952,7 +949,7 @@ export default function Rfid({ t }) {
                                 {fmt(it.mrp)}
                               </td>
                               <td style={{ padding: "9px 10px", textAlign: "center", color: "#2ecc71", fontWeight: 700 }}>
-                                ✓ OK
+                                OK
                               </td>
                             </tr>
                           ))}
@@ -1255,7 +1252,7 @@ export default function Rfid({ t }) {
             t={t}
             actions={
               <BtnSm t={t} onClick={loadHistory}>
-                ↻ Refresh Logs
+                Refresh Logs
               </BtnSm>
             }
           />
@@ -1327,7 +1324,7 @@ export default function Rfid({ t }) {
                               fontWeight: 700,
                             }}
                           >
-                            {isClean ? "✓ PASS" : "⚠ ALERT"}
+                            {isClean ? "PASS" : "ALERT"}
                           </span>
                         </td>
                         <td style={{ padding: "10px 12px", textAlign: "right" }}>
@@ -1477,7 +1474,7 @@ export default function Rfid({ t }) {
               handleStartAuditForTray(selectedTrayData.tray);
             }}
           >
-            ⚡ Audit This Tray Now
+            Audit This Tray Now
           </BtnPrimary>
         </div>
 
@@ -1746,10 +1743,10 @@ export default function Rfid({ t }) {
                       }}
                     >
                       {it.result === "MATCHED"
-                        ? "✓ Matched"
+                        ? "Matched"
                         : it.result === "MISSING"
-                        ? "⚠ Missing"
-                        : "⚠ Misplaced"}
+                        ? "Missing"
+                        : "Misplaced"}
                     </span>
                   </td>
                 </tr>

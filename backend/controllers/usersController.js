@@ -1,11 +1,12 @@
 const bcrypt = require("bcrypt");
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // GET /api/users
 async function getAllUsers(req, res) {
-  const userBranchId = req.user?.branch_id || 1;
   const userId = req.user?.id || 1;
   try {
+    const bf = branchFilter(req, "u.branch_id");
     const [rows] = await db.query(
       `SELECT u.id, u.username, u.full_name, u.role,
               u.status, u.last_login, u.created_at, u.branch_id,
@@ -13,9 +14,9 @@ async function getAllUsers(req, res) {
               b.city AS branch_city
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
-       WHERE (u.branch_id IN (SELECT id FROM branches WHERE id = ? OR parent_branch_id = ? OR created_by = ?) OR u.branch_id = ? OR u.id = ?)
+       WHERE (${bf.sql} OR u.id = ?)
        ORDER BY u.created_at DESC`,
-      [userBranchId, userBranchId, userId, userBranchId, userId]
+      [...bf.params, userId]
     );
     res.json({ success: true, data: rows });
   } catch (err) {

@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // Generate unique product code
 async function generateProductCode() {
@@ -10,8 +11,8 @@ async function generateProductCode() {
 
 // GET /api/products/kpis
 async function getKpis(req, res) {
-  const branch_id = req.user.branch_id;
   try {
+    const bf = branchFilter(req, "branch_id");
     const [[kpis]] = await db.query(`
       SELECT
         COUNT(*)                                                       AS total_products,
@@ -21,8 +22,8 @@ async function getKpis(req, res) {
         SUM(gross_weight * stock_qty)                                 AS total_gold_weight,
         SUM(mrp * stock_qty)                                          AS total_stock_value
       FROM products
-      WHERE status = 'Active' AND branch_id = ?
-    `, [branch_id]);
+      WHERE status = 'Active' AND ${bf.sql}
+    `, bf.params);
     res.json({ success: true, data: kpis });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -31,7 +32,6 @@ async function getKpis(req, res) {
 
 // GET /api/products
 async function getAll(req, res) {
-  const branch_id = req.user.branch_id;
   try {
     const {
       search, category, jewellery_category,
@@ -40,8 +40,9 @@ async function getAll(req, res) {
     } = req.query;
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    const conditions = ["p.branch_id = ?"];
-    const params = [branch_id];
+    const bf = branchFilter(req, "p.branch_id");
+    const conditions = [bf.sql];
+    const params = [...bf.params];
 
     if (search) {
       conditions.push("(p.name LIKE ? OR p.sku LIKE ? OR p.product_code LIKE ? OR p.huid LIKE ?)");
@@ -69,12 +70,15 @@ async function getAll(req, res) {
          p.huid, p.hallmark_status, p.barcode,
          p.stock_qty, p.min_stock_qty, p.location,
          p.description, p.status, p.created_at,
+         COALESCE(b.name, 'Main Showroom') AS branch_name,
+         COALESCE(b.city, '') AS branch_city,
          CASE
            WHEN p.stock_qty = 0              THEN 'Out of Stock'
            WHEN p.stock_qty <= p.min_stock_qty THEN 'Low Stock'
            ELSE 'In Stock'
          END AS stock_status
        FROM products p
+       LEFT JOIN branches b ON p.branch_id = b.id
        ${whereClause}
        ORDER BY p.created_at DESC
        LIMIT ? OFFSET ?`,
@@ -101,11 +105,11 @@ async function getAll(req, res) {
 
 // GET /api/products/:id
 async function getById(req, res) {
-  const branch_id = req.user.branch_id;
   try {
+    const bf = branchFilter(req, "branch_id");
     const [rows] = await db.query(
-      "SELECT * FROM products WHERE id = ? AND branch_id = ?",
-      [req.params.id, branch_id]
+      `SELECT * FROM products WHERE id = ? AND ${bf.sql}`,
+      [req.params.id, ...bf.params]
     );
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: "Product not found" });
@@ -134,7 +138,8 @@ async function create(req, res) {
     supplier_id, description, stones = [],
   } = req.body;
 
-  // Required field checks
+  const targetBranchId = req.body.branch_id || req.branchId || req.user?.branch_id || 1;
+
   if (!name || !name.trim()) {
     return res.status(400).json({ success: false, message: "Product name is required." });
   }
@@ -164,14 +169,14 @@ async function create(req, res) {
   try {
     await conn.beginTransaction();
 
-    // Check duplicate SKU — only within same branch
+    // Check duplicate SKU — within target branch
     const [existing] = await conn.query(
       "SELECT id FROM products WHERE sku = ? AND branch_id = ?",
-      [sku.trim().toUpperCase(), req.user.branch_id]
+      [sku.trim().toUpperCase(), targetBranchId]
     );
     if (existing.length > 0) {
       await conn.rollback();
-      return res.status(409).json({ success: false, message: "A product with this SKU already exists." });
+      return res.status(409).json({ success: false, message: "A product with this SKU already exists in this branch." });
     }
 
     const product_code = await generateProductCode();
@@ -187,7 +192,7 @@ async function create(req, res) {
           supplier_id, description, created_by)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        req.user.branch_id,
+        targetBranchId,
         product_code,
         name.trim(),
         sku.trim().toUpperCase(),
@@ -245,7 +250,7 @@ async function create(req, res) {
     res.status(201).json({
       success: true,
       message: "Product created successfully.",
-      data: { id: productId, product_code, sku: sku.trim().toUpperCase() },
+      data: { id: productId, product_code, sku: sku.trim().toUpperCase(), branch_id: targetBranchId },
     });
   } catch (err) {
     await conn.rollback();
@@ -257,7 +262,7 @@ async function create(req, res) {
 
 // PUT /api/products/:id
 async function update(req, res) {
-  const branch_id = req.user.branch_id;
+  const targetBranchId = req.body.branch_id || req.branchId || req.user?.branch_id || 1;
   const {
     name, sku, jewellery_category, product_category, metal_type, purity,
     gross_weight, stone_weight, net_weight,
@@ -268,11 +273,12 @@ async function update(req, res) {
   } = req.body;
 
   try {
+    const bf = branchFilter(req, "branch_id");
     // Check duplicate SKU within same branch (exclude self)
     if (sku) {
       const [existing] = await db.query(
-        "SELECT id FROM products WHERE sku = ? AND id != ? AND branch_id = ?",
-        [sku.trim().toUpperCase(), req.params.id, branch_id]
+        `SELECT id FROM products WHERE sku = ? AND id != ? AND ${bf.sql}`,
+        [sku.trim().toUpperCase(), req.params.id, ...bf.params]
       );
       if (existing.length > 0) {
         return res.status(409).json({ success: false, message: "Another product with this SKU already exists." });
@@ -291,7 +297,7 @@ async function update(req, res) {
          stock_qty = ?, min_stock_qty = ?, location = ?,
          supplier_id = ?, description = ?, status = ?,
          updated_at = NOW()
-       WHERE id = ? AND branch_id = ?`,
+       WHERE id = ? AND ${bf.sql}`,
       [
         name?.trim(),
         sku?.trim().toUpperCase(),
@@ -318,7 +324,7 @@ async function update(req, res) {
         description || null,
         status || "Active",
         req.params.id,
-        branch_id,
+        ...bf.params,
       ]
     );
 
@@ -330,14 +336,14 @@ async function update(req, res) {
 
 // DELETE /api/products/:id
 async function remove(req, res) {
-  const branch_id = req.user.branch_id;
   try {
+    const bf = branchFilter(req, "branch_id");
     const [result] = await db.query(
-      "DELETE FROM products WHERE id = ? AND branch_id = ?",
-      [req.params.id, branch_id]
+      `DELETE FROM products WHERE id = ? AND ${bf.sql}`,
+      [req.params.id, ...bf.params]
     );
     if (result.affectedRows === 0) {
-      return res.status(404).json({ success: false, message: "Product not found." });
+      return res.status(404).json({ success: false, message: "Product not found or access denied." });
     }
     res.json({ success: true, message: "Product deleted successfully." });
   } catch (err) {
@@ -347,21 +353,21 @@ async function remove(req, res) {
 
 // GET /api/products/search?q=   (for billing dropdown)
 async function search(req, res) {
-  const branch_id = req.user.branch_id;
   try {
     const { q } = req.query;
     if (!q || q.length < 2) {
       return res.json({ success: true, data: [] });
     }
     const s = `%${q}%`;
+    const bf = branchFilter(req, "branch_id");
     const [rows] = await db.query(
       `SELECT id, product_code, name, sku, purity, gross_weight, net_weight,
               making_charges_type, making_charges, mrp, stock_qty, huid
        FROM products
-       WHERE status = 'Active' AND stock_qty > 0 AND branch_id = ?
+       WHERE status = 'Active' AND stock_qty > 0 AND ${bf.sql}
          AND (name LIKE ? OR sku LIKE ? OR product_code LIKE ?)
        LIMIT 10`,
-      [branch_id, s, s, s]
+      [...bf.params, s, s, s]
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -371,15 +377,15 @@ async function search(req, res) {
 
 // PATCH /api/products/:id/stock  (adjust stock quantity)
 async function adjustStock(req, res) {
-  const branch_id = req.user.branch_id;
-  const { adjustment, reason } = req.body;
+  const { adjustment } = req.body;
   if (!adjustment || isNaN(adjustment)) {
     return res.status(400).json({ success: false, message: "Adjustment value is required." });
   }
   try {
+    const bf = branchFilter(req, "branch_id");
     await db.query(
-      "UPDATE products SET stock_qty = GREATEST(0, stock_qty + ?), updated_at = NOW() WHERE id = ? AND branch_id = ?",
-      [parseInt(adjustment), req.params.id, branch_id]
+      `UPDATE products SET stock_qty = GREATEST(0, stock_qty + ?), updated_at = NOW() WHERE id = ? AND ${bf.sql}`,
+      [parseInt(adjustment), req.params.id, ...bf.params]
     );
     res.json({ success: true, message: `Stock adjusted by ${adjustment}.` });
   } catch (err) {

@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS
@@ -18,6 +19,7 @@ const STOCK_STATUS_SQL = `
 
 async function getKpis(req, res) {
   try {
+    const bf = branchFilter(req);
     const [[kpis]] = await db.query(`
       SELECT
         COUNT(*) AS total_products,
@@ -44,7 +46,8 @@ async function getKpis(req, res) {
         ) AS hallmarked
 
       FROM products
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     res.json({
       success: true,
@@ -73,8 +76,9 @@ async function getHallmarkList(req, res) {
       purity,
     } = req.query;
 
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req, "p.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (search) {
       where += `

@@ -16,8 +16,8 @@ const Footer = () => {
 
             <a href="/" className="inline-flex items-center gap-3">
 
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#c18a00]">
-                <span className="text-xl">💎</span>
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-tr from-[#9b6f00] to-[#d49900] text-white font-serif font-bold text-xl">
+                C
               </div>
 
               <div className="leading-none">

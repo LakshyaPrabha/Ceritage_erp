@@ -28,10 +28,13 @@ class MetalsDevProvider extends BaseMetalProvider {
    * Fetch current metal rates from Metals.Dev
    */
   async fetchRates() {
+    require("dotenv").config();
     require("dotenv").config({ path: require("path").join(__dirname, "../../.env") });
+    require("dotenv").config({ path: require("path").join(__dirname, "../.env") });
+
     const apiKey = this.apiKey || process.env.METALS_DEV_API_KEY || "";
     if (!apiKey) {
-      throw new Error("METALS_DEV_API_KEY is not configured in backend/.env.");
+      throw new Error("METALS_DEV_API_KEY is not configured. Please paste your free key in .env");
     }
 
     const url = new URL(this.baseUrl);

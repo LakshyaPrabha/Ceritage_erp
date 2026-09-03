@@ -1,13 +1,13 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 let tablesReady = false;
-
-
 
 // ── GET /api/employees/kpis ───────────────────────────────────────────────────
 exports.getKpis = async (req, res) => {
   try {
     await ensureTables();
+    const bf = branchFilter(req);
 
     const [[kpis]] = await db.query(`
       SELECT
@@ -15,20 +15,25 @@ exports.getKpis = async (req, res) => {
         COUNT(CASE WHEN status = 'Active' THEN 1 END) AS active_employees,
         COALESCE(SUM(salary), 0) AS monthly_payroll
       FROM employees
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     const [[attKpis]] = await db.query(`
       SELECT
-        COUNT(CASE WHEN status = 'Present' THEN 1 END) AS present_today,
-        COUNT(CASE WHEN status = 'On Leave' THEN 1 END) AS on_leave_today,
-        COUNT(CASE WHEN status = 'Absent' THEN 1 END) AS absent_today
-      FROM attendance
-      WHERE attendance_date = CURDATE()
-    `);
+        COUNT(CASE WHEN a.status = 'Present' THEN 1 END) AS present_today,
+        COUNT(CASE WHEN a.status = 'On Leave' THEN 1 END) AS on_leave_today,
+        COUNT(CASE WHEN a.status = 'Absent' THEN 1 END) AS absent_today
+      FROM attendance a
+      JOIN employees e ON a.employee_id = e.id
+      WHERE a.attendance_date = CURDATE() AND ${branchFilter(req, 'e.branch_id').sql}
+    `, branchFilter(req, 'e.branch_id').params);
 
     const [[leaveKpis]] = await db.query(`
-      SELECT COUNT(*) AS pending_leaves FROM leaves WHERE status = 'PENDING'
-    `);
+      SELECT COUNT(*) AS pending_leaves
+      FROM leaves l
+      JOIN employees e ON l.employee_id = e.id
+      WHERE l.status = 'PENDING' AND ${branchFilter(req, 'e.branch_id').sql}
+    `, branchFilter(req, 'e.branch_id').params);
 
     return res.json({
       success: true,
@@ -52,9 +57,10 @@ exports.getAll = async (req, res) => {
   try {
     await ensureTables();
     const { status, role, search } = req.query;
+    const bf = branchFilter(req, "e.branch_id");
 
-    let where = "WHERE 1=1";
-    const params = [];
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (status && status !== "ALL") {
       where += " AND e.status = ?";

@@ -150,7 +150,7 @@ export default function Reports({ t }) {
                Clear Demo Data
             </BtnOutline>
             <BtnOutline t={t} onClick={loadReport}>
-              ↻ Refresh
+              Refresh
             </BtnOutline>
             <BtnPrimary onClick={() => setPrintModal(true)}>
                Print Executive Report
@@ -558,7 +558,7 @@ export default function Reports({ t }) {
             <BtnOutline t={t} onClick={() => setPrintModal(false)}>
               Close
             </BtnOutline>
-            <BtnPrimary onClick={() => window.print()}>🖨 Print Executive Report</BtnPrimary>
+            <BtnPrimary onClick={() => window.print()}>Print Executive Report</BtnPrimary>
           </>
         }
       >

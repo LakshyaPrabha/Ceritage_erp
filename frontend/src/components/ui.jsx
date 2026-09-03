@@ -1,4 +1,4 @@
-﻿// ─── Ceritage ERP — Shared UI Components ──────────────────
+// ─── Ceritage ERP — Shared UI Components ──────────────────
 // BRAND directly defined here — no circular imports
 
 export const BRAND = {
@@ -62,19 +62,62 @@ export function CardHeader({ title, actions, t }) {
 }
 
 // ── StatCard ───────────────────────────────────────────────
-export function StatCard({ label, value = "—", change, changeUp, color, t }) {
+export function StatCard({ label, value = "—", change, changeUp, color, t, style = {} }) {
   const c = color || BRAND.blue;
+  const valStr = String(value != null ? value : "—");
+  const isExtraLong = valStr.length > 13;
+  const isLong = valStr.length > 9;
+  const fontSize = isExtraLong ? "16px" : isLong ? "19px" : "23px";
+
   return (
-    <div style={{ background:t.card, border:`1px solid ${t.borderDash}`,
-      borderTop:`3px solid ${c}`, borderRadius:12, padding:"16px",
-      boxShadow:t.cardShadow }}>
-      <div style={{ fontSize:24, fontWeight:800, color:c, letterSpacing:"-0.5px", lineHeight:1.1 }}>
+    <div style={{
+      background: t.card,
+      border: `1px solid ${t.borderDash}`,
+      borderTop: `3px solid ${c}`,
+      borderRadius: 12,
+      padding: "15px 16px",
+      boxShadow: t.cardShadow,
+      minWidth: 0,
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "space-between",
+      ...style
+    }}>
+      <div
+        title={valStr}
+        style={{
+          fontSize,
+          fontWeight: 800,
+          color: c,
+          letterSpacing: "-0.3px",
+          lineHeight: 1.2,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          maxWidth: "100%",
+        }}
+      >
         {value}
       </div>
-      <div style={{ fontSize:12, color:t.textSub, margin:"5px 0 3px" }}>{label}</div>
+      <div style={{
+        fontSize: 12,
+        color: t.textSub,
+        marginTop: 6,
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis"
+      }}>
+        {label}
+      </div>
       {change && (
-        <div style={{ fontSize:11, color:changeUp ? "#2ecc71" : "#e74c3c" }}>
-          {changeUp ? "▲" : "▼"} {change}
+        <div style={{
+          fontSize: 11,
+          color: changeUp ? "#2ecc71" : "#e74c3c",
+          marginTop: 4,
+          fontWeight: 700
+        }}>
+          {changeUp ? "+ " : "- "} {change}
         </div>
       )}
     </div>

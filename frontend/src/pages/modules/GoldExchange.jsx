@@ -201,7 +201,7 @@ export default function GoldExchange({ t }) {
         t={t}
         actions={
           <div style={{ display: "flex", gap: 8 }}>
-            <BtnOutline t={t} onClick={() => setTab("melt")}>🔥 Melting Calculator</BtnOutline>
+            <BtnOutline t={t} onClick={() => setTab("melt")}>Melting Calculator</BtnOutline>
             <BtnPrimary onClick={() => setTab("calc")}>+ New Exchange Valuation</BtnPrimary>
           </div>
         }
@@ -209,13 +209,13 @@ export default function GoldExchange({ t }) {
 
       {successMsg && (
         <div style={{ background: "rgba(46,204,113,0.15)", border: "1px solid #2ecc71", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#2ecc71", fontSize: 13, fontWeight: 600 }}>
-          ✓ {successMsg}
+          {successMsg}
         </div>
       )}
 
       {error && (
-        <div style={{ background: "rgba(231,76,60,0.15)", border: "1px solid #e74c3c", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#e74c3c", fontSize: 13 }}>
-          ⚠️ {error}
+        <div style={{ background: "rgba(231,76,60,0.15)", border: "1px solid #e74c3c", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#e74c3c", fontSize: 13, fontWeight: 600 }}>
+          {error}
         </div>
       )}
 
@@ -283,7 +283,7 @@ export default function GoldExchange({ t }) {
               </FormGrid>
               <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
                 <BtnPrimary type="submit" disabled={loading} style={{ flex: 1 }}>
-                  {loading ? "Recording..." : "✓ Confirm & Issue Exchange Voucher"}
+                  {loading ? "Recording..." : "Confirm & Issue Exchange Voucher"}
                 </BtnPrimary>
               </div>
             </form>

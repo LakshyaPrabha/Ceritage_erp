@@ -348,7 +348,7 @@ export default function Accounting({ t }) {
             t={t}
             actions={
               <span style={{ padding: "4px 10px", borderRadius: 6, background: trialBalance.totals?.balanced ? "#2ecc71" : "#e74c3c", color: "#fff", fontSize: 12, fontWeight: 700 }}>
-                {trialBalance.totals?.balanced ? "✓ Trial Balance Balanced" : "⚠ Unbalanced"}
+                {trialBalance.totals?.balanced ? "Trial Balance Balanced" : "Unbalanced"}
               </span>
             }
           />

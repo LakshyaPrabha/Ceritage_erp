@@ -1,7 +1,9 @@
 const jwt = require("jsonwebtoken");
 
+const { getBranchScope } = require("../utils/branchScope");
+
 // Verify JWT token
-function verifyToken(req, res, next) {
+async function verifyToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1]; // Bearer <token>
 
@@ -13,14 +15,14 @@ function verifyToken(req, res, next) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded; // { id, username, role, branch_id, permissions }
 
-    // Multi-Branch Context:
-    // Admin can filter by x-branch-id header or view all (null).
-    // Non-admin is strictly bound to their assigned branch_id.
-    if (decoded.role === "admin") {
-      req.branchId = req.headers["x-branch-id"] ? parseInt(req.headers["x-branch-id"]) : null;
-    } else {
-      req.branchId = decoded.branch_id || 1;
-    }
+    // Multi-Branch Context Hierarchy Resolution:
+    // Resolves active branch ID and array of allowed branch IDs
+    // (Main branch includes itself + all its sub-branches; Sub-branch strictly includes itself)
+    const scope = await getBranchScope(req);
+    req.branchId = scope.activeBranchId;
+    req.isMainBranch = scope.isMain;
+    req.allowedBranchIds = scope.allowedBranchIds;
+    req.branchScope = scope;
 
     next();
   } catch (err) {

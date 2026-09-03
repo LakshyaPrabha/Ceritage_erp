@@ -226,7 +226,7 @@ export default function Gst({ t }) {
             <option value="2026-06">June 2026</option>
           </Select>
           <BtnPrimary onClick={runGstValidationPipeline} disabled={validating}>
-            {validating ? `Validating Engine (${progress}%)...` : "⚡ GENERATE COMPLETE GST REPORT"}
+            {validating ? `Validating Engine (${progress}%)...` : "GENERATE COMPLETE GST REPORT"}
           </BtnPrimary>
         </div>
       </div>
@@ -391,7 +391,7 @@ export default function Gst({ t }) {
           <CardHeader
             title={`Forensic GST Anomalies & Errors (${errorsList.length} Items Detected)`}
             t={t}
-            actions={<BtnOutline t={t} onClick={loadErrors}>↻ Refresh Error List</BtnOutline>}
+            actions={<BtnOutline t={t} onClick={loadErrors}>Refresh Error List</BtnOutline>}
           />
           <DataTable
             columns={["Severity", "Error Code", "Invoice No", "Customer / Party", "Taxable Value", "Recorded Tax", "Expected Tax", "Difference", "Action"]}
@@ -489,7 +489,7 @@ export default function Gst({ t }) {
           <CardHeader
             title="GSTR-2B Auto-Reconciliation & Supplier Matching"
             t={t}
-            actions={<BtnOutline t={t} onClick={loadGstr2b}>↻ Match GSTR-2B</BtnOutline>}
+            actions={<BtnOutline t={t} onClick={loadGstr2b}>Match GSTR-2B</BtnOutline>}
           />
           <DataTable
             columns={["Supplier Name", "Supplier GSTIN", "Invoice No", "Invoice Date", "Books GST", "2B GST", "Difference", "Reconciliation Status"]}
@@ -559,7 +559,7 @@ export default function Gst({ t }) {
               background: "rgba(59,85,230,0.06)", border: "1px solid rgba(59,85,230,0.2)",
               borderRadius: 12, padding: 20, marginBottom: 20, lineHeight: 1.6
             }}>
-              <strong style={{ fontSize: 15, color: BRAND.blue }}>📜 22-Report CA Statutory Package</strong>
+              <strong style={{ fontSize: 15, color: BRAND.blue }}>22-Report CA Statutory Package</strong>
               <p style={{ fontSize: 13, color: t.textSub, margin: "6px 0 12px 0" }}>
                 Generate an end-to-end verified GST file bundle for your Tax Auditor or CA containing Sales Registers, Purchase GRN ITC, GSTR-2B Mismatches, and HSN 7113 Weight reconciliations.
               </p>
@@ -589,7 +589,7 @@ export default function Gst({ t }) {
               onClick={() => handleRecalculate(selectedError)}
               disabled={recalculating}
             >
-              {recalculating ? "Recalculating..." : "⚡ Recalculate & Auto-Fix Tax"}
+              {recalculating ? "Recalculating..." : "Recalculate & Auto-Fix Tax"}
             </BtnPrimary>
           </>
         }

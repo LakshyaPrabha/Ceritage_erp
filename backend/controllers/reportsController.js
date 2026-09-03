@@ -1,21 +1,26 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // ── GET /api/reports/kpis ─────────────────────────────────────────────────────
 exports.getExecutiveKpis = async (req, res) => {
   try {
+    const bf = branchFilter(req);
+
     const [[salesStats]] = await db.query(`
       SELECT 
         COUNT(*) AS total_bills,
         COALESCE(SUM(grand_total), 0) AS net_sales
       FROM invoices
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     const [[purchaseStats]] = await db.query(`
       SELECT 
         COUNT(*) AS total_pos,
         COALESCE(SUM(total), 0) AS total_purchases
       FROM purchase_orders
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     const [[invStats]] = await db.query(`
       SELECT 
@@ -23,21 +28,23 @@ exports.getExecutiveKpis = async (req, res) => {
         COALESCE(SUM(gross_weight * GREATEST(1, stock_qty)), 0) AS total_weight_g,
         COALESCE(SUM(mrp * GREATEST(1, stock_qty)), 0) AS stock_valuation
       FROM products
-      WHERE status = 'Active'
-    `);
+      WHERE status = 'Active' AND ${bf.sql}
+    `, bf.params);
 
     const [[custStats]] = await db.query(`
       SELECT 
         COUNT(*) AS total_customers,
         COALESCE(SUM(balance_due), 0) AS total_receivables
       FROM customers
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     const [[supStats]] = await db.query(`
       SELECT 
         COALESCE(SUM(outstanding), 0) AS total_payables
       FROM suppliers
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     return res.json({
       success: true,
@@ -62,8 +69,9 @@ exports.getExecutiveKpis = async (req, res) => {
 exports.getSalesReport = async (req, res) => {
   try {
     const { from_date, to_date } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req);
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (from_date) {
       where += " AND DATE(invoice_date) >= ?";
@@ -101,8 +109,9 @@ exports.getSalesReport = async (req, res) => {
 exports.getPurchaseReport = async (req, res) => {
   try {
     const { from_date, to_date } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req, "po.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (from_date) {
       where += " AND DATE(po.purchase_date) >= ?";
@@ -137,6 +146,7 @@ exports.getPurchaseReport = async (req, res) => {
 // ── GET /api/reports/inventory ────────────────────────────────────────────────
 exports.getInventoryReport = async (req, res) => {
   try {
+    const bf = branchFilter(req);
     const [rows] = await db.query(`
       SELECT 
         COALESCE(jewellery_category, product_category, 'Jewelry') AS category,
@@ -147,10 +157,10 @@ exports.getInventoryReport = async (req, res) => {
         COUNT(CASE WHEN stock_qty > 0 THEN 1 END) AS in_stock_count,
         COUNT(CASE WHEN stock_qty <= min_stock_qty AND stock_qty > 0 THEN 1 END) AS low_stock_count
       FROM products
-      WHERE status = 'Active'
+      WHERE status = 'Active' AND ${bf.sql}
       GROUP BY category
       ORDER BY total_valuation DESC
-    `);
+    `, bf.params);
 
     return res.json({ success: true, data: rows });
   } catch (err) {
@@ -161,6 +171,7 @@ exports.getInventoryReport = async (req, res) => {
 // ── GET /api/reports/customers ────────────────────────────────────────────────
 exports.getCustomerReport = async (req, res) => {
   try {
+    const bf = branchFilter(req, "c.branch_id");
     const [rows] = await db.query(`
       SELECT 
         c.id,
@@ -174,9 +185,10 @@ exports.getCustomerReport = async (req, res) => {
         c.kyc_status,
         c.created_at
       FROM customers c
+      WHERE ${bf.sql}
       ORDER BY c.total_purchases DESC
       LIMIT 100
-    `);
+    `, bf.params);
 
     return res.json({ success: true, data: rows });
   } catch (err) {
@@ -187,6 +199,7 @@ exports.getCustomerReport = async (req, res) => {
 // ── GET /api/reports/suppliers ────────────────────────────────────────────────
 exports.getSupplierReport = async (req, res) => {
   try {
+    const bf = branchFilter(req, "s.branch_id");
     const [rows] = await db.query(`
       SELECT 
         s.id,
@@ -200,8 +213,9 @@ exports.getSupplierReport = async (req, res) => {
         s.total_purchased,
         s.status
       FROM suppliers s
+      WHERE ${bf.sql}
       ORDER BY s.total_purchased DESC
-    `);
+    `, bf.params);
 
     return res.json({ success: true, data: rows });
   } catch (err) {
@@ -212,25 +226,28 @@ exports.getSupplierReport = async (req, res) => {
 // ── GET /api/reports/profit ───────────────────────────────────────────────────
 exports.getProfitReport = async (req, res) => {
   try {
+    const bf = branchFilter(req);
     const [salesMonthly] = await db.query(`
       SELECT 
         DATE_FORMAT(invoice_date, '%Y-%m') AS month_key,
         COALESCE(SUM(grand_total), 0) AS revenue
       FROM invoices
+      WHERE ${bf.sql}
       GROUP BY month_key
       ORDER BY month_key DESC
       LIMIT 12
-    `);
+    `, bf.params);
 
     const [purchaseMonthly] = await db.query(`
       SELECT 
         DATE_FORMAT(purchase_date, '%Y-%m') AS month_key,
         COALESCE(SUM(total), 0) AS cogs
       FROM purchase_orders
+      WHERE ${bf.sql}
       GROUP BY month_key
       ORDER BY month_key DESC
       LIMIT 12
-    `);
+    `, bf.params);
 
     const purchaseMap = {};
     purchaseMonthly.forEach((p) => {
@@ -265,6 +282,7 @@ exports.getProfitReport = async (req, res) => {
 // ── GET /api/reports/gst ──────────────────────────────────────────────────────
 exports.getGstReport = async (req, res) => {
   try {
+    const bf = branchFilter(req);
     const [rows] = await db.query(`
       SELECT 
         DATE_FORMAT(invoice_date, '%Y-%m') AS tax_period,
@@ -274,10 +292,11 @@ exports.getGstReport = async (req, res) => {
         COALESCE(SUM(cgst), 0) AS cgst_1_5_pct,
         COALESCE(SUM(sgst), 0) AS sgst_1_5_pct
       FROM invoices
+      WHERE ${bf.sql}
       GROUP BY tax_period
       ORDER BY tax_period DESC
       LIMIT 12
-    `);
+    `, bf.params);
 
     return res.json({ success: true, data: rows });
   } catch (err) {

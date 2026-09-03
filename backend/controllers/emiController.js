@@ -1,20 +1,27 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // GET /api/emi/kpis
 async function getKpis(req, res) {
   try {
+    const bf = branchFilter(req);
     const [[plans]] = await db.query(
       `SELECT
          COUNT(CASE WHEN status = 'Active' THEN 1 END) AS active_plans,
          COALESCE(SUM(CASE WHEN status = 'Active' THEN remaining_amount ELSE 0 END), 0) AS total_emi_outstanding
-       FROM emi_plans`
+       FROM emi_plans
+       WHERE ${bf.sql}`,
+      bf.params
     );
 
     const [[installments]] = await db.query(
       `SELECT
-         COALESCE(SUM(CASE WHEN due_date = CURDATE() AND status IN ('PENDING', 'PARTIAL') THEN (amount_due - amount_paid) ELSE 0 END), 0) AS dues_today,
-         COUNT(DISTINCT CASE WHEN due_date < CURDATE() AND status IN ('PENDING', 'PARTIAL') THEN plan_id END) AS overdue_plans
-       FROM emi_installments`
+         COALESCE(SUM(CASE WHEN ei.due_date = CURDATE() AND ei.status IN ('PENDING', 'PARTIAL') THEN (ei.amount_due - ei.amount_paid) ELSE 0 END), 0) AS dues_today,
+         COUNT(DISTINCT CASE WHEN ei.due_date < CURDATE() AND ei.status IN ('PENDING', 'PARTIAL') THEN ei.plan_id END) AS overdue_plans
+       FROM emi_installments ei
+       JOIN emi_plans ep ON ei.plan_id = ep.id
+       WHERE ${branchFilter(req, 'ep.branch_id').sql}`,
+      branchFilter(req, 'ep.branch_id').params
     );
 
     const [[credits]] = await db.query(
@@ -22,7 +29,9 @@ async function getKpis(req, res) {
          COUNT(CASE WHEN (payment_mode = 'Credit' OR status IN ('Credit', 'Partial')) AND (grand_total - COALESCE(paid_amount,0)) > 0 THEN 1 END) AS active_credits,
          COUNT(CASE WHEN (payment_mode = 'Credit' OR status IN ('Credit', 'Partial')) AND (grand_total - COALESCE(paid_amount,0)) > 0 AND credit_due_date < CURDATE() THEN 1 END) AS credit_overdue,
          COALESCE(SUM(CASE WHEN (payment_mode = 'Credit' OR status IN ('Credit', 'Partial')) THEN (grand_total - COALESCE(paid_amount,0)) ELSE 0 END), 0) AS total_credit_outstanding
-       FROM invoices`
+       FROM invoices
+       WHERE ${bf.sql}`,
+      bf.params
     );
 
     res.json({
@@ -45,6 +54,7 @@ async function getKpis(req, res) {
 // GET /api/emi/credit-sales — list credit invoices with calculated server aging
 async function getCreditSales(req, res) {
   try {
+    const bf = branchFilter(req, "i.branch_id");
     const [rows] = await db.query(
       `SELECT i.id, i.invoice_no, i.invoice_date, i.credit_days, i.credit_due_date,
               i.grand_total, i.paid_amount, (i.grand_total - COALESCE(i.paid_amount, 0)) AS balance_due,
@@ -56,7 +66,9 @@ async function getCreditSales(req, res) {
        LEFT JOIN customers c ON i.customer_id = c.id
        WHERE (i.payment_mode = 'Credit' OR i.status IN ('Credit', 'Partial'))
          AND (i.grand_total - COALESCE(i.paid_amount, 0)) > 0
-       ORDER BY i.credit_due_date ASC, i.invoice_date ASC`
+         AND ${bf.sql}
+       ORDER BY i.credit_due_date ASC, i.invoice_date ASC`,
+      bf.params
     );
 
     const enriched = rows.map(r => {

@@ -358,7 +358,7 @@ export default function Emi({ t }) {
             title="Credit Sales & Aging Register"
             t={t}
             actions={<>
-              <BtnOutline t={t} onClick={loadTabData}>↻ Refresh</BtnOutline>
+              <BtnOutline t={t} onClick={loadTabData}>Refresh</BtnOutline>
             </>}
           />
           <DataTable
@@ -415,7 +415,7 @@ export default function Emi({ t }) {
                   color:t.inputColor, outline:"none", fontFamily:"inherit", width:230
                 }}
               />
-              <BtnOutline t={t} onClick={loadTabData}>↻ Refresh</BtnOutline>
+              <BtnOutline t={t} onClick={loadTabData}>Refresh</BtnOutline>
               <BtnPrimary onClick={openNewPlanModal}>+ New Plan</BtnPrimary>
             </>}
           />
@@ -486,7 +486,7 @@ export default function Emi({ t }) {
                 Prioritized automatically: Overdue dues first, followed by today's dues and upcoming installments.
               </div>
             </div>
-            <BtnOutline t={t} onClick={loadTabData}>↻ Refresh Reminders</BtnOutline>
+            <BtnOutline t={t} onClick={loadTabData}>Refresh Reminders</BtnOutline>
           </div>
 
           <Card t={t}>
@@ -514,7 +514,7 @@ export default function Emi({ t }) {
                     background: rem.urgency === "OVERDUE" ? "#e74c3c22" : (rem.urgency === "DUE_TODAY" ? "#f39c1222" : "#2ecc7122"),
                     color: rem.urgency === "OVERDUE" ? BRAND.pink : (rem.urgency === "DUE_TODAY" ? "#d35400" : "#27ae60")
                   }}>
-                    {rem.urgency === "OVERDUE" ? `⚠ Overdue (${rem.days_overdue}d)` : (rem.urgency === "DUE_TODAY" ? "⚡ Due Today" : "Upcoming")}
+                    {rem.urgency === "OVERDUE" ? `Overdue (${rem.days_overdue}d)` : (rem.urgency === "DUE_TODAY" ? "Due Today" : "Upcoming")}
                   </span>
                 ),
                 "WhatsApp Action": (
@@ -542,7 +542,7 @@ export default function Emi({ t }) {
             title="EMI Installment Payment Receipts"
             t={t}
             actions={<>
-              <BtnOutline t={t} onClick={loadTabData}>↻ Refresh</BtnOutline>
+              <BtnOutline t={t} onClick={loadTabData}>Refresh</BtnOutline>
             </>}
           />
           <DataTable
@@ -743,7 +743,7 @@ export default function Emi({ t }) {
               borderRadius:10, padding:14, marginTop:14
             }}>
               <div style={{ fontSize:12, fontWeight:700, color:BRAND.purple, marginBottom:8 }}>
-                📊 Deterministic EMI Calculation Breakdown
+                Deterministic EMI Calculation Breakdown
               </div>
               <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(130px, 1fr))", gap:10 }}>
                 <div>

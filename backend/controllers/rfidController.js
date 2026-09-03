@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 let tablesInitialized = false;
 
@@ -49,16 +50,12 @@ async function ensureTables() {
         id INT AUTO_INCREMENT PRIMARY KEY,
         rfid_epc VARCHAR(100) UNIQUE NOT NULL,
         product_id INT NULL,
-        sku VARCHAR(50) NULL,
-        huid VARCHAR(20) NULL,
-        tag_type ENUM('JEWELRY_TAG', 'TRAY_TAG', 'BOX_TAG') DEFAULT 'JEWELRY_TAG',
-        status ENUM('ACTIVE', 'DAMAGED', 'DECOMMISSIONED') DEFAULT 'ACTIVE',
+        tag_type ENUM('JEWELRY_TAG', 'TRAY_TAG', 'STAFF_BADGE') DEFAULT 'JEWELRY_TAG',
+        status ENUM('ACTIVE', 'INACTIVE', 'DECOMMISSIONED') DEFAULT 'ACTIVE',
         paired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        paired_by VARCHAR(100) DEFAULT 'Admin',
+        last_scanned_at TIMESTAMP NULL,
         FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
-        INDEX idx_rfid_prod (product_id),
-        INDEX idx_rfid_sku (sku),
-        INDEX idx_rfid_huid (huid)
+        INDEX idx_rfid_epc (rfid_epc)
       )
     `);
 
@@ -67,23 +64,21 @@ async function ensureTables() {
       CREATE TABLE IF NOT EXISTS rfid_audit_sessions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         session_no VARCHAR(30) UNIQUE NOT NULL,
-        branch_id INT DEFAULT 1,
         tray_id INT NULL,
-        tray_code VARCHAR(30) NULL,
-        audit_type ENUM('TRAY_AUDIT', 'COUNTER_AUDIT', 'VAULT_AUDIT', 'DAY_OPENING', 'DAY_CLOSING', 'SPOT_CHECK') DEFAULT 'TRAY_AUDIT',
-        auditor_name VARCHAR(100) NOT NULL DEFAULT 'Admin',
-        expected_count INT NOT NULL DEFAULT 0,
-        scanned_count INT NOT NULL DEFAULT 0,
+        branch_id INT DEFAULT 1,
+        counter VARCHAR(100) NULL,
+        audit_type ENUM('SINGLE_TRAY', 'FULL_COUNTER', 'VAULT_AUDIT', 'STORE_CLOSING') DEFAULT 'SINGLE_TRAY',
+        total_expected INT NOT NULL DEFAULT 0,
+        total_scanned INT NOT NULL DEFAULT 0,
         matched_count INT NOT NULL DEFAULT 0,
         missing_count INT NOT NULL DEFAULT 0,
         misplaced_count INT NOT NULL DEFAULT 0,
-        total_weight_g DECIMAL(10,3) DEFAULT 0.000,
-        total_valuation DECIMAL(14,2) DEFAULT 0.00,
-        status ENUM('COMPLETED', 'DISCREPANCY_FLAGGED', 'IN_PROGRESS') DEFAULT 'COMPLETED',
-        remarks TEXT NULL,
+        unknown_count INT NOT NULL DEFAULT 0,
+        status ENUM('IN_PROGRESS', 'COMPLETED', 'DISCREPANCY_ALERT') DEFAULT 'COMPLETED',
+        notes TEXT NULL,
+        audited_by VARCHAR(100) DEFAULT 'Staff',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_audit_created (created_at),
-        INDEX idx_audit_tray (tray_id)
+        FOREIGN KEY (tray_id) REFERENCES showcase_trays(id) ON DELETE SET NULL
       )
     `);
 
@@ -145,8 +140,8 @@ async function ensureTables() {
           // Generate simulated EPC tag for product if none exists
           const epc = `EPC-${p.sku ? p.sku.replace(/[^A-Za-z0-9]/g, '') : 'PRD'}-${p.id}`.toUpperCase();
           await db.query(
-            "INSERT IGNORE INTO rfid_tags (rfid_epc, product_id, sku, huid, tag_type, paired_by) VALUES (?, ?, ?, ?, 'JEWELRY_TAG', 'System Seed')",
-            [epc, p.id, p.sku, p.huid]
+            "INSERT IGNORE INTO rfid_tags (rfid_epc, product_id, status, paired_at) VALUES (?, ?, 'ACTIVE', NOW())",
+            [epc, p.id]
           );
         }
       }
@@ -162,6 +157,7 @@ async function ensureTables() {
 exports.getKpis = async (req, res) => {
   try {
     await ensureTables();
+    const bf = branchFilter(req);
 
     // 1. Total Trays & Showcase vs Vault
     const [trayStats] = await db.query(`
@@ -170,12 +166,16 @@ exports.getKpis = async (req, res) => {
         SUM(CASE WHEN status = 'In Showcase' THEN 1 ELSE 0 END) AS showcase_trays,
         SUM(CASE WHEN status = 'In Vault' THEN 1 ELSE 0 END) AS vault_trays
       FROM showcase_trays
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     // 2. Total RFID Tags paired
     const [tagStats] = await db.query(`
-      SELECT COUNT(*) AS total_tagged FROM rfid_tags WHERE status = 'ACTIVE'
-    `);
+      SELECT COUNT(*) AS total_tagged
+      FROM rfid_tags r
+      LEFT JOIN products p ON r.product_id = p.id
+      WHERE r.status = 'ACTIVE' AND (${branchFilter(req, 'p.branch_id').sql} OR p.id IS NULL)
+    `, branchFilter(req, 'p.branch_id').params);
 
     // 3. Total Items & Untagged
     const [prodStats] = await db.query(`
@@ -186,8 +186,8 @@ exports.getKpis = async (req, res) => {
         COALESCE(SUM(p.gross_weight * p.stock_qty), 0) AS total_weight_g
       FROM products p
       LEFT JOIN rfid_tags r ON p.id = r.product_id AND r.status = 'ACTIVE'
-      WHERE p.stock_qty > 0
-    `);
+      WHERE p.stock_qty > 0 AND ${branchFilter(req, 'p.branch_id').sql}
+    `, branchFilter(req, 'p.branch_id').params);
 
     // 4. Audits Conducted Today & Discrepancies
     const [auditStats] = await db.query(`
@@ -197,8 +197,8 @@ exports.getKpis = async (req, res) => {
         COALESCE(SUM(misplaced_count), 0) AS misplaced_items_today,
         MAX(created_at) AS last_audit_time
       FROM rfid_audit_sessions
-      WHERE DATE(created_at) = CURRENT_DATE()
-    `);
+      WHERE DATE(created_at) = CURRENT_DATE() AND ${bf.sql}
+    `, bf.params);
 
     return res.json({
       success: true,
@@ -226,10 +226,11 @@ exports.getKpis = async (req, res) => {
 exports.getTrays = async (req, res) => {
   try {
     await ensureTables();
+    const bf = branchFilter(req, "t.branch_id");
 
     const { counter, status } = req.query;
-    let whereSql = "WHERE 1=1";
-    const params = [];
+    let whereSql = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (counter && counter !== "All") {
       whereSql += " AND t.counter = ?";

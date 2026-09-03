@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 /**
  * Normalize phone numbers to clean canonical format (Indian standard 10-digits or clean string)
@@ -54,6 +55,7 @@ async function logCustomerAudit(customerId, action, performedBy = "System", deta
 // GET /api/customers/kpis
 async function getKpis(req, res) {
   try {
+    const bf = branchFilter(req);
     const [[totals]] = await db.query(
       `SELECT
          COUNT(CASE WHEN status = 'ACTIVE' THEN 1 END) AS total_customers,
@@ -62,14 +64,17 @@ async function getKpis(req, res) {
          SUM(CASE WHEN status = 'ACTIVE' AND balance_due > 0 THEN 1 ELSE 0 END) AS pending_dues,
          SUM(CASE WHEN status = 'ARCHIVED' THEN 1 ELSE 0 END) AS archived_customers,
          SUM(CASE WHEN status = 'ACTIVE' AND (MONTH(date_of_birth) = MONTH(CURDATE()) OR MONTH(anniversary) = MONTH(CURDATE())) THEN 1 ELSE 0 END) AS birthdays_this_month
-       FROM customers`
+       FROM customers
+       WHERE ${bf.sql}`,
+      bf.params
     );
 
     const [[emis]] = await db.query(
       `SELECT COUNT(*) AS active_emis
        FROM emi_plans ep
        INNER JOIN customers c ON c.id = ep.customer_id
-       WHERE ep.status = 'Active' AND c.status = 'ACTIVE'`
+       WHERE ep.status = 'Active' AND c.status = 'ACTIVE' AND ${branchFilter(req, 'c.branch_id').sql}`,
+      branchFilter(req, 'c.branch_id').params
     );
 
     res.json({
@@ -92,7 +97,6 @@ async function getKpis(req, res) {
 // GET /api/customers
 // ─────────────────────────────────────────────────────────────
 async function getAll(req, res) {
-  const branch_id = req.user?.branch_id || 1;
   try {
     // Ensure branch_id column exists
     try {
@@ -105,8 +109,9 @@ async function getAll(req, res) {
 
     const { search, tier, city, kyc_status, status = "active", branch, page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
-    const conditions = [];
-    const params = [];
+    const bf = branchFilter(req, "c.branch_id");
+    const conditions = [bf.sql];
+    const params = [...bf.params];
 
     if (status === "active") {
       conditions.push("c.status = 'ACTIVE'");
@@ -1494,6 +1499,7 @@ async function getCustomer360(req, res) {
 // GET /api/customers/reminders/upcoming
 async function getUpcomingReminders(req, res) {
   try {
+    const bf = branchFilter(req);
     const [rows] = await db.query(
       `SELECT id, customer_id, full_name, phone, tier, date_of_birth, anniversary,
               CASE
@@ -1503,10 +1509,11 @@ async function getUpcomingReminders(req, res) {
               END AS event_type,
               COALESCE(date_of_birth, anniversary) AS event_date
        FROM customers
-       WHERE status = 'ACTIVE'
+       WHERE status = 'ACTIVE' AND ${bf.sql}
          AND ((date_of_birth IS NOT NULL AND MONTH(date_of_birth) = MONTH(CURDATE()))
           OR (anniversary IS NOT NULL AND MONTH(anniversary) = MONTH(CURDATE())))
-       ORDER BY DAY(event_date) ASC`
+       ORDER BY DAY(event_date) ASC`,
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -1517,15 +1524,17 @@ async function getUpcomingReminders(req, res) {
 // GET /api/customers/reports/dues
 async function getDuesReport(req, res) {
   try {
+    const bf = branchFilter(req, "c.branch_id");
     const [rows] = await db.query(
       `SELECT c.id, c.customer_id, c.full_name, c.phone, c.tier, c.balance_due, c.credit_limit,
               COALESCE(SUM(i.grand_total), 0) AS total_purchase,
               COALESCE(SUM(i.paid_amount), 0) AS total_paid
        FROM customers c
        LEFT JOIN invoices i ON i.customer_id = c.id
-       WHERE c.status = 'ACTIVE' AND c.balance_due > 0
+       WHERE c.status = 'ACTIVE' AND c.balance_due > 0 AND ${bf.sql}
        GROUP BY c.id
-       ORDER BY c.balance_due DESC`
+       ORDER BY c.balance_due DESC`,
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -1536,13 +1545,15 @@ async function getDuesReport(req, res) {
 // GET /api/customers/reports/wallet
 async function getWalletReport(req, res) {
   try {
+    const bf = branchFilter(req);
     const [rows] = await db.query(
       `SELECT id, customer_id, full_name, phone, tier, loyalty_points,
               (loyalty_points * 0.25) AS redeemable_value,
               wallet_balance
        FROM customers
-       WHERE status = 'ACTIVE'
-       ORDER BY loyalty_points DESC, wallet_balance DESC`
+       WHERE status = 'ACTIVE' AND ${bf.sql}
+       ORDER BY loyalty_points DESC, wallet_balance DESC`,
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -1553,14 +1564,16 @@ async function getWalletReport(req, res) {
 // GET /api/customers/reports/credit
 async function getCreditReport(req, res) {
   try {
+    const bf = branchFilter(req, "c.branch_id");
     const [rows] = await db.query(
       `SELECT c.id, c.customer_id, c.full_name, c.phone, c.tier, c.credit_limit,
               c.balance_due AS used_credit,
               GREATEST(0, c.credit_limit - c.balance_due) AS available_credit,
               c.balance_due
        FROM customers c
-       WHERE c.status = 'ACTIVE' AND (c.credit_limit > 0 OR c.balance_due > 0)
-       ORDER BY c.credit_limit DESC`
+       WHERE c.status = 'ACTIVE' AND (c.credit_limit > 0 OR c.balance_due > 0) AND ${bf.sql}
+       ORDER BY c.credit_limit DESC`,
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -1571,11 +1584,13 @@ async function getCreditReport(req, res) {
 // GET /api/customers/reports/kyc
 async function getKycReport(req, res) {
   try {
+    const bf = branchFilter(req);
     const [rows] = await db.query(
       `SELECT id, customer_id, full_name, phone, pan, aadhaar, gst_number, kyc_status
        FROM customers
-       WHERE status = 'ACTIVE'
-       ORDER BY kyc_status ASC, created_at DESC`
+       WHERE status = 'ACTIVE' AND ${bf.sql}
+       ORDER BY kyc_status ASC, created_at DESC`,
+      bf.params
     );
     const sanitized = rows.map(r => ({
       ...r,

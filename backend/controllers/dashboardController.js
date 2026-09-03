@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // Helper — check if table exists
 async function tableExists(tableName) {
@@ -11,9 +12,10 @@ async function tableExists(tableName) {
 
 // GET /api/dashboard/kpis
 async function getKpis(req, res) {
-  const branch_id = req.user.branch_id;
   try {
     const today = new Date().toISOString().split("T")[0];
+    const bf = branchFilter(req);
+
     const result = {
       today_sales:     0,
       bills_today:     0,
@@ -25,7 +27,8 @@ async function getKpis(req, res) {
 
     if (await tableExists("customers")) {
       const [[c]] = await db.query(
-        "SELECT COUNT(*) AS total_customers FROM customers WHERE status IN ('Active','ACTIVE')"
+        `SELECT COUNT(*) AS total_customers FROM customers WHERE status IN ('Active','ACTIVE') AND ${bf.sql}`,
+        bf.params
       );
       result.total_customers = c.total_customers || 0;
     }
@@ -33,8 +36,8 @@ async function getKpis(req, res) {
     if (await tableExists("invoices")) {
       const [[sales]] = await db.query(
         `SELECT COALESCE(SUM(grand_total),0) AS today_sales, COUNT(*) AS bills_today
-         FROM invoices WHERE DATE(invoice_date) = ?`,
-        [today]
+         FROM invoices WHERE DATE(invoice_date) = ? AND ${bf.sql}`,
+        [today, ...bf.params]
       );
       result.today_sales = sales.today_sales || 0;
       result.bills_today  = sales.bills_today  || 0;
@@ -42,25 +45,34 @@ async function getKpis(req, res) {
 
     if (await tableExists("repair_jobs")) {
       const [[repairs]] = await db.query(
-        "SELECT COUNT(*) AS pending_repairs FROM repair_jobs WHERE status IN ('Pending','In Progress','Overdue')"
+        `SELECT COUNT(*) AS pending_repairs FROM repair_jobs WHERE status IN ('Pending','In Progress','Overdue') AND ${bf.sql}`,
+        bf.params
       );
       result.pending_repairs = repairs.pending_repairs || 0;
     }
 
-    // Products — may not exist yet
-     if (await tableExists("products")) {
+    if (await tableExists("products")) {
       const [[stock]] = await db.query(
         `SELECT
            COUNT(*) AS stock_items,
            COALESCE(SUM(gross_weight * stock_qty), 0) AS gold_weight
          FROM products
-         WHERE stock_status != 'Out of Stock'`
+         WHERE stock_status != 'Out of Stock' AND ${bf.sql}`,
+        bf.params
       );
       result.stock_items   = stock.stock_items || 0;
       result.gold_in_stock = `${(parseFloat(stock.gold_weight || 0) / 1000).toFixed(3)} kg`;
     }
 
-    res.json({ success: true, data: result });
+    res.json({
+      success: true,
+      data: result,
+      branchScope: {
+        activeBranchId: req.branchId,
+        isMain: req.isMainBranch,
+        allowedBranchIds: req.allowedBranchIds
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -68,17 +80,21 @@ async function getKpis(req, res) {
 
 // GET /api/dashboard/recent-bills
 async function getRecentBills(req, res) {
-  const branch_id = req.user.branch_id;
   try {
     if (!(await tableExists("invoices"))) {
       return res.json({ success: true, data: [] });
     }
+    const bf = branchFilter(req, "i.branch_id");
     const [rows] = await db.query(
       `SELECT i.invoice_no, COALESCE(c.full_name,'Walk-in') AS customer,
-              i.grand_total AS amount, i.payment_mode, i.status
+              i.grand_total AS amount, i.payment_mode, i.status,
+              COALESCE(b.name, 'Main Showroom') AS branch_name
        FROM invoices i
        LEFT JOIN customers c ON i.customer_id = c.id
-       ORDER BY i.created_at DESC LIMIT 10`
+       LEFT JOIN branches b ON i.branch_id = b.id
+       WHERE ${bf.sql}
+       ORDER BY i.created_at DESC LIMIT 10`,
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -90,14 +106,16 @@ async function getRecentBills(req, res) {
 async function getAlerts(req, res) {
   try {
     const alerts = [];
+    const bf = branchFilter(req);
 
     // Low stock alerts
     if (await tableExists("products")) {
       const [lowStock] = await db.query(
         `SELECT name, sku, stock_qty
          FROM products
-         WHERE stock_qty <= COALESCE(min_stock, 2) AND stock_status != 'Out of Stock'
-         LIMIT 5`
+         WHERE stock_qty <= COALESCE(min_stock_qty, min_stock, 2) AND stock_status != 'Out of Stock' AND ${bf.sql}
+         LIMIT 5`,
+        bf.params
       );
       lowStock.forEach(p => alerts.push({
         type:  "low_stock",
@@ -115,7 +133,9 @@ async function getAlerts(req, res) {
          LEFT JOIN customers c ON rj.customer_id = c.id
          WHERE rj.promised_date < CURDATE()
            AND rj.status NOT IN ('Delivered')
-         LIMIT 3`
+           AND ${branchFilter(req, "rj.branch_id").sql}
+         LIMIT 3`,
+        branchFilter(req, "rj.branch_id").params
       );
       overdue.forEach(r => alerts.push({
         type:  "repair_overdue",
@@ -133,7 +153,9 @@ async function getAlerts(req, res) {
          LEFT JOIN customers c ON ep.customer_id = c.id
          WHERE DATE(ep.next_due_date) = CURDATE()
            AND ep.status = 'Active'
-         LIMIT 3`
+           AND ${branchFilter(req, "ep.branch_id").sql}
+         LIMIT 3`,
+        branchFilter(req, "ep.branch_id").params
       );
       emiDue.forEach(e => alerts.push({
         type:  "emi_due",

@@ -52,6 +52,7 @@ app.use("/api/gold-exchange",  require("./routes/goldExchange"));
 app.use("/api/repair",        require("./routes/repair"));
 app.use("/api/orders",        require("./routes/orders"));
 app.use("/api/karigar",       require("./routes/karigar"));
+app.use("/api/jangad",        require("./routes/jangad"));
 app.use("/api/rates",         require("./routes/rates"));
 app.use("/api/metal-rates",   require("./routes/metalRates"));
 app.use("/api/employees",     require("./routes/employees"));
@@ -68,6 +69,8 @@ app.use("/api/gst",           require("./routes/gst"));
 app.use("/api/tunch",         require("./routes/tunch"));
 app.use("/api/advance",       require("./routes/advance"));
 app.use("/api/rfid",          require("./routes/rfid"));
+app.use("/api/compliance",    require("./routes/compliance"));
+app.use("/api/ai",            require("./routes/ai"));
 app.use("/api/reports", require("./routes/reports"));
 app.use("/api/security", require("./routes/security"));
 

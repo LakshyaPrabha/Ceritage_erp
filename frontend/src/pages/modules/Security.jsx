@@ -243,7 +243,7 @@ export default function Security({ t }) {
                 if (tab === "sessions") loadSessions();
               }}
             >
-              ↻ Refresh Status
+              Refresh Status
             </BtnOutline>
             {tab === "overview" && (
               <BtnPrimary onClick={handleSaveSettings} disabled={saving}>
@@ -585,7 +585,7 @@ export default function Security({ t }) {
                   <option value="WARNING">Warning</option>
                   <option value="ALERT">Alert</option>
                 </Select>
-                <BtnOutline t={t} onClick={loadAuditLogs}>↻</BtnOutline>
+                <BtnOutline t={t} onClick={loadAuditLogs}>Refresh</BtnOutline>
                 <BtnPrimary onClick={exportAuditLogsCSV}>Export CSV</BtnPrimary>
               </div>
             }
@@ -628,7 +628,7 @@ export default function Security({ t }) {
           <CardHeader
             title="Connected Showroom Devices & Live POS Terminals"
             t={t}
-            actions={<BtnOutline t={t} onClick={loadSessions}>↻ Refresh Sessions</BtnOutline>}
+            actions={<BtnOutline t={t} onClick={loadSessions}>Refresh Sessions</BtnOutline>}
           />
           <DataTable
             columns={["Terminal / Device", "User / Account", "Role", "IP Address", "Login Time", "Last Active", "Status", "Remote Kill-Switch"]}
@@ -681,7 +681,7 @@ export default function Security({ t }) {
               marginBottom: 24,
               lineHeight: 1.6
             }}>
-              <strong style={{ fontSize: 15, color: BRAND.blue }}>🛡️ Disaster Recovery Guarantee</strong>
+              <strong style={{ fontSize: 15, color: BRAND.blue }}>Disaster Recovery Guarantee</strong>
               <p style={{ fontSize: 13, color: t.textSub, margin: "6px 0 12px 0" }}>
                 Generate an immediate, complete JSON/SQL structured snapshot of your showroom data including customer ledgers, product catalog weights, and GST invoice records.
               </p>
@@ -694,7 +694,7 @@ export default function Security({ t }) {
 
             <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
               <BtnPrimary onClick={handleDownloadBackup} disabled={saving}>
-                {saving ? "Exporting Vault Snapshot..." : "⚡ Generate & Download Vault Snapshot"}
+                {saving ? "Exporting Vault Snapshot..." : "Generate & Download Vault Snapshot"}
               </BtnPrimary>
               <span style={{ fontSize: 12, color: t.textMuted }}>
                 Exports formatted JSON archive of active showroom tables.

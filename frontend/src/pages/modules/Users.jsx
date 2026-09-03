@@ -242,13 +242,13 @@ export default function Users({ t }) {
 
       {successMsg && (
         <div style={{ background: "rgba(46,204,113,0.15)", border: "1px solid #2ecc71", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#2ecc71", fontSize: 13, fontWeight: 600 }}>
-          ✓ {successMsg}
+          {successMsg}
         </div>
       )}
 
       {error && (
-        <div style={{ background: "rgba(231,76,60,0.15)", border: "1px solid #e74c3c", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#e74c3c", fontSize: 13 }}>
-          ⚠️ {error}
+        <div style={{ background: "rgba(231,76,60,0.15)", border: "1px solid #e74c3c", borderRadius: 8, padding: "10px 16px", marginBottom: 16, color: "#e74c3c", fontSize: 13, fontWeight: 600 }}>
+          {error}
         </div>
       )}
 
@@ -379,7 +379,7 @@ export default function Users({ t }) {
               t={t}
               actions={
                 <BtnPrimary onClick={handleSavePermissions} disabled={permSaving}>
-                  {permSaving ? "Saving Matrix..." : "💾 Save Permission Changes"}
+                  {permSaving ? "Saving Matrix..." : "Save Permission Changes"}
                 </BtnPrimary>
               }
             />

@@ -106,16 +106,16 @@ export default function Rates({ t }) {
     try {
       const res = await apiRequest("/metal-rates/refresh", { method: "POST" });
       if (res && res.success) {
-        setRefreshMsg("✓ Market rates successfully refreshed from Metals.Dev!");
+        setRefreshMsg("Market rates successfully refreshed from Metals.Dev!");
         await fetchCurrent();
         window.dispatchEvent(new Event("metal-rates-updated"));
       } else {
-        setRefreshMsg(`⚠ ${res?.message || "Using last saved rate."}`);
+        setRefreshMsg(res?.message || "Using last saved rate.");
         await fetchCurrent();
         window.dispatchEvent(new Event("metal-rates-updated"));
       }
     } catch (err) {
-      setRefreshMsg(`✗ ${err.message}`);
+      setRefreshMsg(err.message);
     } finally {
       setRefreshing(false);
     }
@@ -224,7 +224,7 @@ export default function Rates({ t }) {
         t={t}
         actions={<>
           <BtnOutline t={t} onClick={handleRefreshMarketRates} disabled={refreshing || ratesLoading}>
-            {refreshing ? "Refreshing..." : "↻ Refresh Market Rates"}
+            {refreshing ? "Refreshing..." : "Refresh Market Rates"}
           </BtnOutline>
         </>}
       />
@@ -245,7 +245,7 @@ export default function Rates({ t }) {
           <div>
             {ratesData?.isStale ? (
               <span style={{ fontSize:11, background:"#f39c1222", color:"#e67e22", padding:"3px 8px", borderRadius:6, fontWeight:700 }}>
-                ⚠ Rate last updated at {updatedLabel} (Stale)
+                Rate last updated at {updatedLabel} (Stale)
               </span>
             ) : ratesData?.isAvailable ? (
               <span style={{ fontSize:11, background:"#2ecc7122", color:"#27ae60", padding:"3px 8px", borderRadius:6, fontWeight:700 }}>
@@ -253,7 +253,7 @@ export default function Rates({ t }) {
               </span>
             ) : (
               <span style={{ fontSize:11, background:"#e74c3c22", color:"#c0392b", padding:"3px 8px", borderRadius:6, fontWeight:700 }}>
-                ⚠ Rates Unavailable
+                Rates Unavailable
               </span>
             )}
           </div>
@@ -265,15 +265,15 @@ export default function Rates({ t }) {
           <div style={{ display:"flex", alignItems:"center", gap:16 }}>
             <span><strong>Daily Auto-Sync:</strong></span>
             <span>
-              ☀️ Day Slot ({ratesData?.quotaStatus?.daySlotTime || "10:30"} AM IST):{" "}
+              Day Slot ({ratesData?.quotaStatus?.daySlotTime || "10:30"} AM IST):{" "}
               <strong style={{ color: ratesData?.quotaStatus?.daySlotCompleted ? "#27ae60" : "#e67e22" }}>
-                {ratesData?.quotaStatus?.daySlotCompleted ? "✓ Completed" : "Pending"}
+                {ratesData?.quotaStatus?.daySlotCompleted ? "Completed" : "Pending"}
               </strong>
             </span>
             <span>
-              🌙 Evening Slot ({ratesData?.quotaStatus?.eveningSlotTime || "18:30"} PM IST):{" "}
+              Evening Slot ({ratesData?.quotaStatus?.eveningSlotTime || "18:30"} PM IST):{" "}
               <strong style={{ color: ratesData?.quotaStatus?.eveningSlotCompleted ? "#27ae60" : "#e67e22" }}>
-                {ratesData?.quotaStatus?.eveningSlotCompleted ? "✓ Completed" : "Pending"}
+                {ratesData?.quotaStatus?.eveningSlotCompleted ? "Completed" : "Pending"}
               </strong>
             </span>
           </div>
@@ -288,15 +288,15 @@ export default function Rates({ t }) {
 
       {refreshMsg && (
         <div style={{ fontSize:13, marginBottom:14, padding:"8px 12px", borderRadius:8,
-          background: refreshMsg.startsWith("✓") ? "#2ecc7115" : (refreshMsg.startsWith("⚠") ? "#f39c1215" : "#e74c3c15"),
-          color: refreshMsg.startsWith("✓") ? "#27ae60" : (refreshMsg.startsWith("⚠") ? "#e67e22" : BRAND.pink) }}>
+          background: "#2ecc7115",
+          color: "#27ae60", fontWeight: 600 }}>
           {refreshMsg}
         </div>
       )}
 
       {ratesError && (
-        <div style={{ fontSize:13, marginBottom:14, color:BRAND.pink }}>
-          ⚠ {ratesError}
+        <div style={{ fontSize:13, marginBottom:14, color:BRAND.pink, fontWeight: 600 }}>
+          {ratesError}
         </div>
       )}
 

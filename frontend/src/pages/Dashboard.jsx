@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import ceritageLogoSvg from "../assets/ceritage-logo.svg";
 import { BRAND } from "../theme.js";
-import { apiRequest } from "../lib/api";
+import { apiRequest, getActiveBranchId, setActiveBranchId } from "../lib/api";
 
 // ── All module imports ─────────────────────────────────────
 import DashboardHome  from "./modules/DashboardHome";
@@ -304,6 +304,10 @@ export default function Dashboard() {
   const [active,      setActive]      = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [deniedModal, setDeniedModal] = useState({ open: false, moduleName: "", moduleId: "" });
+  const [branches,    setBranches]    = useState([]);
+  const [activeBranchId, setActiveBranch] = useState(() => getActiveBranchId());
+  const [moduleKey,   setModuleKey]   = useState(0);
+
   const navigate  = useNavigate();
   const dark      = useSystemTheme();
   const t         = getTheme(dark);
@@ -320,6 +324,32 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { document.body.style.background = t.bg; }, [dark]);
+
+  useEffect(() => {
+    async function loadBranches() {
+      try {
+        const res = await apiRequest("/branch");
+        if (res && res.data) {
+          setBranches(res.data);
+          const current = getActiveBranchId();
+          if (!current && res.user_branch_id) {
+            setActiveBranch(String(res.user_branch_id));
+            setActiveBranchId(res.user_branch_id);
+          }
+        }
+      } catch {
+        // silent
+      }
+    }
+    loadBranches();
+  }, []);
+
+  const handleBranchChange = (newBranchId) => {
+    setActiveBranch(newBranchId);
+    setActiveBranchId(newBranchId);
+    setModuleKey(prev => prev + 1);
+    window.dispatchEvent(new CustomEvent("branch-changed", { detail: { branchId: newBranchId } }));
+  };
 
   function handleLogout() {
     sessionStorage.clear();
@@ -504,6 +534,34 @@ export default function Dashboard() {
             </div>
           </div>
           <div style={{ display:"flex", alignItems:"center", gap:12, flexShrink:0 }}>
+            {/* ── Active Branch Switcher (Consolidated HQ vs Specific Sub-Branch) ── */}
+            {branches.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Branch:</span>
+                <select
+                  value={activeBranchId || ""}
+                  onChange={(e) => handleBranchChange(e.target.value)}
+                  style={{
+                    background: t.inputBg,
+                    color: t.inputColor,
+                    border: `1px solid ${t.inputBorder}`,
+                    borderRadius: 8,
+                    padding: "5px 10px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    outline: "none"
+                  }}
+                >
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.is_main_branch ? `[Main HQ] ${b.name} (${b.city || "All Sub-Branches"})` : `[Branch] ${b.name} (${b.city || ""})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* ── Live rate ticker — fetches real data ── */}
             <LiveRateTicker t={t} />
             <div style={{ width:30, height:30, borderRadius:"50%",
@@ -516,7 +574,7 @@ export default function Dashboard() {
 
         <main style={{ flex:1, padding:"22px", overflowY:"auto" }}>
           {isCurrentModuleAllowed ? (
-            <ActiveModule t={t} onNavigate={setActive} />
+            <ActiveModule key={`${active}-${activeBranchId}-${moduleKey}`} t={t} onNavigate={setActive} />
           ) : (
             <div style={{
               padding: "48px 24px",

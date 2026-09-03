@@ -226,7 +226,7 @@ class MetalRateService {
    * MCX reference, LBMA reference, shop adjustments, and daily quota status.
    */
   async getCurrentRates() {
-    const stored = await this.getLatestStoredRates();
+    let stored = await this.getLatestStoredRates();
     const adjustments = await this.getShopAdjustments();
     const quotaStatus = await this.getDailySyncStatus();
 
@@ -234,9 +234,30 @@ class MetalRateService {
     let isStale = false;
     let source = "Metals.Dev";
 
-    if (stored.length > 0) {
+    // If metal_benchmark_rates is empty, check legacy gold_rates table
+    if (stored.length === 0) {
+      try {
+        const [legacyRows] = await db.query("SELECT * FROM gold_rates ORDER BY effective_date DESC, id DESC LIMIT 1");
+        if (legacyRows.length > 0) {
+          const lr = legacyRows[0];
+          stored = [
+            { metal: "GOLD", purity: "999", rate_type: "LIVE_MARKET", price_per_gram: Number(lr.rate_24k || 0), created_at: lr.effective_date },
+            { metal: "GOLD", purity: "916", rate_type: "LIVE_MARKET", price_per_gram: Number(lr.rate_22k || 0), created_at: lr.effective_date },
+            { metal: "GOLD", purity: "750", rate_type: "LIVE_MARKET", price_per_gram: Number(lr.rate_18k || 0), created_at: lr.effective_date },
+            { metal: "GOLD", purity: "585", rate_type: "LIVE_MARKET", price_per_gram: Number(lr.rate_14k || 0), created_at: lr.effective_date },
+            { metal: "SILVER", purity: "999", rate_type: "LIVE_MARKET", price_per_gram: Number(lr.silver_rate || 0), created_at: lr.effective_date },
+            { metal: "PLATINUM", purity: "999", rate_type: "LIVE_MARKET", price_per_gram: Number(lr.platinum_rate || 0), created_at: lr.effective_date },
+            { metal: "PALLADIUM", purity: "999", rate_type: "LIVE_MARKET", price_per_gram: 0, created_at: lr.effective_date },
+          ];
+          updatedAt = lr.effective_date || lr.created_at;
+        }
+      } catch (err) {
+        console.warn("Legacy rates fallback check:", err.message);
+      }
+    }
+
+    if (stored.length > 0 && !updatedAt) {
       updatedAt = stored[0].fetched_at || stored[0].created_at;
-      // If rates were fetched more than 16 hours ago, mark as stale
       if (updatedAt && (new Date() - new Date(updatedAt) > 16 * 60 * 60 * 1000)) {
         isStale = true;
       }

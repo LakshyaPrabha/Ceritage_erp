@@ -5,7 +5,7 @@ const db = require("../config/db");
 // GET /api/customers/occasions
 async function getOccasions(req, res) {
   try {
-    const list = await occasionService.getCustomerOccasions(req.query);
+    const list = await occasionService.getCustomerOccasions({ ...req.query, allowedBranchIds: req.allowedBranchIds });
     res.json({ success: true, data: list, count: list.length });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -15,7 +15,7 @@ async function getOccasions(req, res) {
 // GET /api/customers/occasions/kpis
 async function getOccasionKpis(req, res) {
   try {
-    const kpis = await occasionService.getOccasionKpis();
+    const kpis = await occasionService.getOccasionKpis(req.allowedBranchIds);
     res.json({ success: true, data: kpis });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -25,7 +25,7 @@ async function getOccasionKpis(req, res) {
 // GET /api/customers/reminders/upcoming
 async function getUpcomingReminders(req, res) {
   try {
-    const list = await occasionService.getCustomerOccasions({ range: "30d", occasion: "all" });
+    const list = await occasionService.getCustomerOccasions({ range: "30d", occasion: "all", allowedBranchIds: req.allowedBranchIds });
     res.json({ success: true, data: list });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -278,10 +278,10 @@ export default function Analytics({ t }) {
             <option value="2024">Year 2024</option>
           </Select>
           <BtnOutline t={t} onClick={handleExportCSV} disabled={rows.length === 0}>
-            ⤓ Export CSV
+            Export CSV
           </BtnOutline>
           <BtnPrimary onClick={() => loadAnalytics(tab, selectedYear)} disabled={loading}>
-            {loading ? "Loading..." : "↻ Refresh"}
+            {loading ? "Loading..." : "Refresh"}
           </BtnPrimary>
         </>}
       />
@@ -298,7 +298,7 @@ export default function Analytics({ t }) {
 
       {error && (
         <Card t={t} style={{ borderColor:BRAND.pink, marginBottom:16 }}>
-          <div style={{ color:BRAND.pink, fontSize:13 }}>⚠ {error}</div>
+          <div style={{ color:BRAND.pink, fontSize:13 }}>{error}</div>
         </Card>
       )}
 

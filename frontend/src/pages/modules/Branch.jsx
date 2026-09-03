@@ -376,7 +376,7 @@ export default function Branch({ t }) {
                 loadKpis();
               }}
             >
-              ↻ Refresh
+              Refresh
             </BtnOutline>
             {branches.length > 1 && (
               <BtnOutline t={t} onClick={() => setTransferModal(true)}>
@@ -537,7 +537,7 @@ export default function Branch({ t }) {
 
                   <div style={{ marginTop: "auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontSize: 11, color: b.is_main_branch ? "#f39c12" : BRAND.blue, fontWeight: 700 }}>
-                      {b.is_main_branch ? "★ Primary Head Office" : "🏢 Network Sub-Store"}
+                      {b.is_main_branch ? "Primary Head Office" : "Network Sub-Store"}
                     </span>
                     {!b.is_main_branch && (
                       <BtnSm

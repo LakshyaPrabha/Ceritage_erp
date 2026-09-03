@@ -342,7 +342,7 @@ export default function Advance({ t }) {
         actions={
           <>
             <BtnOutline t={t} onClick={loadLocks}>
-              ↻ Refresh
+              Refresh
             </BtnOutline>
             <BtnPrimary onClick={() => setTab("new")}>+ New Rate Lock Booking</BtnPrimary>
           </>
@@ -633,7 +633,7 @@ export default function Advance({ t }) {
                           setPrintModal(true);
                         }}
                       >
-                        🖨 Slip
+                        Print Slip
                       </BtnOutline>
                     </div>
                   </div>
@@ -748,7 +748,7 @@ export default function Advance({ t }) {
                         padding: 0,
                       }}
                     >
-                      ⚡ Use Live: ₹{kpis.live_rates?.rate_22k || 7100}/g
+                      Use Live: ₹{kpis.live_rates?.rate_22k || 7100}/g
                     </button>
                   </div>
                 }
@@ -903,7 +903,7 @@ export default function Advance({ t }) {
             </FormGroup>
 
             <BtnPrimary type="submit" disabled={saving} style={{ width: "100%", marginTop: 12 }}>
-              {saving ? "Locking Gold Rate..." : "🔒 Confirm & Lock Gold Rate"}
+              {saving ? "Locking Gold Rate..." : "Confirm & Lock Gold Rate"}
             </BtnPrimary>
           </form>
         </Card>
@@ -1182,7 +1182,7 @@ export default function Advance({ t }) {
             <BtnOutline t={t} onClick={() => setPrintModal(false)}>
               Close
             </BtnOutline>
-            <BtnPrimary onClick={() => window.print()}>🖨 Print Slip</BtnPrimary>
+            <BtnPrimary onClick={() => window.print()}>Print Slip</BtnPrimary>
           </>
         }
       >

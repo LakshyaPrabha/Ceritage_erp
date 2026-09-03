@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // stock_status computed from stock_qty and min_stock
 const STOCK_STATUS_EXPR = `
@@ -12,24 +13,27 @@ const STOCK_STATUS_EXPR = `
 // ─── KPIs ─────────────────────────────────────────────────────────────────────
 async function getKpis(req, res) {
   try {
+    const bf = branchFilter(req);
     const [[kpis]] = await db.query(
-  `SELECT
-     COUNT(*) AS total_items,
-     COALESCE(SUM(mrp * stock_qty), 0) AS stock_valuation,
-     SUM(
-       CASE
-         WHEN stock_qty > 0 AND stock_qty <= min_stock_qty
-         THEN 1 ELSE 0
-       END
-     ) AS low_stock,
-     SUM(
-       CASE
-         WHEN stock_qty <= 0
-         THEN 1 ELSE 0
-       END
-     ) AS out_of_stock
-   FROM products`
-);
+      `SELECT
+         COUNT(*) AS total_items,
+         COALESCE(SUM(mrp * stock_qty), 0) AS stock_valuation,
+         SUM(
+           CASE
+             WHEN stock_qty > 0 AND stock_qty <= min_stock_qty
+             THEN 1 ELSE 0
+           END
+         ) AS low_stock,
+         SUM(
+           CASE
+             WHEN stock_qty <= 0
+             THEN 1 ELSE 0
+           END
+         ) AS out_of_stock
+       FROM products
+       WHERE ${bf.sql}`,
+      bf.params
+    );
     res.json({ success: true, data: kpis });
   } catch (err) {
     console.error("inventoryController.getKpis ERROR:", err.message);
@@ -42,8 +46,9 @@ async function getLiveStock(req, res) {
   try {
     const { search, category, status, page = 1, limit = 200 } = req.query;
     const offset = (page - 1) * limit;
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req);
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
     if (search) {
       where += " AND (sku LIKE ? OR name LIKE ?)";
       params.push(`%${search}%`, `%${search}%`);
@@ -53,12 +58,12 @@ async function getLiveStock(req, res) {
       params.push(category);
     }
     if (status === "In Stock") {
-  where += " AND stock_qty > min_stock_qty";
-} else if (status === "Low Stock") {
-  where += " AND stock_qty > 0 AND stock_qty <= min_stock_qty";
-} else if (status === "Out of Stock") {
-  where += " AND stock_qty <= 0";
-}
+      where += " AND stock_qty > min_stock_qty";
+    } else if (status === "Low Stock") {
+      where += " AND stock_qty > 0 AND stock_qty <= min_stock_qty";
+    } else if (status === "Out of Stock") {
+      where += " AND stock_qty <= 0";
+    }
 
     const [rows] = await db.query(
       `SELECT

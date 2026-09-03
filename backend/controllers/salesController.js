@@ -1,15 +1,18 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // ─── KPIs ────────────────────────────────────────────────────────────────────
 async function getKpis(req, res) {
   try {
+    const bf = branchFilter(req);
     const [[kpis]] = await db.query(
       `SELECT
          COALESCE(SUM(grand_total),0)   AS total_net_sales,
          COUNT(*)                       AS total_bills,
          COALESCE(AVG(grand_total),0)   AS avg_bill_value
        FROM invoices
-       WHERE invoice_type IN ('Retail Invoice','Wholesale Invoice','Tax Invoice','Online Invoice')`
+       WHERE invoice_type IN ('Retail Invoice','Wholesale Invoice','Tax Invoice','Online Invoice') AND ${bf.sql}`,
+      bf.params
     );
     const [[ret]] = await db.query(
       "SELECT COALESCE(SUM(refund_amount),0) AS returns_value FROM returns"
@@ -32,8 +35,9 @@ async function getAll(req, res) {
       online:    "Online Invoice",
     };
 
-    let where = "WHERE i.invoice_type IN ('Retail Invoice','Wholesale Invoice','Tax Invoice','Online Invoice','Exchange Billing')";
-    const params = [];
+    const bf = branchFilter(req, "i.branch_id");
+    let where = `WHERE i.invoice_type IN ('Retail Invoice','Wholesale Invoice','Tax Invoice','Online Invoice','Exchange Billing') AND ${bf.sql}`;
+    const params = [...bf.params];
 
     if (type && typeMap[type]) {
       where += " AND i.invoice_type = ?";
@@ -52,9 +56,11 @@ async function getAll(req, res) {
       `SELECT i.id, i.invoice_no, i.invoice_date, i.invoice_type,
               i.payment_mode, i.grand_total, i.paid_amount,
               i.discount_amt, i.cgst, i.sgst, i.igst, i.status,
-              c.full_name AS customer_name
+              c.full_name AS customer_name,
+              COALESCE(b.name, 'Main Showroom') AS branch_name
        FROM invoices i
        LEFT JOIN customers c ON i.customer_id = c.id
+       LEFT JOIN branches b ON i.branch_id = b.id
        ${where} ORDER BY i.invoice_date DESC, i.id DESC
        LIMIT ? OFFSET ?`,
       [...params, parseInt(limit), parseInt(offset)]

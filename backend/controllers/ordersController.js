@@ -88,11 +88,12 @@ async function create(req, res) {
     const [[{ maxId }]] = await db.query("SELECT COALESCE(MAX(id), 0) + 1 AS maxId FROM orders");
     const orderNo = `ORD-${new Date().getFullYear()}-${String(maxId).padStart(4, "0")}`;
 
+    const activeBranchId = Number(req.headers?.["x-branch-id"] || req.user?.branch_id || 1);
     const [result] = await db.query(
       `INSERT INTO orders
-         (order_no, customer_id, item_name, metal_type, purity, approx_weight, advance_paid, estimated_total, due_date, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending')`,
-      [orderNo, customer_id, itemName, metal_type, purity, weight, advance, total, targetDate]
+         (order_no, customer_id, branch_id, item_name, metal_type, purity, approx_weight, advance_paid, estimated_total, due_date, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending')`,
+      [orderNo, customer_id, activeBranchId, itemName, metal_type, purity, weight, advance, total, targetDate]
     );
 
     res.status(201).json({

@@ -20,7 +20,9 @@ const QUICK_ACTIONS = [
   { label:"Purchase Entry",   module:"purchase" },
   { label:"Gold Exchange",    module:"gold-exchange" },
   { label:"Issue to Karigar", module:"karigar" },
-  { label:"Update Rates",     module:"rates" },
+  { label:"MCX Reference",    module:"rates",         tab:"mcx" },
+  { label:"Rate Alert",       module:"rates",         tab:"alerts" },
+  { label:"Update Rates",     module:"rates",         tab:"manual" },
 ];
 
 // metal tiles config — maps DB column -> display label + color
@@ -113,7 +115,7 @@ function LiveRatesCard({ t, onNavigate }) {
         title="Live Gold & Silver Rates"
         t={t}
         actions={
-          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+          <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
             {rates && (
               <span style={{ fontSize:11, color:t.textMuted }}>
                 Updated: {updatedLabel}
@@ -121,7 +123,7 @@ function LiveRatesCard({ t, onNavigate }) {
             )}
             <BtnOutline
               t={t}
-              style={{ padding:"4px 12px", fontSize:12 }}
+              style={{ padding:"4px 10px", fontSize:12 }}
               onClick={handleRefresh}
               disabled={refreshing}
             >
@@ -129,10 +131,24 @@ function LiveRatesCard({ t, onNavigate }) {
             </BtnOutline>
             <BtnOutline
               t={t}
-              style={{ padding:"4px 12px", fontSize:12 }}
-              onClick={() => onNavigate("rates")}
+              style={{ padding:"4px 10px", fontSize:12 }}
+              onClick={() => { window.__rateTab = "mcx"; onNavigate("rates"); }}
             >
-              Update
+              MCX Reference
+            </BtnOutline>
+            <BtnOutline
+              t={t}
+              style={{ padding:"4px 10px", fontSize:12 }}
+              onClick={() => { window.__rateTab = "alerts"; onNavigate("rates"); }}
+            >
+              Rate Alert
+            </BtnOutline>
+            <BtnOutline
+              t={t}
+              style={{ padding:"4px 10px", fontSize:12 }}
+              onClick={() => { window.__rateTab = "manual"; onNavigate("rates"); }}
+            >
+              Update Rates
             </BtnOutline>
           </div>
         }
@@ -293,10 +309,10 @@ export default function DashboardHome({ t, onNavigate }) {
         <Card t={t}>
           <CardHeader title="Quick Actions" t={t} />
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-            {QUICK_ACTIONS.map((a) => (
+            {QUICK_ACTIONS.map((a, idx) => (
               a.primary
-                 ? <BtnPrimary key={a.module} onClick={() => onNavigate(a.module)}>{a.label}</BtnPrimary>
-                : <BtnOutline key={a.module} t={t} onClick={() => onNavigate(a.module)}>{a.label}</BtnOutline>
+                 ? <BtnPrimary key={idx} onClick={() => { if (a.tab) window.__rateTab = a.tab; onNavigate(a.module); }}>{a.label}</BtnPrimary>
+                : <BtnOutline key={idx} t={t} onClick={() => { if (a.tab) window.__rateTab = a.tab; onNavigate(a.module); }}>{a.label}</BtnOutline>
             ))}
           </div>
         </Card>

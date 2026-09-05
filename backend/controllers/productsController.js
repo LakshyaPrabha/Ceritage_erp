@@ -53,8 +53,12 @@ async function getAll(req, res) {
     if (jewellery_category) { conditions.push("p.jewellery_category = ?");  params.push(jewellery_category); }
     if (metal_type)         { conditions.push("p.metal_type = ?");          params.push(metal_type); }
     if (purity)             { conditions.push("p.purity = ?");              params.push(purity); }
-    if (status)             { conditions.push("p.status = ?");              params.push(status); }
-    else                    { conditions.push("p.status = 'Active'"); }
+    if (status && status !== "ALL") {
+      conditions.push("p.status = ?");
+      params.push(status);
+    } else if (!status) {
+      conditions.push("(p.status IS NULL OR UPPER(p.status) = 'ACTIVE')");
+    }
 
     const whereClause = conditions.length > 0
       ? "WHERE " + conditions.join(" AND ")

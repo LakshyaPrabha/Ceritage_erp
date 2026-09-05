@@ -56,8 +56,14 @@ async function migrateAivenSafely() {
   await addColumnIfMissing('supplier_ledger', 'branch_id', 'INT DEFAULT 1');
   await addColumnIfMissing('supplier_ledger', 'po_no', 'VARCHAR(30) NULL');
   await addColumnIfMissing('supplier_ledger', 'item', 'VARCHAR(255) NULL');
-  await addColumnIfMissing('supplier_ledger', 'total', 'DECIMAL(12,2) DEFAULT 0.00');
   await addColumnIfMissing('supplier_ledger', 'paid', 'DECIMAL(12,2) DEFAULT 0.00');
+
+  // 4. Reconcile orders & karigar tables columns
+  await addColumnIfMissing('orders', 'branch_id', 'INT DEFAULT 1');
+  await addColumnIfMissing('work_orders', 'branch_id', 'INT DEFAULT 1');
+  await addColumnIfMissing('karigar_payments', 'branch_id', 'INT DEFAULT 1');
+  await addColumnIfMissing('gold_issues', 'branch_id', 'INT DEFAULT 1');
+  await addColumnIfMissing('gold_receives', 'branch_id', 'INT DEFAULT 1');
 
   // 4. Create missing tables IF NOT EXISTS
   console.log('\n--- CREATING MISSING EXTENSION TABLES ---');

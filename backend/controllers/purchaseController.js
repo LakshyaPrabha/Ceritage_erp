@@ -1,5 +1,6 @@
-﻿const db = require("../config/db");
+const db = require("../config/db");
 const accounting = require("../services/accountingPostingService");
+const { branchFilter } = require("../utils/branchScope");
 
 // â”€â”€â”€ KPIs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function getKpis(req, res) {
@@ -115,16 +116,17 @@ async function create(req, res) {
       }
     }
 
+    const pDate = purchase_date || new Date().toISOString().slice(0, 10);
     const [result] = await conn.query(
       `INSERT INTO purchase_orders
-         (po_no, supplier_id, purchase_date, material_type, item_description,
-          purity, weight_qty, rate, amount, gst_pct, gst_amount, total,
+         (po_no, supplier_id, order_date, purchase_date, material_type, item_description,
+          purity, weight_qty, rate, amount, gst_pct, gst_amount, total, total_amount,
           payment_mode, expected_delivery, remarks, branch_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [po_no, supplier_id || null,
-       purchase_date || new Date().toISOString().slice(0, 10),
+       pDate, pDate,
        material_type, item_description, purity || null,
-       weight_qty || 0, rate || 0, amount, gst_pct, gst_amount, total,
+       weight_qty || 0, rate || 0, amount, gst_pct, gst_amount, total, total,
        payment_mode, expected_delivery || null, remarks || null, branch_id]
     );
 

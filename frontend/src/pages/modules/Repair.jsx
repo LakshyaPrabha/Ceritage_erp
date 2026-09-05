@@ -99,6 +99,82 @@ ${job.work_to_do ? `<div class="issue" style="background:#e8f5e9;border-color:#2
   if (w) { w.document.write(html); w.document.close(); }
 }
 
+// ── Standalone Repair Form (outside Repair to prevent unmounting/focus-loss) ──
+function RepairForm({ form, onChange, customers, t }) {
+  return (
+    <>
+      <SectionTitle t={t}>Customer & Item Details</SectionTitle>
+      <FormGrid>
+        <FormGroup label="Customer" t={t} half>
+          <Select t={t} value={form.customer_id} onChange={onChange("customer_id")}>
+            <option value="">Walk-in / No Customer</option>
+            {customers.map(c => <option key={c.id} value={c.id}>{c.full_name || c.name} — {c.phone}</option>)}
+          </Select>
+        </FormGroup>
+        <FormGroup label="Item Name *" t={t} half>
+          <Input t={t} placeholder="e.g. Gold Ring, Necklace" value={form.item_name} onChange={onChange("item_name")} />
+        </FormGroup>
+        <FormGroup label="Item Type" t={t} half>
+          <Select t={t} value={form.item_type} onChange={onChange("item_type")}>
+            {ITEM_TYPES.map(i => <option key={i}>{i}</option>)}
+          </Select>
+        </FormGroup>
+        <FormGroup label="Metal" t={t} half>
+          <Select t={t} value={form.metal} onChange={onChange("metal")}>
+            {METALS.map(m => <option key={m}>{m}</option>)}
+          </Select>
+        </FormGroup>
+        <FormGroup label="Purity" t={t} half>
+          <Input t={t} placeholder="e.g. 22K (916)" value={form.purity} onChange={onChange("purity")} />
+        </FormGroup>
+        <FormGroup label="Weight (g)" t={t} half>
+          <Input t={t} type="number" step="0.001" placeholder="0.000" value={form.weight_g} onChange={onChange("weight_g")} />
+        </FormGroup>
+      </FormGrid>
+
+      <SectionTitle t={t}>Issue & Work</SectionTitle>
+      <FormGrid>
+        <FormGroup label="Issue / Problem *" t={t}>
+          <textarea rows={3} placeholder="Describe the problem in detail..."
+            value={form.issue_desc} onChange={onChange("issue_desc")}
+            style={{ width:"100%", background:t.inputBg, border:`1.5px solid ${t.inputBorder}`,
+              borderRadius:9, padding:"10px 13px", fontSize:13, color:t.inputColor,
+              outline:"none", boxSizing:"border-box", fontFamily:"inherit", resize:"vertical" }} />
+        </FormGroup>
+        <FormGroup label="Work to be Done" t={t}>
+          <textarea rows={2} placeholder="What work needs to be done..."
+            value={form.work_to_do} onChange={onChange("work_to_do")}
+            style={{ width:"100%", background:t.inputBg, border:`1.5px solid ${t.inputBorder}`,
+              borderRadius:9, padding:"10px 13px", fontSize:13, color:t.inputColor,
+              outline:"none", boxSizing:"border-box", fontFamily:"inherit", resize:"vertical" }} />
+        </FormGroup>
+      </FormGrid>
+
+      <SectionTitle t={t}>Dates & Cost</SectionTitle>
+      <FormGrid>
+        <FormGroup label="Received Date *" t={t} half>
+          <Input t={t} type="date" value={form.received_date} onChange={onChange("received_date")} />
+        </FormGroup>
+        <FormGroup label="Promise Date" t={t} half>
+          <Input t={t} type="date" value={form.promised_date} onChange={onChange("promised_date")} />
+        </FormGroup>
+        <FormGroup label="Estimated Cost (Rs.)" t={t} half>
+          <Input t={t} type="number" step="0.01" placeholder="0.00" value={form.estimated_cost} onChange={onChange("estimated_cost")} />
+        </FormGroup>
+        <FormGroup label="Advance Paid (Rs.)" t={t} half>
+          <Input t={t} type="number" step="0.01" placeholder="0.00" value={form.advance_paid} onChange={onChange("advance_paid")} />
+        </FormGroup>
+        <FormGroup label="Assigned To (Karigar)" t={t} half>
+          <Input t={t} placeholder="Karigar / Technician name" value={form.assigned_to} onChange={onChange("assigned_to")} />
+        </FormGroup>
+        <FormGroup label="Notes" t={t} half>
+          <Input t={t} placeholder="Any additional notes..." value={form.notes} onChange={onChange("notes")} />
+        </FormGroup>
+      </FormGrid>
+    </>
+  );
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 export default function Repair({ t }) {
   const [tab,        setTab]        = useState("list");
@@ -298,80 +374,6 @@ export default function Repair({ t }) {
     };
   });
 
-  // ── Repair Form ───────────────────────────────────────────────────────────
-  const RepairForm = () => (
-    <>
-      <SectionTitle t={t}>Customer & Item Details</SectionTitle>
-      <FormGrid>
-        <FormGroup label="Customer" t={t} half>
-          <Select t={t} value={form.customer_id} onChange={onChange("customer_id")}>
-            <option value="">Walk-in / No Customer</option>
-            {customers.map(c => <option key={c.id} value={c.id}>{c.full_name} — {c.phone}</option>)}
-          </Select>
-        </FormGroup>
-        <FormGroup label="Item Name *" t={t} half>
-          <Input t={t} placeholder="e.g. Gold Ring, Necklace" value={form.item_name} onChange={onChange("item_name")} />
-        </FormGroup>
-        <FormGroup label="Item Type" t={t} half>
-          <Select t={t} value={form.item_type} onChange={onChange("item_type")}>
-            {ITEM_TYPES.map(i => <option key={i}>{i}</option>)}
-          </Select>
-        </FormGroup>
-        <FormGroup label="Metal" t={t} half>
-          <Select t={t} value={form.metal} onChange={onChange("metal")}>
-            {METALS.map(m => <option key={m}>{m}</option>)}
-          </Select>
-        </FormGroup>
-        <FormGroup label="Purity" t={t} half>
-          <Input t={t} placeholder="e.g. 22K (916)" value={form.purity} onChange={onChange("purity")} />
-        </FormGroup>
-        <FormGroup label="Weight (g)" t={t} half>
-          <Input t={t} type="number" step="0.001" placeholder="0.000" value={form.weight_g} onChange={onChange("weight_g")} />
-        </FormGroup>
-      </FormGrid>
-
-      <SectionTitle t={t}>Issue & Work</SectionTitle>
-      <FormGrid>
-        <FormGroup label="Issue / Problem *" t={t}>
-          <textarea rows={3} placeholder="Describe the problem in detail..."
-            value={form.issue_desc} onChange={onChange("issue_desc")}
-            style={{ width:"100%", background:t.inputBg, border:`1.5px solid ${t.inputBorder}`,
-              borderRadius:9, padding:"10px 13px", fontSize:13, color:t.inputColor,
-              outline:"none", boxSizing:"border-box", fontFamily:"inherit", resize:"vertical" }} />
-        </FormGroup>
-        <FormGroup label="Work to be Done" t={t}>
-          <textarea rows={2} placeholder="What work needs to be done..."
-            value={form.work_to_do} onChange={onChange("work_to_do")}
-            style={{ width:"100%", background:t.inputBg, border:`1.5px solid ${t.inputBorder}`,
-              borderRadius:9, padding:"10px 13px", fontSize:13, color:t.inputColor,
-              outline:"none", boxSizing:"border-box", fontFamily:"inherit", resize:"vertical" }} />
-        </FormGroup>
-      </FormGrid>
-
-      <SectionTitle t={t}>Dates & Cost</SectionTitle>
-      <FormGrid>
-        <FormGroup label="Received Date *" t={t} half>
-          <Input t={t} type="date" value={form.received_date} onChange={onChange("received_date")} />
-        </FormGroup>
-        <FormGroup label="Promise Date" t={t} half>
-          <Input t={t} type="date" value={form.promised_date} onChange={onChange("promised_date")} />
-        </FormGroup>
-        <FormGroup label="Estimated Cost (Rs.)" t={t} half>
-          <Input t={t} type="number" step="0.01" placeholder="0.00" value={form.estimated_cost} onChange={onChange("estimated_cost")} />
-        </FormGroup>
-        <FormGroup label="Advance Paid (Rs.)" t={t} half>
-          <Input t={t} type="number" step="0.01" placeholder="0.00" value={form.advance_paid} onChange={onChange("advance_paid")} />
-        </FormGroup>
-        <FormGroup label="Assigned To (Karigar)" t={t} half>
-          <Input t={t} placeholder="Karigar / Technician name" value={form.assigned_to} onChange={onChange("assigned_to")} />
-        </FormGroup>
-        <FormGroup label="Notes" t={t} half>
-          <Input t={t} placeholder="Any additional notes..." value={form.notes} onChange={onChange("notes")} />
-        </FormGroup>
-      </FormGrid>
-    </>
-  );
-
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div>
@@ -401,7 +403,7 @@ export default function Repair({ t }) {
       {tab === "new" && (
         <Card t={t}>
           <CardHeader title="New Repair Job" t={t} />
-          <RepairForm />
+          <RepairForm form={form} onChange={onChange} customers={customers} t={t} />
           {formError && <div style={{ color:BRAND.pink, fontSize:13, marginTop:10 }}>{formError}</div>}
           <div style={{ display:"flex", gap:10, marginTop:16, justifyContent:"flex-end" }}>
             <BtnOutline t={t} onClick={() => { setForm(EMPTY_FORM); setFormError(""); }}>Reset</BtnOutline>
@@ -451,7 +453,7 @@ export default function Repair({ t }) {
           <BtnOutline t={t} onClick={() => setAddModal(false)}>Cancel</BtnOutline>
           <BtnPrimary onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Create Job Card"}</BtnPrimary>
         </>}>
-        <RepairForm />
+        <RepairForm form={form} onChange={onChange} customers={customers} t={t} />
         {formError && <div style={{ color:BRAND.pink, fontSize:13, marginTop:10 }}>{formError}</div>}
       </Modal>
 
@@ -462,7 +464,7 @@ export default function Repair({ t }) {
           <BtnOutline t={t} onClick={() => setEditModal(false)}>Cancel</BtnOutline>
           <BtnPrimary onClick={handleSave} disabled={saving}>{saving ? "Saving..." : "Update Job"}</BtnPrimary>
         </>}>
-        <RepairForm />
+        <RepairForm form={form} onChange={onChange} customers={customers} t={t} />
         {formError && <div style={{ color:BRAND.pink, fontSize:13, marginTop:10 }}>{formError}</div>}
       </Modal>
 

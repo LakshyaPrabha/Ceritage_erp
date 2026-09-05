@@ -351,18 +351,18 @@ async function getEmployee(req, res) {
   try {
     const [rows] = await db.query(
       `SELECT
-         e.full_name AS employee,
-         e.role,
+         COALESCE(e.name, 'Employee') AS employee,
+         COALESCE(e.role, 'Staff') AS role,
          COALESCE(SUM(i.grand_total), 0) AS sales_achieved,
-         COALESCE(e.basic_salary * 5, 250000) AS target,
+         COALESCE(e.salary * 5, 250000) AS target,
          COUNT(DISTINCT i.id) AS bills,
          COUNT(DISTINCT i.customer_id) AS customers,
          COALESCE(AVG(i.grand_total), 0) AS avg_ticket,
-         e.status AS rating
+         COALESCE(e.status, 'Active') AS rating
        FROM employees e
        LEFT JOIN invoices i ON i.salesperson_id = e.id
-       GROUP BY e.id, e.full_name, e.role, e.basic_salary, e.status
-       ORDER BY sales_achieved DESC, e.full_name ASC`
+       GROUP BY e.id, e.name, e.role, e.salary, e.status
+       ORDER BY sales_achieved DESC, e.name ASC`
     );
     res.json({
       success: true,

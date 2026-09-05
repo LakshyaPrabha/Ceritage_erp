@@ -1,3 +1,5 @@
+import { useState, useRef, useEffect, useMemo } from "react";
+
 // ─── Ceritage ERP — Shared UI Components ──────────────────
 // BRAND directly defined here — no circular imports
 
@@ -36,11 +38,11 @@ export function PageHeader({ title, subtitle, actions, t }) {
 }
 
 // ── Card ───────────────────────────────────────────────────
-export function Card({ children, t, style = {} }) {
+export function Card({ children, t, style = {}, id, ...rest }) {
   return (
-    <div style={{ background:t.card, border:`1px solid ${t.borderDash}`,
+    <div id={id} style={{ background:t.card, border:`1px solid ${t.borderDash}`,
       borderRadius:12, padding:"18px 20px", marginBottom:18,
-      boxShadow:t.cardShadow, ...style }}>
+      boxShadow:t.cardShadow, ...style }} {...rest}>
       {children}
     </div>
   );
@@ -308,14 +310,44 @@ export function FormGrid({ children }) {
 }
 
 // ── Input ──────────────────────────────────────────────────
-export function Input({ t, style: extraStyle = {}, ...props }) {
+export function Input({ t, style: extraStyle = {}, type, onWheel, onFocus, ...props }) {
+  const handleWheel = (e) => {
+    if (type === "number" || props.step) {
+      e.target.blur();
+    }
+    if (onWheel) onWheel(e);
+  };
+
+  const handleFocus = (e) => {
+    if (type === "number" || props.step) {
+      const val = String(e.target.value || "");
+      if (val === "0" || val === "0.0" || val === "0.00" || val === "0.000") {
+        e.target.select();
+      }
+    }
+    if (onFocus) onFocus(e);
+  };
+
   return (
-    <input {...props} style={{ width:"100%", background:t.inputBg,
-      border:`1.5px solid ${t.inputBorder}`,
-      borderRadius:9, padding:"10px 13px",
-      fontSize:13, color:t.inputColor,
-      outline:"none", boxSizing:"border-box", fontFamily:"inherit",
-      ...extraStyle }} />
+    <input
+      type={type}
+      onWheel={handleWheel}
+      onFocus={handleFocus}
+      {...props}
+      style={{
+        width: "100%",
+        background: t?.inputBg || "var(--input-bg)",
+        border: `1.5px solid ${t?.inputBorder || "var(--input-border)"}`,
+        borderRadius: 9,
+        padding: "10px 13px",
+        fontSize: 13,
+        color: t?.inputColor || "inherit",
+        outline: "none",
+        boxSizing: "border-box",
+        fontFamily: "inherit",
+        ...extraStyle,
+      }}
+    />
   );
 }
 
@@ -358,3 +390,382 @@ export function SectionTitle({ children, t }) {
     </div>
   );
 }
+
+// ── SearchableSelect ───────────────────────────────────────
+export function SearchableSelect({
+  t,
+  value,
+  onChange,
+  options = [],
+  placeholder = "-- Select --",
+  searchPlaceholder = "Type to search...",
+  emptyMessage = "No matching items found",
+  allowClear = true,
+  disabled = false,
+  renderOption,
+  renderValue,
+  style: extraStyle = {},
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  // Focus search input when opening
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => {
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+      }, 50);
+    } else {
+      setSearch("");
+    }
+  }, [isOpen]);
+
+  // Find currently selected option
+  const selectedOption = useMemo(() => {
+    if (value === "" || value === null || value === undefined) return null;
+    return (
+      options.find(
+        (opt) => String(opt.value) === String(value) || String(opt.id) === String(value)
+      ) || null
+    );
+  }, [value, options]);
+
+  // Filter options based on search query
+  const filteredOptions = useMemo(() => {
+    if (!search.trim()) return options;
+    const q = search.toLowerCase().trim();
+    return options.filter((opt) => {
+      const labelMatch = (opt.label || opt.name || opt.full_name || "").toLowerCase().includes(q);
+      const sublabelMatch = (
+        opt.sublabel ||
+        opt.phone ||
+        opt.sku ||
+        opt.product_code ||
+        opt.category ||
+        opt.role ||
+        ""
+      )
+        .toLowerCase()
+        .includes(q);
+      const searchKeyMatch = opt.searchKey ? String(opt.searchKey).toLowerCase().includes(q) : false;
+      return labelMatch || sublabelMatch || searchKeyMatch;
+    });
+  }, [search, options]);
+
+  const handleSelect = (opt) => {
+    const val = opt.value !== undefined ? opt.value : opt.id;
+    if (onChange) onChange(val, opt);
+    setIsOpen(false);
+  };
+
+  const handleClear = (e) => {
+    e.stopPropagation();
+    if (onChange) onChange("", null);
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position: "relative",
+        width: "100%",
+        minWidth: 0,
+        fontFamily: "inherit",
+        ...extraStyle,
+      }}
+    >
+      {/* Trigger Button */}
+      <div
+        onClick={() => !disabled && setIsOpen((prev) => !prev)}
+        style={{
+          width: "100%",
+          background: t?.inputBg || "var(--input-bg)",
+          border: `1.5px solid ${isOpen ? BRAND.purple : t?.inputBorder || "var(--input-border)"}`,
+          borderRadius: 9,
+          padding: "9px 12px",
+          fontSize: 13,
+          color: selectedOption ? t?.text || "#fff" : t?.textMuted || "#888",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.6 : 1,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          boxSizing: "border-box",
+          userSelect: "none",
+          transition: "border-color 0.2s, box-shadow 0.2s",
+          boxShadow: isOpen ? "0 0 0 3px rgba(139, 59, 200, 0.15)" : "none",
+          minHeight: 40,
+        }}
+      >
+        <div
+          style={{
+            flex: 1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            marginRight: 6,
+          }}
+        >
+          {selectedOption ? (
+            renderValue ? (
+              renderValue(selectedOption)
+            ) : (
+              <span style={{ fontWeight: 600 }}>
+                {selectedOption.label || selectedOption.name || selectedOption.full_name}
+                {selectedOption.sublabel && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 400,
+                      color: t?.textMuted || "#888",
+                      marginLeft: 6,
+                    }}
+                  >
+                    ({selectedOption.sublabel})
+                  </span>
+                )}
+              </span>
+            )
+          ) : (
+            <span style={{ color: t?.textMuted || "#888" }}>{placeholder}</span>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {allowClear && selectedOption && !disabled && (
+            <span
+              onClick={handleClear}
+              title="Clear selection"
+              style={{
+                fontSize: 14,
+                color: t?.textMuted || "#888",
+                cursor: "pointer",
+                padding: "0 2px",
+                lineHeight: 1,
+                borderRadius: "50%",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = BRAND.pink)}
+              onMouseLeave={(e) => (e.currentTarget.style.color = t?.textMuted || "#888")}
+            >
+              ✕
+            </span>
+          )}
+          <span
+            style={{
+              fontSize: 10,
+              color: t?.textMuted || "#888",
+              transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.2s ease",
+            }}
+          >
+            ▼
+          </span>
+        </div>
+      </div>
+
+      {/* Dropdown Floating Menu */}
+      {isOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            right: 0,
+            zIndex: 9999,
+            background: t?.card || "#1a162b",
+            border: `1px solid ${t?.border || "rgba(255,255,255,0.12)"}`,
+            borderRadius: 10,
+            boxShadow: "0 12px 32px rgba(0, 0, 0, 0.45)",
+            overflow: "hidden",
+          }}
+        >
+          {/* Search Bar */}
+          <div
+            style={{
+              padding: "8px 10px",
+              borderBottom: `1px solid ${t?.borderDash || "rgba(255,255,255,0.08)"}`,
+              background: t?.card2 || "rgba(255,255,255,0.03)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <span style={{ fontSize: 13, opacity: 0.6 }}>🔍</span>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setIsOpen(false);
+                } else if (e.key === "Enter" && filteredOptions.length > 0) {
+                  e.preventDefault();
+                  handleSelect(filteredOptions[0]);
+                }
+              }}
+              placeholder={searchPlaceholder}
+              style={{
+                width: "100%",
+                background: "transparent",
+                border: "none",
+                outline: "none",
+                fontSize: 12,
+                color: t?.text || "#fff",
+                fontFamily: "inherit",
+              }}
+            />
+            {search && (
+              <span
+                onClick={() => setSearch("")}
+                style={{
+                  cursor: "pointer",
+                  fontSize: 12,
+                  color: t?.textMuted || "#888",
+                  padding: "0 4px",
+                }}
+              >
+                ✕
+              </span>
+            )}
+          </div>
+
+          {/* Options List */}
+          <div
+            style={{
+              maxHeight: 240,
+              overflowY: "auto",
+              padding: "4px 0",
+            }}
+          >
+            {filteredOptions.length === 0 ? (
+              <div
+                style={{
+                  padding: "16px 12px",
+                  textAlign: "center",
+                  fontSize: 12,
+                  color: t?.textMuted || "#888",
+                }}
+              >
+                {emptyMessage}
+              </div>
+            ) : (
+              filteredOptions.map((opt) => {
+                const optVal = opt.value !== undefined ? opt.value : opt.id;
+                const isSelected =
+                  selectedOption &&
+                  String(selectedOption.value || selectedOption.id) === String(optVal);
+                return (
+                  <div
+                    key={optVal}
+                    onClick={() => handleSelect(opt)}
+                    style={{
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      background: isSelected ? "rgba(139, 59, 200, 0.18)" : "transparent",
+                      color: isSelected ? BRAND.purple : t?.text || "#fff",
+                      transition: "background 0.12s ease",
+                      borderLeft: isSelected
+                        ? `3px solid ${BRAND.purple}`
+                        : "3px solid transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background =
+                          t?.hoverBg || "rgba(255,255,255,0.06)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) {
+                        e.currentTarget.style.background = "transparent";
+                      }
+                    }}
+                  >
+                    {renderOption ? (
+                      renderOption(opt, isSelected)
+                    ) : (
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontWeight: isSelected ? 700 : 500,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {opt.label || opt.name || opt.full_name}
+                        </div>
+                        {opt.sublabel && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: t?.textMuted || "#888",
+                              marginTop: 2,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {opt.sublabel}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {opt.badge && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          borderRadius: 6,
+                          background: opt.badgeColor || "rgba(59,85,230,0.15)",
+                          color: opt.badgeTextColor || BRAND.blue,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {opt.badge}
+                      </span>
+                    )}
+                    {isSelected && (
+                      <span style={{ fontSize: 13, fontWeight: 800, color: BRAND.purple }}>
+                        ✓
+                      </span>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

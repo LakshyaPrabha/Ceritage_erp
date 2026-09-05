@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const cors    = require("cors");
 const helmet  = require("helmet");
 const morgan  = require("morgan");
@@ -91,7 +91,7 @@ app.use((err, req, res, next) => {
 
 // â”€â”€ Start server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PORT = process.env.PORT || 5000;
-const server = 
+
 // ── Startup payment gateway configuration check ─────────────────────────────
 // Validates env vars WITHOUT printing secrets. Warns if missing.
 (function validatePaymentConfig() {
@@ -124,7 +124,7 @@ const server =
     console.log(`[Ceritage] Payment gateway: ${provider.toUpperCase()} mode (mock/sandbox — no real charges).`);
   }
 })();
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Ceritage ERP Backend running on port ${PORT}`);
   console.log(`DB: ${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`);
 });

@@ -147,11 +147,12 @@ async function createWorkOrder(req, res) {
   try {
     const [[{ maxId }]] = await db.query("SELECT COALESCE(MAX(id), 0) + 1 AS maxId FROM work_orders");
     const orderNo = `WO-${new Date().getFullYear()}-${String(maxId).padStart(4, "0")}`;
+    const activeBranchId = Number(req.headers?.["x-branch-id"] || req.user?.branch_id || 1);
 
     const [result] = await db.query(
-      `INSERT INTO work_orders (order_no, karigar_id, item_type, metal_purity, target_weight, target_date, making_charge_agreed, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'ISSUED')`,
-      [orderNo, karigar_id, item_type, metal_purity || "22K", Number(target_weight), target_date || null, Number(making_charge_agreed || 0)]
+      `INSERT INTO work_orders (order_no, karigar_id, branch_id, item_type, metal_purity, target_weight, target_date, making_charge_agreed, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ISSUED')`,
+      [orderNo, karigar_id, activeBranchId, item_type, metal_purity || "22K", Number(target_weight), target_date || null, Number(making_charge_agreed || 0)]
     );
 
     res.status(201).json({
@@ -180,11 +181,12 @@ async function issueGold(req, res) {
 
     const [[{ maxId }]] = await conn.query("SELECT COALESCE(MAX(id), 0) + 1 AS maxId FROM gold_issues");
     const issueNo = `GI-${new Date().getFullYear()}-${String(maxId).padStart(4, "0")}`;
+    const activeBranchId = Number(req.headers?.["x-branch-id"] || req.user?.branch_id || 1);
 
     const [result] = await conn.query(
-      `INSERT INTO gold_issues (issue_no, karigar_id, metal_type, purity, gross_weight, net_weight, issue_date, work_order_ref, notes)
-       VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)`,
-      [issueNo, karigar_id, metal_type, purity, weight, Number(net_weight || weight), work_order_ref || null, notes || null]
+      `INSERT INTO gold_issues (issue_no, karigar_id, branch_id, metal_type, purity, gross_weight, net_weight, issue_date, work_order_ref, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)`,
+      [issueNo, karigar_id, activeBranchId, metal_type, purity, weight, Number(net_weight || weight), work_order_ref || null, notes || null]
     );
 
     // Increment karigar's metal balance
@@ -233,11 +235,13 @@ async function receiveGold(req, res) {
 
     const [[{ maxId }]] = await conn.query("SELECT COALESCE(MAX(id), 0) + 1 AS maxId FROM gold_receives");
     const receiveNo = `GR-${new Date().getFullYear()}-${String(maxId).padStart(4, "0")}`;
+    const activeBranchId = Number(req.headers?.["x-branch-id"] || req.user?.branch_id || 1);
 
     const [result] = await conn.query(
-      `INSERT INTO gold_receives (receive_no, karigar_id, metal_type, purity, gross_weight, net_weight, wastage_reported, making_charges, receive_date, item_name)
-       VALUES (?, ?, ?, ?, ?, ?, CURDATE(), ?, ?)`,
-      [receiveNo, karigar_id, metal_type, purity, grossWt, netWt, wastage, makingCharges, item_name || "Finished Ornament"]
+      `INSERT INTO gold_receives 
+         (receive_no, karigar_id, branch_id, metal_type, purity, gross_weight, net_weight, wastage_reported, making_charges, receive_date, item_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURDATE(), ?)`,
+      [receiveNo, karigar_id, activeBranchId, metal_type, purity, grossWt, netWt, wastage, makingCharges, item_name || "Finished Ornament"]
     );
 
     // Deduct metal balance & add making charges due
@@ -295,11 +299,12 @@ async function makePayment(req, res) {
 
     const [[{ maxId }]] = await conn.query("SELECT COALESCE(MAX(id), 0) + 1 AS maxId FROM karigar_payments");
     const receiptNo = `KP-${new Date().getFullYear()}-${String(maxId).padStart(4, "0")}`;
+    const activeBranchId = Number(req.headers?.["x-branch-id"] || req.user?.branch_id || 1);
 
     const [result] = await conn.query(
-      `INSERT INTO karigar_payments (receipt_no, karigar_id, amount, payment_date, payment_mode, reference_no, notes)
-       VALUES (?, ?, ?, CURDATE(), ?, ?, ?)`,
-      [receiptNo, karigar_id, payAmount, payment_mode, reference_no || null, notes || null]
+      `INSERT INTO karigar_payments (receipt_no, karigar_id, branch_id, amount, payment_date, payment_mode, reference_no, notes)
+       VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?)`,
+      [receiptNo, karigar_id, activeBranchId, payAmount, payment_mode, reference_no || null, notes || null]
     );
 
     // Reduce making charges due

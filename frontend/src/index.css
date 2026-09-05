@@ -61,3 +61,13 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 3px rgba(59, 85, 230, 0.1) !important;
   outline: none;
 }
+
+/* Hide number input spinners & avoid accidental scrolling increments */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}

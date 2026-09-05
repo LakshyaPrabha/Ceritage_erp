@@ -13,21 +13,42 @@ async function getAll(req, res) {
 }
 
 async function create(req, res) {
-  const { customer_id, metal_type, item_description, gross_weight, stone_weight, purity, rate, wastage_pct, exchange_for } = req.body;
+  const { customer_id, metal_type = "Gold", item_description, gross_weight, stone_weight, purity, rate, wastage_pct, exchange_for } = req.body;
   try {
-    const net_weight   = (gross_weight || 0) - (stone_weight || 0);
-    const fine_weight  = net_weight * (parseFloat(purity) || 0.9167);
-    const base_value   = fine_weight * (rate || 0);
-    const deduction    = base_value * ((wastage_pct || 0) / 100);
-    const final_value  = base_value - deduction;
+    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM gold_exchanges");
+    const year = new Date().getFullYear();
+    const exchange_no = `EXCH-${year}-${String(count + 1).padStart(4, "0")}`;
+    const exchange_date = new Date().toISOString().slice(0, 10);
+
+    let effectiveCustId = customer_id;
+    if (!effectiveCustId) {
+      const [cRows] = await db.query("SELECT id FROM customers LIMIT 1");
+      effectiveCustId = cRows.length ? cRows[0].id : 1;
+    }
+
+    const net_weight   = Math.max(0, (parseFloat(gross_weight) || 0) - (parseFloat(stone_weight) || 0));
+    const pVal         = parseFloat(purity) || 0.9167;
+    const fine_weight  = net_weight * pVal;
+    const base_value   = fine_weight * (parseFloat(rate) || 0);
+    const deduction    = base_value * ((parseFloat(wastage_pct) || 0) / 100);
+    const final_value  = Math.max(0, base_value - deduction);
+    const tested_purity = `${(pVal * 100).toFixed(1)}%`;
+    const desc = item_description || `${metal_type} Exchange (${tested_purity})`;
 
     const [result] = await db.query(
       `INSERT INTO gold_exchanges
-       (customer_id, metal_type, item_description, gross_weight, stone_weight, net_weight, purity, fine_weight, rate, wastage_pct, base_value, deduction, final_value, exchange_for)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [customer_id || null, metal_type, item_description || null, gross_weight || 0, stone_weight || 0, net_weight, purity, fine_weight, rate || 0, wastage_pct || 0, base_value, deduction, final_value, exchange_for || "New Purchase"]
+       (exchange_no, customer_id, exchange_date, item_description, gross_weight, dust_stone_weight,
+        stone_weight, net_weight, tested_purity, purity, fine_weight, rate, wastage_pct,
+        base_value, deduction, final_value, valuation_amount, metal_type, exchange_for)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        exchange_no, effectiveCustId, exchange_date, desc, parseFloat(gross_weight) || 0,
+        parseFloat(stone_weight) || 0, parseFloat(stone_weight) || 0, net_weight, tested_purity,
+        String(purity || "0.9167"), fine_weight, parseFloat(rate) || 0, parseFloat(wastage_pct) || 0,
+        base_value, deduction, final_value, final_value, metal_type, exchange_for || "New Purchase"
+      ]
     );
-    res.status(201).json({ success: true, data: { id: result.insertId, final_value, fine_weight } });
+    res.status(201).json({ success: true, data: { id: result.insertId, exchange_no, final_value, fine_weight } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

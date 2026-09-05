@@ -4,16 +4,19 @@ import { useState, useEffect, useCallback } from "react";
 import {
   PageHeader, Card, CardHeader, StatCard,
   BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid,
-  Input, Select, SectionTitle
+  Input, Select, SectionTitle, SearchableSelect,
 } from "../../components/ui";
+import { getAuthToken, getActiveBranchId } from "../../lib/api";
 
-const API = window.__CERITAGE_API__ || "http://localhost:5000/api";
+const API = import.meta.env.VITE_API_BASE_URL || window.__CERITAGE_API__ || "http://localhost:5000/api";
 
 function authHeaders() {
-  const token = localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
+  const token = getAuthToken();
+  const branchId = getActiveBranchId();
   return {
     "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {})
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(branchId ? { "x-branch-id": branchId } : {}),
   };
 }
 
@@ -257,10 +260,22 @@ export default function Orders({ t }) {
           <SectionTitle t={t}>Customer & Item Details</SectionTitle>
           <FormGrid>
             <FormGroup label="Select Customer *" t={t} half>
-              <Select t={t} value={orderForm.customer_id} onChange={e => setOrderForm(p => ({ ...p, customer_id: e.target.value }))} required>
-                <option value="">-- Choose Customer --</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.full_name} ({c.phone})</option>)}
-              </Select>
+              <SearchableSelect
+                t={t}
+                value={orderForm.customer_id}
+                placeholder="-- Choose Customer --"
+                searchPlaceholder="Search customer by name, phone, city..."
+                options={customers.map(c => ({
+                  value: c.id,
+                  label: c.full_name,
+                  sublabel: `${c.phone || "No phone"}${c.city ? ` · ${c.city}` : ""}`,
+                  badge: c.tier || (c.gst_number || c.gstin ? "GST" : null),
+                  badgeColor: c.tier === "Platinum" ? "rgba(230,59,138,0.2)" : c.tier === "Gold" ? "rgba(245,158,11,0.2)" : "rgba(59,85,230,0.12)",
+                  badgeTextColor: c.tier === "Platinum" ? BRAND.pink : c.tier === "Gold" ? "#f59e0b" : BRAND.blue,
+                  searchKey: `${c.full_name || ""} ${c.phone || ""} ${c.city || ""} ${c.gst_number || c.gstin || ""} ${c.customer_id || ""}`,
+                }))}
+                onChange={val => setOrderForm(p => ({ ...p, customer_id: val }))}
+              />
             </FormGroup>
             <FormGroup label="Item Description *" t={t} half>
               <Input t={t} placeholder="e.g. 22K Custom Bridal Choker" value={orderForm.item_name} onChange={e => setOrderForm(p => ({ ...p, item_name: e.target.value }))} required />

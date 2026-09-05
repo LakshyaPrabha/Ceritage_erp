@@ -351,22 +351,26 @@ exports.convertToInvoice = async (req, res) => {
     const depositAdjusted = Math.min(Number(jangad.security_deposit || 0), grossTotal);
     const finalPayable = Math.max(0, grossTotal - depositAdjusted);
 
+    const invoiceDate = new Date().toISOString().slice(0, 10);
+
     // 1. Create Invoice in Invoices table
     const [invResult] = await conn.query(`
       INSERT INTO invoices (
-        invoice_no, invoice_type, customer_id, branch_id, payment_mode,
-        discount_amt, cgst, sgst, igst, grand_total, paid_amount, status, created_at
-      ) VALUES (?, 'Retail Invoice', ?, ?, ?, ?, ?, ?, 0, ?, ?, 'Paid', NOW())
+        invoice_no, invoice_type, customer_id, branch_id, invoice_date, payment_mode,
+        discount_amt, cgst, sgst, igst, grand_total, paid_amount, balance_due, status, notes
+      ) VALUES (?, 'Retail Invoice', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0, 'Paid', ?)
     `, [
       invoiceNo,
       jangad.customer_id || null,
       branchId,
-      payment_mode,
+      invoiceDate,
+      payment_mode || "Cash",
       depositAdjusted,
       cgst,
       sgst,
       grossTotal,
       finalPayable,
+      `Converted from Jangad ${jangad.jangad_no || `#${id}`}`,
     ]);
 
     const newInvoiceId = invResult.insertId;
@@ -375,17 +379,18 @@ exports.convertToInvoice = async (req, res) => {
     for (const it of itemsToSell) {
       await conn.query(`
         INSERT INTO invoice_items (
-          invoice_id, product_id, item_name, gross_weight, net_weight,
-          gold_rate, making_charges, total_price
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+          invoice_id, product_id, item_description, hsn_code, purity,
+          weight_g, rate_per_gram, making_charges, stone_charges, gst_pct,
+          discount_pct, amount
+        ) VALUES (?, ?, ?, '7113', ?, ?, ?, 0, 0, 3, 0, ?)
       `, [
         newInvoiceId,
         it.product_id || null,
-        it.item_name,
-        it.gross_weight,
-        it.net_weight,
-        it.estimated_rate || 0,
-        it.estimated_value,
+        it.item_name || "Jewellery Item",
+        it.purity || "22K",
+        Number(it.gross_weight || it.net_weight || 0),
+        Number(it.estimated_rate || 0),
+        Number(it.estimated_value || 0),
       ]);
 
       // Mark item SOLD in jangad_items
@@ -397,7 +402,17 @@ exports.convertToInvoice = async (req, res) => {
 
       // Mark product status 'Sold' in main inventory
       if (it.product_id) {
-        await conn.query("UPDATE products SET status = 'Sold' WHERE id = ?", [it.product_id]);
+        await conn.query(`
+          UPDATE products 
+          SET stock_qty = GREATEST(0, stock_qty - 1),
+              stock_status = CASE 
+                WHEN stock_qty - 1 <= 0 THEN 'Out of Stock' 
+                WHEN stock_qty - 1 <= min_stock THEN 'Low Stock' 
+                ELSE 'In Stock' 
+              END,
+              status = 'Sold' 
+          WHERE id = ?
+        `, [it.product_id]);
       }
     }
 

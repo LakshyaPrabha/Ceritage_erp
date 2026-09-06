@@ -1,13 +1,19 @@
 import { BRAND } from "../../theme.js";
 import { useState, useEffect, useCallback } from "react";
-import {PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
+import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
   BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid, Input, Select,
 } from "../../components/ui";
+import { getAuthToken, getActiveBranchId } from "../../lib/api";
 
-const API = "http://localhost:5000/api";
+const API = import.meta.env.VITE_API_BASE_URL || window.__CERITAGE_API__ || "http://localhost:5000/api";
 function authHeaders() {
-  const token = sessionStorage.getItem("ceritage_token") || localStorage.getItem("ceritage_token");
-  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const token = getAuthToken();
+  const branchId = getActiveBranchId();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(branchId ? { "x-branch-id": branchId } : {}),
+  };
 }
 function fmt(n)     { return n ? "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2 }) : "₹0.00"; }
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString("en-IN") : "—"; }
@@ -281,10 +287,10 @@ export default function Purchase({ t }) {
 
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",
         gap:12, marginBottom:22 }}>
-        <StatCard label="Total Purchase Value" color={BRAND.blue}   t={t} />
-        <StatCard label="Pending Payments"     color={BRAND.pink}   t={t} />
-        <StatCard label="Purchase Amount"      color={BRAND.purple} t={t} />
-        <StatCard label="Total Orders"         color="#2ecc71"      t={t} />
+        <StatCard label="Total Purchase Value" value={fmt(kpis.total_purchase_value)} color={BRAND.blue}   t={t} />
+        <StatCard label="Pending Payments"     value={fmt(kpis.pending_payments)}     color={BRAND.pink}   t={t} />
+        <StatCard label="Purchase Amount"      value={fmt(kpis.purchase_amount)}      color={BRAND.purple} t={t} />
+        <StatCard label="Total Orders"         value={kpis.total_orders ?? 0}          color="#2ecc71"      t={t} />
       </div>
 
       <Tabs tabs={TABS} active={tab} onChange={setTab} t={t} />

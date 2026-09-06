@@ -79,9 +79,9 @@ const STONE_TYPES = [
 const EMPTY_FORM = {
   name: "", sku: "", jewellery_category: "", product_category: "",
   metal_type: "Gold", purity: "22K (916)",
-  gross_weight: "", stone_weight: "0", net_weight: "",
+  gross_weight: "", stone_weight: "", net_weight: "",
   making_charges_type: "per_gram", making_charges: "",
-  stone_charges: "0", purchase_price: "", mrp: "",
+  stone_charges: "", purchase_price: "", mrp: "",
   hsn_code: "7113", huid: "", hallmark_status: "Not Hallmarked",
   barcode: "", stock_qty: "1", min_stock_qty: "1",
   location: "", description: "",
@@ -181,12 +181,15 @@ function ProductForm({ form, onChange, errors, t }) {
         </FormGroup>
         <FormGroup label="Gross Weight (g) *" t={t} half>
           <Input t={t} type="number" step="0.001" placeholder="0.000"
-            value={form.gross_weight} onChange={onChange("gross_weight")} style={fs("gross_weight")} />
+            value={form.gross_weight} onChange={onChange("gross_weight")}
+            onFocus={e => { if (e.target.value === "0" || e.target.value === "0.000") onChange("gross_weight")({ target: { value: "" } }); else e.target.select(); }}
+            style={fs("gross_weight")} />
           {em("gross_weight")}
         </FormGroup>
         <FormGroup label="Stone Weight (g)" t={t} half>
           <Input t={t} type="number" step="0.001" placeholder="0.000"
-            value={form.stone_weight} onChange={onChange("stone_weight")} />
+            value={form.stone_weight} onChange={onChange("stone_weight")}
+            onFocus={e => { if (e.target.value === "0" || e.target.value === "0.000") onChange("stone_weight")({ target: { value: "" } }); else e.target.select(); }} />
           <div style={{ fontSize: 10, color: t.textFaint, marginTop: 3 }}>
             Weight of stones to be deducted from gross weight.
           </div>
@@ -215,20 +218,26 @@ function ProductForm({ form, onChange, errors, t }) {
         </FormGroup>
         <FormGroup label={`Making Charges (${form.making_charges_type === "per_gram" ? "₹/g" : form.making_charges_type === "percent" ? "%" : "₹"}) *`} t={t} half>
           <Input t={t} type="number" step="0.01" placeholder="0.00"
-            value={form.making_charges} onChange={onChange("making_charges")} style={fs("making_charges")} />
+            value={form.making_charges} onChange={onChange("making_charges")}
+            onFocus={e => { if (e.target.value === "0" || e.target.value === "0.00") onChange("making_charges")({ target: { value: "" } }); else e.target.select(); }}
+            style={fs("making_charges")} />
           {em("making_charges")}
         </FormGroup>
         <FormGroup label="Stone Charges (₹)" t={t} half>
           <Input t={t} type="number" step="0.01" placeholder="0.00"
-            value={form.stone_charges} onChange={onChange("stone_charges")} />
+            value={form.stone_charges} onChange={onChange("stone_charges")}
+            onFocus={e => { if (e.target.value === "0" || e.target.value === "0.00") onChange("stone_charges")({ target: { value: "" } }); else e.target.select(); }} />
         </FormGroup>
         <FormGroup label="Purchase Price / Cost (₹)" t={t} half>
           <Input t={t} type="number" step="0.01" placeholder="0.00"
-            value={form.purchase_price} onChange={onChange("purchase_price")} />
+            value={form.purchase_price} onChange={onChange("purchase_price")}
+            onFocus={e => { if (e.target.value === "0" || e.target.value === "0.00") onChange("purchase_price")({ target: { value: "" } }); else e.target.select(); }} />
         </FormGroup>
         <FormGroup label="MRP / Selling Price (₹) *" t={t} half>
           <Input t={t} type="number" step="0.01" placeholder="0.00"
-            value={form.mrp} onChange={onChange("mrp")} style={fs("mrp")} />
+            value={form.mrp} onChange={onChange("mrp")}
+            onFocus={e => { if (e.target.value === "0" || e.target.value === "0.00") onChange("mrp")({ target: { value: "" } }); else e.target.select(); }}
+            style={fs("mrp")} />
           {em("mrp")}
         </FormGroup>
       </FormGrid>
@@ -281,12 +290,15 @@ function ProductForm({ form, onChange, errors, t }) {
       <FormGrid>
         <FormGroup label="Stock Quantity *" t={t} half>
           <Input t={t} type="number" min="0" placeholder="1"
-            value={form.stock_qty} onChange={onChange("stock_qty")} style={fs("stock_qty")} />
+            value={form.stock_qty} onChange={onChange("stock_qty")}
+            onFocus={e => { if (e.target.value === "0" || e.target.value === "1") e.target.select(); }}
+            style={fs("stock_qty")} />
           {em("stock_qty")}
         </FormGroup>
         <FormGroup label="Minimum Stock Alert Level" t={t} half>
           <Input t={t} type="number" min="0" placeholder="1"
-            value={form.min_stock_qty} onChange={onChange("min_stock_qty")} />
+            value={form.min_stock_qty} onChange={onChange("min_stock_qty")}
+            onFocus={e => { if (e.target.value === "0" || e.target.value === "1") e.target.select(); }} />
           <div style={{ fontSize: 10, color: t.textFaint, marginTop: 3 }}>
             Alert will show when stock falls at or below this level.
           </div>
@@ -373,20 +385,28 @@ export default function Products({ t }) {
     });
   }, []);
 
-  // Render barcode when bcSelected changes (barcode tab)
+  // Render barcode when bcSelected or bcMode changes (barcode tab)
   useEffect(() => {
     if (!bcSelected) return;
-    if (barcodeImgRef.current) renderBarcodeInEl(bcSelected, barcodeImgRef.current);
-    if (qrCanvasRef.current)   renderQRInEl(bcSelected, qrCanvasRef.current);
-  }, [bcSelected, renderBarcodeInEl, renderQRInEl]);
+    const timer = setTimeout(() => {
+      if (bcMode === "barcode" && barcodeImgRef.current) {
+        renderBarcodeInEl(bcSelected, barcodeImgRef.current);
+      }
+      if (bcMode === "qr" && qrCanvasRef.current) {
+        renderQRInEl(bcSelected, qrCanvasRef.current);
+      }
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [bcSelected, bcMode, renderBarcodeInEl, renderQRInEl]);
 
   // Render in modal when it opens
   useEffect(() => {
     if (!barcodeModal || !selProduct) return;
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (modalBcRef.current) renderBarcodeInEl(selProduct, modalBcRef.current);
       if (modalQrRef.current) renderQRInEl(selProduct, modalQrRef.current);
     }, 80);
+    return () => clearTimeout(timer);
   }, [barcodeModal, selProduct, renderBarcodeInEl, renderQRInEl]);
 
   async function fetchKpis() {
@@ -454,11 +474,11 @@ export default function Products({ t }) {
       metal_type:          product.metal_type          || "Gold",
       purity:              product.purity              || "22K (916)",
       gross_weight:        product.gross_weight        || "",
-      stone_weight:        product.stone_weight        || "0",
+      stone_weight:        parseFloat(product.stone_weight) > 0 ? product.stone_weight : "",
       net_weight:          product.net_weight          || "",
       making_charges_type: product.making_charges_type || "per_gram",
       making_charges:      product.making_charges      || "",
-      stone_charges:       product.stone_charges       || "0",
+      stone_charges:       parseFloat(product.stone_charges) > 0 ? product.stone_charges : "",
       purchase_price:      product.purchase_price      || "",
       mrp:                 product.mrp                 || "",
       hsn_code:            product.hsn_code            || "7113",

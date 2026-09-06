@@ -28,13 +28,129 @@ const TABS = [
 const EMPTY_FORM = {
   full_name:"", phone:"", alt_phone:"", email:"",
   date_of_birth:"", anniversary:"", gender:"",
-  tier:"Regular", city:"", state:"",
+  tier:"Regular", address:"", city:"", state:"", pincode:"",
   pan:"", aadhaar:"", gst_number:"", credit_limit:"0", notes:"",
 };
 
-const STATES = ["Maharashtra","Gujarat","Rajasthan","Delhi","Karnataka",
-  "Tamil Nadu","West Bengal","Uttar Pradesh","Punjab","Madhya Pradesh",
-  "Haryana","Andhra Pradesh","Telangana","Kerala","Odisha","Bihar","Other"];
+const STATE_DISTRICTS = {
+  "Uttar Pradesh": [
+    "Agra", "Aligarh", "Ambedkar Nagar", "Amethi", "Amroha", "Auraiya", "Ayodhya (Faizabad)", "Azamgarh",
+    "Baghpat", "Bahraich", "Ballia", "Balrampur", "Banda", "Barabanki", "Bareilly", "Basti", "Bhadohi",
+    "Bijnor", "Budaun", "Bulandshahr", "Chandauli", "Chitrakoot", "Deoria", "Etah", "Etawah", "Farrukhabad",
+    "Fatehpur", "Firozabad", "Gautam Buddha Nagar (Noida)", "Ghaziabad", "Ghazipur", "Gonda", "Gorakhpur",
+    "Hamirpur", "Hapur", "Hardoi", "Hathras", "Jalaun", "Jaunpur", "Jhansi", "Kannauj", "Kanpur Dehat",
+    "Kanpur Nagar", "Kasganj", "Kaushambi", "Kushinagar", "Lakhimpur Kheri", "Lalitpur", "Lucknow",
+    "Maharajganj", "Mahoba", "Mainpuri", "Mathura", "Mau", "Meerut", "Mirzapur", "Moradabad", "Muzaffarnagar",
+    "Pilibhit", "Pratapgarh", "Prayagraj (Allahabad)", "Rae Bareli", "Rampur", "Saharanpur", "Sambhal",
+    "Sant Kabir Nagar", "Shahjahanpur", "Shamli", "Shravasti", "Siddharthnagar", "Sitapur", "Sonbhadra",
+    "Sultanpur", "Unnao", "Varanasi", "Other"
+  ],
+  "Maharashtra": [
+    "Mumbai City", "Mumbai Suburban", "Thane", "Palghar", "Raigad", "Pune", "Satara", "Solapur", "Kolhapur",
+    "Sangli", "Nashik", "Ahmednagar", "Dhule", "Jalgaon", "Nandurbar", "Chhatrapati Sambhaji Nagar (Aurangabad)",
+    "Jalna", "Beed", "Nanded", "Dharashiv (Osmanabad)", "Latur", "Parbhani", "Hingoli", "Nagpur", "Wardha",
+    "Bhandara", "Gondia", "Chandrapur", "Gadchiroli", "Amravati", "Akola", "Yavatmal", "Buldhana", "Washim",
+    "Ratnagiri", "Sindhudurg", "Other"
+  ],
+  "Gujarat": [
+    "Ahmedabad", "Surat", "Vadodara", "Rajkot", "Bhavnagar", "Jamnagar", "Junagadh", "Gandhinagar", "Anand",
+    "Navsari", "Morbi", "Bharuch", "Valsad", "Porbandar", "Panchmahal (Godhra)", "Mehsana", "Patan",
+    "Banaskantha (Palanpur)", "Sabarkantha (Himmatnagar)", "Aravalli", "Kheda (Nadiad)", "Dahod", "Mahisagar",
+    "Chhota Udaipur", "Narmada", "Tapi", "Dang", "Amreli", "Surendranagar", "Gir Somnath", "Botad",
+    "Devbhoomi Dwarka", "Kutch (Bhuj)", "Other"
+  ],
+  "Delhi": [
+    "Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", "North West Delhi",
+    "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi", "Other"
+  ],
+  "Rajasthan": [
+    "Jaipur", "Jodhpur", "Kota", "Bikaner", "Ajmer", "Udaipur", "Bhilwara", "Alwar", "Bharatpur", "Sikar",
+    "Pali", "Sri Ganganagar", "Hanumangarh", "Jhunjhunu", "Churu", "Tonk", "Sawai Madhopur", "Dausa",
+    "Chittorgarh", "Rajsamand", "Dungarpur", "Banswara", "Pratapgarh", "Barmer", "Jaisalmer", "Jalore",
+    "Sirohi", "Nagaur", "Bundi", "Baran", "Jhalawar", "Karauli", "Dholpur", "Other"
+  ],
+  "Madhya Pradesh": [
+    "Bhopal", "Indore", "Jabalpur", "Gwalior", "Ujjain", "Sagar", "Dewas", "Satna", "Ratlam", "Rewa",
+    "Katni", "Singrauli", "Burhanpur", "Khandwa", "Bhind", "Morena", "Shivpuri", "Vidisha", "Chhindwara",
+    "Damoh", "Mandsaur", "Neemuch", "Narmadapuram (Hoshangabad)", "Sehore", "Khargone", "Barwani", "Other"
+  ],
+  "Haryana": [
+    "Gurugram (Gurgaon)", "Faridabad", "Panipat", "Ambala", "Yamunanagar", "Rohtak", "Hisar", "Karnal",
+    "Sonipat", "Panchkula", "Bhiwani", "Sirsa", "Bahadurgarh", "Jind", "Kurukshetra", "Kaithal", "Rewari",
+    "Palwal", "Fatehabad", "Jhajjar", "Mahendragarh", "Nuh", "Other"
+  ],
+  "Punjab": [
+    "Ludhiana", "Amritsar", "Jalandhar", "Patiala", "Bathinda", "Mohali (SAS Nagar)", "Hoshiarpur", "Batala",
+    "Pathankot", "Moga", "Abohar", "Malerkotla", "Khanna", "Phagwara", "Muktsar", "Barnala", "Firozpur",
+    "Kapurthala", "Sangrur", "Fazilka", "Gurdaspur", "Faridkot", "Other"
+  ],
+  "Karnataka": [
+    "Bengaluru (Bangalore) Urban", "Bengaluru Rural", "Mysuru (Mysore)", "Hubballi-Dharwad", "Mangaluru (Mangalore)",
+    "Belagavi (Belgaum)", "Kalaburagi (Gulbarga)", "Davanagere", "Ballari (Bellary)", "Vijayapura (Bijapur)",
+    "Shivamogga (Shimoga)", "Tumakuru (Tumkur)", "Udupi", "Hassan", "Mandya", "Bidar", "Chikkamagaluru",
+    "Bagalkot", "Kolar", "Ramanagara", "Other"
+  ],
+  "Tamil Nadu": [
+    "Chennai", "Coimbatore", "Madurai", "Tiruchirappalli", "Salem", "Tiruppur", "Erode", "Tirunelveli", "Vellore",
+    "Thoothukudi (Tuticorin)", "Dindigul", "Thanjavur", "Ranipet", "Sivakasi", "Karur", "Nilgiris (Ooty)",
+    "Kanchipuram", "Cuddalore", "Kanyakumari", "Nagapattinam", "Namakkal", "Theni", "Virudhunagar", "Other"
+  ],
+  "West Bengal": [
+    "Kolkata", "Howrah", "North 24 Parganas", "South 24 Parganas", "Hooghly", "Paschim Medinipur", "Purba Medinipur",
+    "Purba Bardhaman", "Paschim Bardhaman (Asansol/Durgapur)", "Nadia", "Murshidabad", "Birbhum", "Malda",
+    "Jalpaiguri", "Darjeeling", "Siliguri", "Alipurduar", "Cooch Behar", "Bankura", "Purulia", "Other"
+  ],
+  "Telangana": [
+    "Hyderabad", "Warangal", "Nizamabad", "Karimnagar", "Ramagundam", "Khammam", "Mahbubnagar", "Nalgonda",
+    "Adilabad", "Suryapet", "Siddipet", "Miryalaguda", "Mancherial", "Jagtial", "Other"
+  ],
+  "Andhra Pradesh": [
+    "Visakhapatnam", "Vijayawada", "Guntur", "Nellore", "Kurnool", "Kakinada", "Rajahmundry", "Kadapa",
+    "Tirupati", "Anantapur", "Eluru", "Vizianagaram", "Srikakulam", "Chittoor", "Prakasam", "Other"
+  ],
+  "Kerala": [
+    "Thiruvananthapuram", "Kochi (Ernakulam)", "Kozhikode (Calicut)", "Thrissur", "Kollam", "Palakkad",
+    "Alappuzha", "Kannur", "Kottayam", "Malappuram", "Kasaragod", "Pathanamthitta", "Idukki", "Wayanad", "Other"
+  ],
+  "Bihar": [
+    "Patna", "Gaya", "Bhagalpur", "Muzaffarpur", "Purnia", "Darbhanga", "Bihar Sharif", "Arrah (Bhojpur)",
+    "Begusarai", "Katihar", "Munger", "Chhapra (Saran)", "Danapur", "Saharsa", "Sasaram (Rohtas)", "Hajipur (Vaishali)",
+    "Dehri", "Siwan", "Motihari (East Champaran)", "Nawada", "Bettiah (West Champaran)", "Samastipur", "Madhubani", "Other"
+  ],
+  "Odisha": [
+    "Bhubaneswar (Khurda)", "Cuttack", "Rourkela (Sundargarh)", "Berhampur (Ganjam)", "Sambalpur", "Puri",
+    "Balasore", "Bhadrak", "Baripada (Mayurbhanj)", "Jharsuguda", "Balangir", "Angul", "Jajpur", "Other"
+  ],
+  "Jharkhand": [
+    "Ranchi", "Jamshedpur (East Singhbhum)", "Dhanbad", "Bokaro", "Deoghar", "Hazaribagh", "Giridih",
+    "Ramgarh", "Dumka", "Palamu (Medininagar)", "Chaibasa (West Singhbhum)", "Other"
+  ],
+  "Chhattisgarh": [
+    "Raipur", "Bhilai (Durg)", "Bilaspur", "Korba", "Rajnandgaon", "Jagdalpur (Bastar)", "Ambikapur (Surguja)",
+    "Raigarh", "Dhamtari", "Mahasamund", "Other"
+  ],
+  "Uttarakhand": [
+    "Dehradun", "Haridwar", "Roorkee", "Haldwani (Nainital)", "Rudrapur (Udham Singh Nagar)", "Kashipur",
+    "Rishikesh", "Nainital", "Almora", "Pauri Garhwal", "Tehri Garhwal", "Pithoragarh", "Other"
+  ],
+  "Himachal Pradesh": [
+    "Shimla", "Dharamshala (Kangra)", "Solan", "Mandi", "Kullu", "Baddi", "Bilaspur", "Hamirpur", "Una", "Chamba", "Sirmaur", "Other"
+  ],
+  "Assam": [
+    "Guwahati (Kamrup)", "Silchar (Cachar)", "Dibrugarh", "Jorhat", "Nagaon", "Tinsukia", "Tezpur (Sonitpur)", "Bongaigaon", "Other"
+  ],
+  "Goa": [
+    "North Goa (Panaji / Mapusa)", "South Goa (Margao / Vasco)", "Other"
+  ],
+  "Jammu and Kashmir": [
+    "Srinagar", "Jammu", "Anantnag", "Baramulla", "Kathua", "Udhampur", "Sopore", "Other"
+  ],
+  "Other": [
+    "Other"
+  ]
+};
+
+const STATES = Object.keys(STATE_DISTRICTS);
 
 function validateForm(form) {
   const errors = {};
@@ -80,13 +196,32 @@ function CustomerForm({ form, onChange, errors, t }) {
         </FormGroup>
         <FormGroup label="Date of Birth"       t={t} half><Input t={t} type="date" value={form.date_of_birth} onChange={onChange("date_of_birth")} /></FormGroup>
         <FormGroup label="Wedding Anniversary" t={t} half><Input t={t} type="date" value={form.anniversary}   onChange={onChange("anniversary")}   /></FormGroup>
-        <FormGroup label="City *"              t={t} half><Input t={t} placeholder="City name" value={form.city}  onChange={onChange("city")}  style={fs("city")}  />{em("city")}</FormGroup>
+        <FormGroup label="House / Flat / Street Address" t={t} full><Input t={t} placeholder="House / Flat No., Building, Street / Area, Landmark" value={form.address || ""} onChange={onChange("address")} /></FormGroup>
         <FormGroup label="State *"             t={t} half>
-          <Select t={t} value={form.state} onChange={onChange("state")} style={fs("state")}>
+          <Select t={t} value={form.state} onChange={(e) => {
+            const newState = e.target.value;
+            onChange("state")(e);
+            const dists = STATE_DISTRICTS[newState] || [];
+            if (dists.length > 0 && !dists.includes(form.city)) {
+              onChange("city")({ target: { value: dists[0] } });
+            }
+          }} style={fs("state")}>
             <option value="">-- Select State --</option>
-            {STATES.map(s => <option key={s}>{s}</option>)}
+            {STATES.map(s => <option key={s} value={s}>{s}</option>)}
           </Select>{em("state")}
         </FormGroup>
+        <FormGroup label="District / City *"   t={t} half>
+          <Select t={t} value={form.city} onChange={onChange("city")} style={fs("city")}>
+            <option value="">-- Select District / City --</option>
+            {(STATE_DISTRICTS[form.state] || []).map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+            {form.city && !(STATE_DISTRICTS[form.state] || []).includes(form.city) && (
+              <option value={form.city}>{form.city}</option>
+            )}
+          </Select>{em("city")}
+        </FormGroup>
+        <FormGroup label="Pincode"             t={t} half><Input t={t} placeholder="6-digit Pincode" value={form.pincode || ""} onChange={(e) => onChange("pincode")({ target: { value: e.target.value.replace(/\D/g, "") } })} maxLength={6} /></FormGroup>
       </FormGrid>
       <SectionTitle t={t}>KYC & Identity Verification</SectionTitle>
       <div style={{ background:`rgba(59,85,230,0.06)`, border:`1px solid rgba(59,85,230,0.15)`, borderRadius:9, padding:"10px 14px", marginBottom:14, fontSize:12, color:t.textSub }}>
@@ -683,7 +818,7 @@ export default function Customers({ t }) {
   const openAddModal = () => {
     setFormData({
       full_name: "", phone: "", email: "", date_of_birth: "", anniversary: "",
-      tier: "Regular", city: "", state: "Maharashtra", pan: "", aadhaar: "",
+      tier: "Regular", address: "", city: "Mumbai City", state: "Maharashtra", pincode: "", pan: "", aadhaar: "",
       gst_number: "", credit_limit: 0, loyalty_points: 0, wallet_balance: 0,
       kyc_status: "Pending",
       opt_in_whatsapp: true, opt_in_sms: true, opt_in_marketing: false,
@@ -702,8 +837,10 @@ export default function Customers({ t }) {
       date_of_birth: cust.date_of_birth ? cust.date_of_birth.slice(0, 10) : "",
       anniversary: cust.anniversary ? cust.anniversary.slice(0, 10) : "",
       tier: cust.tier || "Regular",
+      address: cust.address || "",
       city: cust.city || "",
       state: cust.state || "Maharashtra",
+      pincode: cust.pincode || "",
       pan: cust.pan || "",
       aadhaar: cust.aadhaar || "",
       gst_number: cust.gst_number || "",
@@ -1704,13 +1841,12 @@ export default function Customers({ t }) {
             {c360Tab === "overview" && (
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
                 <div style={{ background:t.card2||t.card, padding:14, borderRadius:8, border:`1px solid ${t.borderDash}` }}>
-                  <div style={{ fontWeight:700, fontSize:13, marginBottom:10 }}>Membership & Tier Details</div>
+                  <div style={{ fontWeight:700, fontSize:13, marginBottom:10 }}>Address & Location Details</div>
                   <div style={{ fontSize:12, display:"grid", gap:6 }}>
-                    <div><strong>Active Plan:</strong> {c360Data.membership?.plan_name || 'Regular'} Tier</div>
-                    <div><strong>Loyalty Points Multiplier:</strong> {c360Data.membership?.loyalty_multiplier || 1.0}X</div>
-                    <div><strong>Making Charge Discount:</strong> {c360Data.membership?.making_discount_pct || 0}% OFF</div>
-                    <div><strong>VIP Perks:</strong> {c360Data.membership?.perks_description || 'Standard benefits'}</div>
-                    <div><strong>Expiry Date:</strong> {c360Data.membership?.expiry_date ? new Date(c360Data.membership.expiry_date).toLocaleDateString('en-IN') : 'No Expiry'}</div>
+                    <div><strong>House / Street Address:</strong> {c360Data.customer.address || '—'}</div>
+                    <div><strong>District / City:</strong> {c360Data.customer.city || '—'}</div>
+                    <div><strong>State:</strong> {c360Data.customer.state || '—'}</div>
+                    <div><strong>Pincode:</strong> {c360Data.customer.pincode || '—'}</div>
                   </div>
 
                   <div style={{ fontWeight:700, fontSize:13, marginTop:14, marginBottom:8 }}>Upcoming Occasions</div>
@@ -1728,7 +1864,16 @@ export default function Customers({ t }) {
                 </div>
 
                 <div style={{ background:t.card2||t.card, padding:14, borderRadius:8, border:`1px solid ${t.borderDash}` }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+                  <div style={{ fontWeight:700, fontSize:13, marginBottom:10 }}>Membership & Tier Details</div>
+                  <div style={{ fontSize:12, display:"grid", gap:6 }}>
+                    <div><strong>Active Plan:</strong> {c360Data.membership?.plan_name || 'Regular'} Tier</div>
+                    <div><strong>Loyalty Points Multiplier:</strong> {c360Data.membership?.loyalty_multiplier || 1.0}X</div>
+                    <div><strong>Making Charge Discount:</strong> {c360Data.membership?.making_discount_pct || 0}% OFF</div>
+                    <div><strong>VIP Perks:</strong> {c360Data.membership?.perks_description || 'Standard benefits'}</div>
+                    <div><strong>Expiry Date:</strong> {c360Data.membership?.expiry_date ? new Date(c360Data.membership.expiry_date).toLocaleDateString('en-IN') : 'No Expiry'}</div>
+                  </div>
+
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:14, marginBottom:8 }}>
                     <div style={{ fontWeight:700, fontSize:13 }}>Recent Notes</div>
                     <BtnSm t={t} primary onClick={() => { setNoteMsg(""); setAddNoteModal(true); }}>+ Note</BtnSm>
                   </div>
@@ -2534,6 +2679,59 @@ export default function Customers({ t }) {
             </FormGroup>
           </FormGrid>
 
+          <SectionTitle t={t}>Address & Location Details</SectionTitle>
+          <FormGrid>
+            <FormGroup label="House / Flat / Street Address" t={t} full>
+              <Input
+                t={t}
+                placeholder="House / Flat No., Building, Street / Area, Landmark"
+                value={formData.address || ""}
+                onChange={(e) => setFormData(f => ({ ...f, address: e.target.value }))}
+              />
+            </FormGroup>
+            <FormGroup label="State *" t={t} half>
+              <Select
+                t={t}
+                value={formData.state || "Maharashtra"}
+                onChange={(e) => {
+                  const newState = e.target.value;
+                  const dists = STATE_DISTRICTS[newState] || [];
+                  setFormData(f => ({
+                    ...f,
+                    state: newState,
+                    city: dists.length > 0 ? dists[0] : f.city
+                  }));
+                }}
+              >
+                {STATES.map(s => <option key={s} value={s}>{s}</option>)}
+              </Select>
+            </FormGroup>
+            <FormGroup label="District / City *" t={t} half>
+              <Select
+                t={t}
+                value={formData.city || ""}
+                onChange={(e) => setFormData(f => ({ ...f, city: e.target.value }))}
+              >
+                <option value="">-- Select District / City --</option>
+                {(STATE_DISTRICTS[formData.state] || []).map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+                {formData.city && !(STATE_DISTRICTS[formData.state] || []).includes(formData.city) && (
+                  <option value={formData.city}>{formData.city}</option>
+                )}
+              </Select>
+            </FormGroup>
+            <FormGroup label="Pincode" t={t} half>
+              <Input
+                t={t}
+                placeholder="6-digit Pincode (e.g. 400001)"
+                value={formData.pincode || ""}
+                maxLength={6}
+                onChange={(e) => setFormData(f => ({ ...f, pincode: e.target.value.replace(/\D/g, "") }))}
+              />
+            </FormGroup>
+          </FormGrid>
+
           <SectionTitle t={t}>Communication Preferences</SectionTitle>
           <FormGrid>
             <FormGroup label="Allow WhatsApp Reminders" t={t} half>
@@ -2675,6 +2873,59 @@ export default function Customers({ t }) {
                 <option value="Gold">Gold</option>
                 <option value="Platinum">Platinum</option>
               </Select>
+            </FormGroup>
+          </FormGrid>
+
+          <SectionTitle t={t}>Address & Location Details</SectionTitle>
+          <FormGrid>
+            <FormGroup label="House / Flat / Street Address" t={t} full>
+              <Input
+                t={t}
+                placeholder="House / Flat No., Building, Street / Area, Landmark"
+                value={formData.address || ""}
+                onChange={(e) => setFormData(f => ({ ...f, address: e.target.value }))}
+              />
+            </FormGroup>
+            <FormGroup label="State *" t={t} half>
+              <Select
+                t={t}
+                value={formData.state || "Maharashtra"}
+                onChange={(e) => {
+                  const newState = e.target.value;
+                  const dists = STATE_DISTRICTS[newState] || [];
+                  setFormData(f => ({
+                    ...f,
+                    state: newState,
+                    city: dists.length > 0 ? dists[0] : f.city
+                  }));
+                }}
+              >
+                {STATES.map(s => <option key={s} value={s}>{s}</option>)}
+              </Select>
+            </FormGroup>
+            <FormGroup label="District / City *" t={t} half>
+              <Select
+                t={t}
+                value={formData.city || ""}
+                onChange={(e) => setFormData(f => ({ ...f, city: e.target.value }))}
+              >
+                <option value="">-- Select District / City --</option>
+                {(STATE_DISTRICTS[formData.state] || []).map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+                {formData.city && !(STATE_DISTRICTS[formData.state] || []).includes(formData.city) && (
+                  <option value={formData.city}>{formData.city}</option>
+                )}
+              </Select>
+            </FormGroup>
+            <FormGroup label="Pincode" t={t} half>
+              <Input
+                t={t}
+                placeholder="6-digit Pincode (e.g. 400001)"
+                value={formData.pincode || ""}
+                maxLength={6}
+                onChange={(e) => setFormData(f => ({ ...f, pincode: e.target.value.replace(/\D/g, "") }))}
+              />
             </FormGroup>
           </FormGrid>
 

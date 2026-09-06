@@ -3,12 +3,19 @@ import { useState, useEffect, useCallback } from "react";
 import {
   PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
   BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid, Input, Select,
+  SearchableSelect,
 } from "../../components/ui";
+import { getAuthToken, getActiveBranchId } from "../../lib/api";
 
-const API = window.__CERITAGE_API__ || "http://localhost:5000/api";
+const API = import.meta.env.VITE_API_BASE_URL || window.__CERITAGE_API__ || "http://localhost:5000/api";
 function authHeaders() {
-  const token = localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
-  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const token = getAuthToken();
+  const branchId = getActiveBranchId();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(branchId ? { "x-branch-id": branchId } : {}),
+  };
 }
 function fmt(n) { return n ? "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2 }) : "₹0.00"; }
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString("en-IN") : "—"; }
@@ -25,13 +32,13 @@ const TABS = [
 ];
 
 const EMPTY_SALE = {
-  invoice_type: "Retail Invoice", customer_id: "", invoice_date: "",
-  payment_mode: "Cash", discount_pct: 0, discount_amt: 0,
-  old_gold_exchange: 0, cgst: 0, sgst: 0, igst: 0,
+  invoice_type: "Retail Invoice", customer_id: "", invoice_date: new Date().toISOString().split("T")[0],
+  payment_mode: "Cash", discount_pct: "", discount_amt: "",
+  old_gold_exchange: "", cgst: "", sgst: "", igst: "",
   grand_total: 0, paid_amount: 0, status: "Paid", notes: "",
-  items: [{ product_id: "", item_description: "", purity: "", weight_g: 0, rate_per_gram: 0, making_charges: 0, stone_charges: 0, gst_pct: 3, discount_pct: 0, amount: 0 }],
+  items: [{ product_id: "", item_description: "", purity: "22K", weight_g: "", rate_per_gram: "", making_charges: "", stone_charges: "", gst_pct: 3, discount_pct: "", amount: 0 }],
 };
-const EMPTY_RETURN  = { customer_id: "", invoice_ref: "", item_description: "", reason: "Defective Product", refund_amount: "", refund_mode: "Cash Refund", return_date: "" };
+const EMPTY_RETURN  = { customer_id: "", invoice_ref: "", item_description: "", reason: "Defective Product", refund_amount: "", refund_mode: "Cash Refund", return_date: new Date().toISOString().split("T")[0] };
 const EMPTY_CHALLAN = { invoice_ref: "", customer_name: "", phone: "", delivery_address: "", items_description: "", quantity: 1, delivery_mode: "Hand Delivery", delivered_by: "" };
 
 export default function Sales({ t }) {
@@ -49,6 +56,8 @@ export default function Sales({ t }) {
 
   // modals
   const [saleModal,    setSaleModal]    = useState(false);
+  const [viewSaleModal,setViewSaleModal]= useState(false);
+  const [selectedSale, setSelectedSale] = useState(null);
   const [returnModal,  setReturnModal]  = useState(false);
   const [challanModal, setChallanModal] = useState(false);
   const [saving,       setSaving]       = useState(false);
@@ -123,7 +132,10 @@ export default function Sales({ t }) {
   }, []);
 
   // -- tab-driven loading -------------------------------------------------------
-  useEffect(() => { loadKpis(); }, [loadKpis]);
+  useEffect(() => {
+    loadKpis();
+    loadCustomers();
+  }, [loadKpis, loadCustomers]);
 
   useEffect(() => {
     if (["register", "retail", "wholesale", "online"].includes(tab)) {
@@ -135,8 +147,12 @@ export default function Sales({ t }) {
     else if (tab === "advance")    loadAdvance();
   }, [tab, loadSales, loadReturns, loadChallans, loadPending, loadAdvance]);
 
-  // open New Sale ? load customers once
-  useEffect(() => { if (saleModal) loadCustomers(); }, [saleModal, loadCustomers]);
+  // Load customers when modals or returns tab open
+  useEffect(() => {
+    if (saleModal || returnModal || tab === "returns") {
+      loadCustomers();
+    }
+  }, [saleModal, returnModal, tab, loadCustomers]);
 
   // -- sale item helpers --------------------------------------------------------
   function updateItem(idx, field, value) {
@@ -300,7 +316,9 @@ export default function Sales({ t }) {
                         <td style={{ padding: "10px 12px", color: t.text, fontWeight: 600 }}>{fmt(s.paid_amount)}</td>
                         <td style={{ padding: "10px 12px", color: t.textSub }}>{s.payment_mode}</td>
                         <td style={{ padding: "10px 12px" }}>{badge(s.status)}</td>
-                        <td style={{ padding: "10px 12px" }}><BtnSm t={t}>View</BtnSm></td>
+                        <td style={{ padding: "10px 12px" }}>
+                          <BtnSm t={t} onClick={() => { setSelectedSale(s); setViewSaleModal(true); }}>View</BtnSm>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -480,10 +498,23 @@ export default function Sales({ t }) {
             <Input t={t} type="date" value={saleForm.invoice_date} onChange={e => setSaleForm(p => ({ ...p, invoice_date: e.target.value }))} />
           </FormGroup>
           <FormGroup label="Customer" t={t} half>
-            <Select t={t} value={saleForm.customer_id} onChange={e => setSaleForm(p => ({ ...p, customer_id: e.target.value }))}>
-              <option value="">Walk-in Customer</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.full_name} � {c.phone}</option>)}
-            </Select>
+            <SearchableSelect
+              t={t}
+              value={saleForm.customer_id}
+              placeholder="Walk-in Customer"
+              searchPlaceholder="Search customer by name, phone, city..."
+              allowClear={true}
+              options={customers.map(c => ({
+                value: c.id,
+                label: c.full_name,
+                sublabel: `${c.phone || "No phone"}${c.city ? ` · ${c.city}` : ""}`,
+                badge: c.tier || (c.gst_number || c.gstin ? "GST" : null),
+                badgeColor: c.tier === "Platinum" ? "rgba(230,59,138,0.2)" : c.tier === "Gold" ? "rgba(245,158,11,0.2)" : "rgba(59,85,230,0.12)",
+                badgeTextColor: c.tier === "Platinum" ? BRAND.pink : c.tier === "Gold" ? "#f59e0b" : BRAND.blue,
+                searchKey: `${c.full_name || ""} ${c.phone || ""} ${c.city || ""} ${c.gst_number || c.gstin || ""} ${c.customer_id || ""}`,
+              }))}
+              onChange={val => setSaleForm(p => ({ ...p, customer_id: val }))}
+            />
           </FormGroup>
           <FormGroup label="Payment Mode" t={t} half>
             <Select t={t} value={saleForm.payment_mode} onChange={e => setSaleForm(p => ({ ...p, payment_mode: e.target.value }))}>
@@ -586,10 +617,22 @@ export default function Sales({ t }) {
             <Input t={t} type="date" value={returnForm.return_date} onChange={e => setReturnForm(p => ({ ...p, return_date: e.target.value }))} />
           </FormGroup>
           <FormGroup label="Customer" t={t} half>
-            <Select t={t} value={returnForm.customer_id} onChange={e => setReturnForm(p => ({ ...p, customer_id: e.target.value }))}>
-              <option value="">-- Select Customer --</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-            </Select>
+            <SearchableSelect
+              t={t}
+              value={returnForm.customer_id}
+              placeholder="-- Select Customer --"
+              searchPlaceholder="Search customer by name, phone, city..."
+              options={customers.map(c => ({
+                value: c.id,
+                label: c.full_name,
+                sublabel: `${c.phone || "No phone"}${c.city ? ` · ${c.city}` : ""}`,
+                badge: c.tier || (c.gst_number || c.gstin ? "GST" : null),
+                badgeColor: c.tier === "Platinum" ? "rgba(230,59,138,0.2)" : c.tier === "Gold" ? "rgba(245,158,11,0.2)" : "rgba(59,85,230,0.12)",
+                badgeTextColor: c.tier === "Platinum" ? BRAND.pink : c.tier === "Gold" ? "#f59e0b" : BRAND.blue,
+                searchKey: `${c.full_name || ""} ${c.phone || ""} ${c.city || ""} ${c.gst_number || c.gstin || ""} ${c.customer_id || ""}`,
+              }))}
+              onChange={val => setReturnForm(p => ({ ...p, customer_id: val }))}
+            />
           </FormGroup>
           <FormGroup label="Refund Amount (?) *" t={t} half>
             <Input t={t} type="number" value={returnForm.refund_amount} onChange={e => setReturnForm(p => ({ ...p, refund_amount: e.target.value }))} />
@@ -642,6 +685,62 @@ export default function Sales({ t }) {
             <Input t={t} value={challanForm.delivered_by} onChange={e => setChallanForm(p => ({ ...p, delivered_by: e.target.value }))} />
           </FormGroup>
         </FormGrid>
+      </Modal>
+
+      {/* -- VIEW SALE MODAL -------------------------------------------------------- */}
+      <Modal open={viewSaleModal} onClose={() => { setViewSaleModal(false); setSelectedSale(null); }}
+        title={`Invoice Details — ${selectedSale?.invoice_no || ""}`} t={t} wide
+        footer={<>
+          <BtnOutline t={t} onClick={() => { setViewSaleModal(false); setSelectedSale(null); }}>Close</BtnOutline>
+          <BtnPrimary onClick={() => {
+            if (!selectedSale) return;
+            const printContent = `
+              <html>
+                <head><title>Invoice ${selectedSale.invoice_no}</title>
+                <style>body{font-family:Arial,sans-serif;padding:20px;font-size:13px} .hdr{display:flex;justify-content:space-between;border-bottom:2px solid #8B3BC8;padding-bottom:10px} table{width:100%;border-collapse:collapse;margin:15px 0} th,td{border:1px solid #ddd;padding:8px;text-align:left}</style>
+                </head>
+                <body>
+                  <div class="hdr"><div><h2>CERITAGE JEWELRY</h2><p>Invoice: <b>${selectedSale.invoice_no}</b></p></div><div><p>Date: ${fmtDate(selectedSale.invoice_date)}</p><p>Customer: ${selectedSale.customer_name || "Walk-in"}</p></div></div>
+                  <p><b>Payment Mode:</b> ${selectedSale.payment_mode || "Cash"} | <b>Status:</b> ${selectedSale.status || "Paid"}</p>
+                  <table style="margin-top:20px">
+                    <tr><th>Total Amount</th><th>Discount</th><th>Net Paid</th></tr>
+                    <tr><td>${fmt(selectedSale.grand_total)}</td><td>${fmt(selectedSale.discount_amt)}</td><td><b>${fmt(selectedSale.paid_amount)}</b></td></tr>
+                  </table>
+                  <script>window.onload=()=>{window.print();setTimeout(()=>window.close(),1000);}</script>
+                </body>
+              </html>`;
+            const w = window.open("", "_blank");
+            if (w) { w.document.write(printContent); w.document.close(); }
+          }}>Print Invoice</BtnPrimary>
+        </>}>
+        {selectedSale && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {[
+                ["Invoice No.", selectedSale.invoice_no],
+                ["Invoice Date", fmtDate(selectedSale.invoice_date)],
+                ["Customer", selectedSale.customer_name || "Walk-in Customer"],
+                ["Invoice Type", selectedSale.invoice_type || "Retail Invoice"],
+                ["Payment Mode", selectedSale.payment_mode || "Cash"],
+                ["Status", selectedSale.status || "Paid"],
+                ["Grand Total", fmt(selectedSale.grand_total)],
+                ["Paid Amount", fmt(selectedSale.paid_amount)],
+                ["Discount", fmt(selectedSale.discount_amt)],
+                ["Old Gold Exchange", fmt(selectedSale.old_gold_exchange || 0)],
+              ].map(([k, v]) => (
+                <div key={k} style={{ padding: "8px 12px", background: t.card2 || t.card, borderRadius: 8, border: `1px solid ${t.borderDash}` }}>
+                  <div style={{ fontSize: 10, color: t.textFaint, textTransform: "uppercase" }}>{k}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginTop: 2 }}>{v}</div>
+                </div>
+              ))}
+            </div>
+            {selectedSale.notes && (
+              <div style={{ padding: "8px 12px", background: t.card2 || t.card, borderRadius: 8, border: `1px solid ${t.borderDash}`, fontSize: 12, color: t.textSub }}>
+                <strong>Notes:</strong> {selectedSale.notes}
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );

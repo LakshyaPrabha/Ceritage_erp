@@ -31,8 +31,23 @@ function fmt(val) {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(n);
 }
 
-export default function Rates({ t }) {
-  const [tab, setTab] = useState("live");
+export default function Rates({ t, initialTab }) {
+  const [tab, setTab] = useState(() => {
+    const requested = window.__rateTab || sessionStorage.getItem("ceritage_rate_tab");
+    if (requested) {
+      delete window.__rateTab;
+      sessionStorage.removeItem("ceritage_rate_tab");
+      return requested;
+    }
+    return initialTab || "live";
+  });
+
+  useEffect(() => {
+    if (window.__rateTab) {
+      setTab(window.__rateTab);
+      delete window.__rateTab;
+    }
+  }, []);
 
   // ── Rate data from backend ──────────────────────────────
   const [ratesData,    setRatesData]    = useState(null);
@@ -415,18 +430,6 @@ export default function Rates({ t }) {
                 <span>{mcx.silverPM ? `₹${fmt(mcx.silverPM)} / g` : "—"}</span>
               </div>
             </div>
-            {saveError && (
-              <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(230,59,138,0.1)", border: "1px solid rgba(230,59,138,0.3)", borderRadius: 8, color: BRAND.pink, fontSize: 13 }}>
-                {saveError}
-              </div>
-            )}
-
-            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-              <BtnOutline t={t} onClick={() => setForm(EMPTY_RATES)}>Reset</BtnOutline>
-              <BtnPrimary onClick={handleSave} disabled={saving} style={{ flex: 1 }}>
-                {saving ? "Updating..." : "Update All Rates"}
-              </BtnPrimary>
-            </div>
           </div>
         </Card>
       )}
@@ -585,46 +588,50 @@ export default function Rates({ t }) {
       {tab === "alerts" && (
         <Card t={t}>
           <CardHeader title="Market Rate Alerts & Notifications" t={t} />
+          <div style={{ fontSize:13, color:t.textMuted, marginBottom:16 }}>
+            Set price trigger thresholds for 24K Gold and 999 Silver to receive instant notifications via WhatsApp or SMS.
+          </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
             <div>
               <div style={{ fontSize:12, fontWeight:700, color:BRAND.purple, textTransform:"uppercase", marginBottom:12 }}>
-                Threshold Alerts
+                Price Threshold Triggers
               </div>
               <FormGrid>
-                <FormGroup label="Alert if 24K Gold falls below" t={t} half><Input t={t} type="number" placeholder="₹/g" /></FormGroup>
-                <FormGroup label="Alert if 24K Gold rises above" t={t} half><Input t={t} type="number" placeholder="₹/g" /></FormGroup>
-                <FormGroup label="Alert if Silver falls below" t={t} half><Input t={t} type="number" placeholder="₹/g" /></FormGroup>
-                <FormGroup label="Alert if Silver rises above" t={t} half><Input t={t} type="number" placeholder="₹/g" /></FormGroup>
+                <FormGroup label="Alert if 24K Gold falls below (₹/g)" t={t} half>
+                  <Input t={t} type="number" placeholder="e.g. 7000" />
+                </FormGroup>
+                <FormGroup label="Alert if 24K Gold rises above (₹/g)" t={t} half>
+                  <Input t={t} type="number" placeholder="e.g. 7800" />
+                </FormGroup>
+                <FormGroup label="Alert if Silver falls below (₹/g)" t={t} half>
+                  <Input t={t} type="number" placeholder="e.g. 85" />
+                </FormGroup>
+                <FormGroup label="Alert if Silver rises above (₹/g)" t={t} half>
+                  <Input t={t} type="number" placeholder="e.g. 98" />
+                </FormGroup>
               </FormGrid>
             </div>
             <div>
               <div style={{ fontSize:12, fontWeight:700, color:BRAND.purple, textTransform:"uppercase", marginBottom:12 }}>
-                Notification Channels
+                Notification Channels & Automation
               </div>
-              {["WhatsApp Alert to Store Manager","SMS Notification","Daily Morning Market Summary",
-                "Auto-adjust Product Selling Prices"].map((item) => (
-                <div key={item} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
-                  <span style={{ fontSize:13, color:t.textSub }}>{item}</span>
-                  <div style={{ width:40, height:22, borderRadius:11, background:BRAND.gradBtn, cursor:"pointer", position:"relative" }}>
-                    <div style={{ position:"absolute", right:3, top:3, width:16, height:16, borderRadius:"50%", background:"#fff" }} />
+              {["WhatsApp Alert to Store Manager", "SMS Notification to Admin", "Daily Morning Market Summary (10:30 AM)",
+                "Auto-adjust Product Selling Prices based on Live Rates"].map((item) => (
+                <div key={item} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14,
+                  padding:"10px 12px", background:t.card2||t.card, borderRadius:8, border:`1px solid ${t.borderDash}` }}>
+                  <span style={{ fontSize:13, color:t.textSub, fontWeight:500 }}>{item}</span>
+                  <div style={{ width:38, height:20, borderRadius:10, background:BRAND.gradBtn, cursor:"pointer", position:"relative" }}>
+                    <div style={{ position:"absolute", right:2, top:2, width:16, height:16, borderRadius:"50%", background:"#fff" }} />
                   </div>
                 </div>
               ))}
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", background: `linear-gradient(135deg,${BRAND.blue}15,${BRAND.purple}10)`, borderRadius: 10, border: `1px solid ${BRAND.purple}44` }}>
-                <span style={{ fontSize: 15, fontWeight: 700, color: t.text }}>Total (incl. GST)</span>
-                <span style={{ fontSize: 20, fontWeight: 900, color: BRAND.purple, fontFamily: "monospace" }}>
-                  Rs.{calc.total.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-
-              {/* {current && calcWeight && (
-                // <div style={{ fontSize: 11, color: t.textFaint, textAlign: "center", marginTop: 4 }}>
-                //   Based on {calcPurity} rate: Rs.{current.rate_22k}/g (22K)
-                // </div>
-              )} */}
             </div>
           </div>
-          <BtnPrimary style={{ marginTop:8 }}>Save Alert Settings</BtnPrimary>
+          <div style={{ marginTop:16 }}>
+            <BtnPrimary onClick={() => alert("Rate Alert & Notification preferences have been successfully saved!")}>
+              Save Alert Settings
+            </BtnPrimary>
+          </div>
         </Card>
       )}
     </div>

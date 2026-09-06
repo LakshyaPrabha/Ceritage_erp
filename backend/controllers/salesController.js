@@ -201,10 +201,18 @@ async function getPendingOrders(req, res) {
     if (status) { where += " AND o.status = ?"; params.push(status); }
 
     const [rows] = await db.query(
-      `SELECT o.*, c.full_name AS customer_name, c.phone AS customer_phone
+      `SELECT o.*,
+              o.order_no AS order_id,
+              o.item_name AS item_description,
+              o.estimated_total AS estimated_amount,
+              o.advance_paid AS advance_amount,
+              (o.estimated_total - o.advance_paid) AS balance,
+              o.due_date AS delivery_date,
+              c.full_name AS customer_name,
+              c.phone AS customer_phone
        FROM orders o
        LEFT JOIN customers c ON o.customer_id = c.id
-       ${where} ORDER BY o.delivery_date ASC, o.created_at DESC`,
+       ${where} ORDER BY o.due_date ASC, o.created_at DESC`,
       params
     );
     res.json({ success: true, data: rows });
@@ -216,11 +224,19 @@ async function getPendingOrders(req, res) {
 async function getAdvanceOrders(req, res) {
   try {
     const [rows] = await db.query(
-      `SELECT o.*, c.full_name AS customer_name, c.phone AS customer_phone
+      `SELECT o.*,
+              o.order_no AS order_id,
+              o.item_name AS item_description,
+              o.estimated_total AS estimated_amount,
+              o.advance_paid AS advance_amount,
+              (o.estimated_total - o.advance_paid) AS balance,
+              o.due_date AS delivery_date,
+              c.full_name AS customer_name,
+              c.phone AS customer_phone
        FROM orders o
        LEFT JOIN customers c ON o.customer_id = c.id
-       WHERE o.order_type = 'Advance'
-       ORDER BY o.delivery_date ASC`
+       WHERE o.advance_paid > 0
+       ORDER BY o.due_date ASC`
     );
     res.json({ success: true, data: rows });
   } catch (err) {

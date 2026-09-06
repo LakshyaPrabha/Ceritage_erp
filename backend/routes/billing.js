@@ -15,6 +15,7 @@ router.post("/returns",       checkPermission("billing","edit"),  c.createReturn
 // ── Invoices CRUD ─────────────────────────────────────────────────────────────
 router.get("/",               checkPermission("billing"),         c.getAll);
 router.post("/",              checkPermission("billing","edit"),  c.create);
+router.get("/staff",          checkPermission("billing"),         c.getStaff);
 router.get("/:id",            checkPermission("billing"),         c.getById);
 
 module.exports = router;

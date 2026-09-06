@@ -114,9 +114,9 @@ async function getAll(req, res) {
     const params = [...bf.params];
 
     if (status === "active") {
-      conditions.push("c.status = 'ACTIVE'");
+      conditions.push("(c.status IS NULL OR UPPER(c.status) = 'ACTIVE')");
     } else if (status === "archived") {
-      conditions.push("c.status = 'ARCHIVED'");
+      conditions.push("UPPER(c.status) = 'ARCHIVED'");
     }
 
     if (branch) {
@@ -218,7 +218,7 @@ async function getById(req, res) {
 async function create(req, res) {
   const {
     full_name, phone, email, date_of_birth, anniversary,
-    tier = "Regular", city, state, pan, aadhaar, gst_number,
+    tier = "Regular", address, city, state, pincode, pan, aadhaar, gst_number,
     credit_limit = 0, loyalty_points = 0, wallet_balance = 0,
     kyc_status
   } = req.body;
@@ -273,13 +273,15 @@ async function create(req, res) {
     const [result] = await db.query(
       `INSERT INTO customers
        (customer_id, branch_id, full_name, phone, email, date_of_birth, anniversary, tier,
-        city, state, pan, aadhaar, gst_number, credit_limit, loyalty_points,
+        address, city, state, pincode, pan, aadhaar, gst_number, credit_limit, loyalty_points,
         wallet_balance, kyc_status, opt_in_whatsapp, opt_in_sms, opt_in_marketing, preferred_channel, status, balance_due)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0)`,
       [
         customer_id, assignedBranchId, full_name.trim(), normalizedPhone, email ? email.trim() : null,
         date_of_birth || null, anniversary || null, tier,
+        address ? address.trim() : null,
         city ? city.trim() : null, state ? state.trim() : null,
+        pincode ? pincode.trim() : null,
         pan ? pan.trim().toUpperCase() : null,
         aadhaar ? aadhaar.trim() : null,
         gst_number ? gst_number.trim().toUpperCase() : null,
@@ -329,7 +331,7 @@ async function update(req, res) {
   const branch_id = req.user.branch_id;
   const {
     full_name, phone, email, date_of_birth, anniversary,
-    tier, city, state, pan, aadhaar, gst_number, credit_limit,
+    tier, address, city, state, pincode, pan, aadhaar, gst_number, credit_limit,
     kyc_status, opt_in_whatsapp, opt_in_sms, opt_in_marketing, preferred_channel
   } = req.body;
 
@@ -369,8 +371,10 @@ async function update(req, res) {
          date_of_birth = ?,
          anniversary = ?,
          tier = COALESCE(?, tier),
+         address = ?,
          city = ?,
          state = ?,
+         pincode = ?,
          pan = ?,
          aadhaar = ?,
          gst_number = ?,
@@ -388,8 +392,10 @@ async function update(req, res) {
         date_of_birth !== undefined ? (date_of_birth || null) : currentCust.date_of_birth,
         anniversary !== undefined ? (anniversary || null) : currentCust.anniversary,
         tier || currentCust.tier,
+        address !== undefined ? (address ? address.trim() : null) : currentCust.address,
         city !== undefined ? (city ? city.trim() : null) : currentCust.city,
         state !== undefined ? (state ? state.trim() : null) : currentCust.state,
+        pincode !== undefined ? (pincode ? pincode.trim() : null) : currentCust.pincode,
         pan !== undefined ? (pan ? pan.trim().toUpperCase() : null) : currentCust.pan,
         aadhaar !== undefined ? (aadhaar ? aadhaar.trim() : null) : currentCust.aadhaar,
         gst_number !== undefined ? (gst_number ? gst_number.trim().toUpperCase() : null) : currentCust.gst_number,
@@ -1599,10 +1605,7 @@ async function getKycReport(req, res) {
     }));
     res.json({ success: true, data: sanitized });
   } catch (err) {
-    await conn.rollback();
     res.status(500).json({ success: false, message: err.message });
-  } finally {
-    conn.release();
   }
 }
 

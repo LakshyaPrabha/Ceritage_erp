@@ -1,5 +1,6 @@
 const db = require("../config/db");
 const { branchFilter } = require("../utils/branchScope");
+const accounting = require("../services/accountingPostingService");
 
 // GET /api/billing — all invoices
 async function getAll(req, res) {
@@ -86,13 +87,14 @@ async function create(req, res) {
     cgst, sgst, igst, tcs, grand_total, paid_amount,
     wallet_amount, redeem_points, notes, credit_days, items = [],
     split_payments, tenders, payments, advance_lock_id, advance_amount, advance_applications,
+    branch_id,
   } = req.body;
 
-  const requestedBranchId = Number(branch_id || req.user.branch_id || 1);
-  if (req.user.role !== "admin" && requestedBranchId !== Number(req.user.branch_id || 1)) {
+  const requestedBranchId = Number(branch_id || req.headers?.["x-branch-id"] || req.user?.branch_id || 1);
+  if (req.user?.role !== "admin" && req.user?.branch_id && requestedBranchId !== Number(req.user.branch_id)) {
     return res.status(403).json({ success: false, message: "Cannot create invoice for another branch" });
   }
-  const activeBranchId = Number(req.branchId || requestedBranchId || req.user.branch_id || 1);
+  const activeBranchId = Number(req.branchId || requestedBranchId || req.user?.branch_id || 1);
   const invoiceGrandTotal = Number(grand_total || 0);
   const paymentModeText = String(payment_mode || "").trim().toLowerCase();
   const isCreditSale = paymentModeText === "credit" || paymentModeText === "credit sale";
@@ -244,7 +246,7 @@ async function create(req, res) {
     // 3. Generate sequential invoice number for this branch
     const [[{ count }]] = await conn.query(
       "SELECT COUNT(*) AS count FROM invoices WHERE branch_id = ? AND YEAR(invoice_date) = YEAR(NOW())",
-      [targetBranchId]
+      [activeBranchId]
     );
     const invoice_no = `INV-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 
@@ -781,6 +783,51 @@ async function createReturn(req, res) {
   }
 }
 
+// GET /api/billing/staff — active salespeople & staff for billing assignment
+async function getStaff(req, res) {
+  try {
+    const [users] = await db.query(
+      `SELECT id, username, full_name, role, branch_id FROM users WHERE status = 'active' ORDER BY full_name ASC`
+    );
+
+    let employees = [];
+    try {
+      const [empRows] = await db.query(
+        `SELECT id, name AS full_name, email AS username, role, branch_id FROM employees WHERE status = 'Active' ORDER BY name ASC`
+      );
+      employees = empRows;
+    } catch {}
+
+    const staffMap = new Map();
+    users.forEach(u => {
+      staffMap.set(`u_${u.id}`, {
+        id: u.id,
+        name: u.full_name || u.username,
+        full_name: u.full_name || u.username,
+        username: u.username,
+        role: u.role || 'Staff',
+        type: 'user'
+      });
+    });
+
+    employees.forEach(e => {
+      staffMap.set(`e_${e.id}`, {
+        id: e.id,
+        name: e.full_name || e.username,
+        full_name: e.full_name || e.username,
+        username: e.username,
+        role: e.role || 'Employee',
+        type: 'employee'
+      });
+    });
+
+    const staffList = Array.from(staffMap.values());
+    res.json({ success: true, data: staffList });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
 module.exports = {
   getAll,
   getById,
@@ -789,5 +836,7 @@ module.exports = {
   getCreditDebitNotes,
   createCreditDebitNote,
   getReturns,
-  createReturn
+  createReturn,
+  getStaff
 };
+

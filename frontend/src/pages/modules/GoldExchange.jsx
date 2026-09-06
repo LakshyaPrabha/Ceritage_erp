@@ -202,7 +202,13 @@ export default function GoldExchange({ t }) {
         actions={
           <div style={{ display: "flex", gap: 8 }}>
             <BtnOutline t={t} onClick={() => setTab("melt")}>Melting Calculator</BtnOutline>
-            <BtnPrimary onClick={() => setTab("calc")}>+ New Exchange Valuation</BtnPrimary>
+            <BtnPrimary onClick={() => {
+              setTab("calc");
+              setTimeout(() => {
+                const el = document.getElementById("exchange-form-card");
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+              }, 50);
+            }}>+ New Exchange Valuation</BtnPrimary>
           </div>
         }
       />
@@ -231,7 +237,7 @@ export default function GoldExchange({ t }) {
 
       {/* TAB 1: CALCULATOR & ENTRY */}
       {tab === "calc" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16 }}>
+        <div id="exchange-form-card" style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16 }}>
           <Card t={t}>
             <CardHeader title="Exchange Entry Form" t={t} />
             <form onSubmit={handleSubmit}>

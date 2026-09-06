@@ -1,17 +1,24 @@
-﻿// ─── Ceritage ERP — Billing & GST Invoice ────────────────────────────────────
+// ─── Ceritage ERP — Billing & GST Invoice ────────────────────────────────────
 import { BRAND } from "../../theme.js";
 import { useState, useEffect, useCallback } from "react";
 import {
   PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
   BtnPrimary, BtnOutline, BtnSm, Modal,
   FormGroup, FormGrid, Input, Select, SectionTitle,
+  SearchableSelect,
 } from "../../components/ui";
+import { getAuthToken, getActiveBranchId, apiRequest } from "../../lib/api";
 
-const API = window.__CERITAGE_API__ || "/api";
+const API = import.meta.env.VITE_API_BASE_URL || window.__CERITAGE_API__ || "http://localhost:5000/api";
 
 function authHeaders() {
-  const token = sessionStorage.getItem("ceritage_token");
-  return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const token = getAuthToken();
+  const branchId = getActiveBranchId();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(branchId ? { "x-branch-id": branchId } : {}),
+  };
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -50,85 +57,157 @@ function getGSTRate(hsn) {
   return GST_RATES[String(hsn).trim()] ?? 3;
 }
 
+// ── Ceritage Selling Rate Resolver ───────────────────────────────────────────
+function getSellingRate(metal = "Gold", purity = "22K (916)", ratesData = null) {
+  if (!ratesData) return 0;
+  const m = String(metal || "").toUpperCase();
+  const p = String(purity || "").toUpperCase();
+
+  const shopRates = ratesData.shopSellingRates || {};
+  const live = ratesData.liveMarket || {};
+
+  // Check 24K Gold
+  if (p.includes("24K") || (p.includes("999") && !m.includes("SILVER") && !m.includes("PLAT"))) {
+    return Number(shopRates.gold24K?.sellingPricePerGram || live.gold24K || 0);
+  }
+  // Check 18K Gold
+  if (p.includes("18K") || p.includes("750")) {
+    return Number(shopRates.gold18K?.sellingPricePerGram || live.gold18K || 0);
+  }
+  // Check 14K Gold
+  if (p.includes("14K") || p.includes("585")) {
+    return Number(shopRates.gold14K?.sellingPricePerGram || live.gold14K || 0);
+  }
+  // Check Silver 999 or 925
+  if (m.includes("SILVER") || p.includes("SILVER") || p.includes("925") || p.includes("92.5")) {
+    const sil999 = Number(shopRates.silver999?.sellingPricePerGram || live.silver999 || 0);
+    if (p.includes("925") || p.includes("92.5")) {
+      return parseFloat((sil999 * 0.925).toFixed(2));
+    }
+    return sil999;
+  }
+  // Check Platinum
+  if (m.includes("PLATINUM") || p.includes("PLAT")) {
+    return Number(shopRates.platinum999?.sellingPricePerGram || live.platinum999 || 0);
+  }
+  // Check Palladium
+  if (m.includes("PALLADIUM")) {
+    return Number(shopRates.palladium999?.sellingPricePerGram || live.palladium999 || 0);
+  }
+  // Default to 22K Gold (916)
+  return Number(shopRates.gold22K?.sellingPricePerGram || live.gold22K || 0);
+}
+
 // ── Empty item template ───────────────────────────────────────────────────────
 const EMPTY_ITEM = {
   product_id:   "",
   description:  "",
+  metal_type:   "Gold",
   hsn:          "7113",
-  purity:       "",
+  purity:       "22K (916)",
   weight:       "",
   rate:         "",
   making:       "",
   stone:        "",
   gst_pct:      3,
-  discount_pct: 0,
+  discount_pct: "",
   amount:       0,
 };
 
 // ── Compute single item amount ────────────────────────────────────────────────
 function computeItemAmount(item) {
-  const weight  = parseFloat(item.weight)       || 0;
-  const rate    = parseFloat(item.rate)         || 0;
-  const making  = parseFloat(item.making)       || 0;
-  const stone   = parseFloat(item.stone)        || 0;
-  const gstPct  = parseFloat(item.gst_pct)      || 0;
-  const discPct = parseFloat(item.discount_pct) || 0;
+  const weight     = parseFloat(item.weight)       || 0;
+  const rate       = parseFloat(item.rate)         || 0;
+  const makingRate = parseFloat(item.making)       || 0;
+  const makingAmt  = parseFloat((weight * makingRate).toFixed(2));
+  const stone      = parseFloat(item.stone)        || 0;
+  const gstPct     = parseFloat(item.gst_pct)      || 0;
+  const discPct    = parseFloat(item.discount_pct) || 0;
 
-  const metalValue   = weight * rate;
-  const subtotal     = metalValue + making + stone;
-  const afterDisc    = subtotal * (1 - discPct / 100);
-  const gstAmount    = afterDisc * (gstPct / 100);
+  const goldValue  = parseFloat((weight * rate).toFixed(2));
+  const subtotal   = goldValue + makingAmt + stone;
+  const afterDisc  = parseFloat((subtotal * (1 - discPct / 100)).toFixed(2));
+  const gstAmount  = parseFloat((afterDisc * (gstPct / 100)).toFixed(2));
   return parseFloat((afterDisc + gstAmount).toFixed(2));
 }
 
 // ── Compute invoice totals ────────────────────────────────────────────────────
 function computeTotals(items, discPct, discAmt, oldGold, isSameState = true) {
-  let subtotal    = 0;
-  let totalGST    = 0;
+  let totalGoldVal = 0;
+  let totalMaking  = 0;
+  let totalStone   = 0;
+  let subtotal     = 0;
 
   for (const item of items) {
-    const weight  = parseFloat(item.weight)       || 0;
-    const rate    = parseFloat(item.rate)         || 0;
-    const making  = parseFloat(item.making)       || 0;
-    const stone   = parseFloat(item.stone)        || 0;
-    const gstPct  = parseFloat(item.gst_pct)      || 0;
-    const itemDisc = parseFloat(item.discount_pct) || 0;
+    const weight     = parseFloat(item.weight)       || 0;
+    const rate       = parseFloat(item.rate)         || 0;
+    const makingRate = parseFloat(item.making)       || 0;
+    const makingAmt  = parseFloat((weight * makingRate).toFixed(2));
+    const stone      = parseFloat(item.stone)        || 0;
+    const itemDisc   = parseFloat(item.discount_pct) || 0;
 
-    const metalValue = weight * rate;
-    const base       = metalValue + making + stone;
-    const afterDisc  = base * (1 - itemDisc / 100);
-    const gst        = afterDisc * (gstPct / 100);
+    const goldValue  = parseFloat((weight * rate).toFixed(2));
+    const base       = goldValue + makingAmt + stone;
+    const afterDisc  = parseFloat((base * (1 - itemDisc / 100)).toFixed(2));
 
-    subtotal  += afterDisc;
-    totalGST  += gst;
+    totalGoldVal += goldValue;
+    totalMaking  += makingAmt;
+    totalStone   += stone;
+    subtotal     += afterDisc;
   }
 
   // Invoice-level discount
-  const invDiscAmt  = discAmt
-     ? parseFloat(discAmt)
-    : subtotal * (parseFloat(discPct) / 100 || 0);
+  const invDiscAmt = discAmt && parseFloat(discAmt) > 0
+    ? parseFloat(discAmt)
+    : parseFloat((subtotal * (parseFloat(discPct || 0) / 100 || 0)).toFixed(2));
 
-  const taxableAmt  = subtotal - invDiscAmt;
-  const cgst        = isSameState  ? totalGST / 2 : 0;
-  const sgst        = isSameState  ? totalGST / 2 : 0;
-  const igst        = !isSameState  ? totalGST : 0;
+  const taxableAmt = parseFloat(Math.max(0, subtotal - invDiscAmt).toFixed(2));
+  
+  // Calculate GST on final taxable amount proportionally across items
+  const discountRatio = subtotal > 0 ? (taxableAmt / subtotal) : 1;
+  let totalGST = 0;
+  for (const item of items) {
+    const weight     = parseFloat(item.weight)       || 0;
+    const rate       = parseFloat(item.rate)         || 0;
+    const makingRate = parseFloat(item.making)       || 0;
+    const makingAmt  = parseFloat((weight * makingRate).toFixed(2));
+    const stone      = parseFloat(item.stone)        || 0;
+    const itemDisc   = parseFloat(item.discount_pct) || 0;
+    const gstPct     = parseFloat(item.gst_pct)      || 0;
 
-  // TCS: 1% on cash txns > ₹2 lakh (as per Income Tax Act)
-  const grandBeforeTCS = taxableAmt + totalGST - (parseFloat(oldGold) || 0);
-  const tcs = grandBeforeTCS > 200000  ? parseFloat((grandBeforeTCS * 0.01).toFixed(2)) : 0;
+    const goldValue  = parseFloat((weight * rate).toFixed(2));
+    const base       = goldValue + makingAmt + stone;
+    const afterItemDisc = parseFloat((base * (1 - itemDisc / 100)).toFixed(2));
+    const itemTaxable = afterItemDisc * discountRatio;
+    totalGST += itemTaxable * (gstPct / 100);
+  }
+  totalGST = parseFloat(totalGST.toFixed(2));
 
-  const grandTotal = parseFloat((grandBeforeTCS + tcs).toFixed(2));
+  // Intra-state (CGST + SGST) vs Inter-state (IGST)
+  const cgst       = isSameState  ? parseFloat((totalGST / 2).toFixed(2)) : 0;
+  const sgst       = isSameState  ? parseFloat((totalGST / 2).toFixed(2)) : 0;
+  const igst       = !isSameState ? parseFloat(totalGST.toFixed(2)) : 0;
+  const effectiveGST = isSameState ? parseFloat((cgst + sgst).toFixed(2)) : parseFloat(igst.toFixed(2));
+
+  // TCS: 1% on high-value transactions (> ₹2,00,000 threshold under Sec 206C) on Taxable Subtotal
+  const tcs = taxableAmt > 200000 ? parseFloat((taxableAmt * 0.01).toFixed(2)) : 0;
+
+  // Grand Total = Taxable Subtotal + GST + TCS - Old Gold Exchange
+  const grandTotal = parseFloat((taxableAmt + effectiveGST + tcs - (parseFloat(oldGold) || 0)).toFixed(2));
 
   return {
-    subtotal:    parseFloat(subtotal.toFixed(2)),
-    invDiscAmt:  parseFloat(invDiscAmt.toFixed(2)),
-    taxableAmt:  parseFloat(taxableAmt.toFixed(2)),
-    cgst:        parseFloat(cgst.toFixed(2)),
-    sgst:        parseFloat(sgst.toFixed(2)),
-    igst:        parseFloat(igst.toFixed(2)),
+    subtotal:     parseFloat(subtotal.toFixed(2)),
+    totalGoldVal: parseFloat(totalGoldVal.toFixed(2)),
+    totalMaking:  parseFloat(totalMaking.toFixed(2)),
+    totalStone:   parseFloat(totalStone.toFixed(2)),
+    invDiscAmt:   parseFloat(invDiscAmt.toFixed(2)),
+    taxableAmt:   parseFloat(taxableAmt.toFixed(2)),
+    cgst,
+    sgst,
+    igst,
     tcs,
     grandTotal,
-    totalGST:    parseFloat(totalGST.toFixed(2)),
+    totalGST:     effectiveGST,
   };
 }
 
@@ -155,11 +234,11 @@ export default function Billing({ t }) {
   const [items,        setItems]        = useState([{ ...EMPTY_ITEM }]);
 
   // Discounts
-  const [discPct,      setDiscPct]      = useState("0");
-  const [discAmt,      setDiscAmt]      = useState("0");
+  const [discPct,      setDiscPct]      = useState("");
+  const [discAmt,      setDiscAmt]      = useState("");
   const [couponCode,   setCouponCode]   = useState("");
   const [giftVoucher,  setGiftVoucher]  = useState("");
-  const [oldGold,      setOldGold]      = useState("0");
+  const [oldGold,      setOldGold]      = useState("");
 
   // Payment
   const [payMode,      setPayMode]      = useState("Cash");
@@ -210,9 +289,11 @@ export default function Billing({ t }) {
   });
   const [retSaving,    setRetSaving]    = useState(false);
 
-  // ── Customer & employee lists ─────────────────────────────────────────
+  // ── Customer, employee, product & live rate state ───────────────────
   const [customers,    setCustomers]    = useState([]);
   const [employees,    setEmployees]    = useState([]);
+  const [products,     setProducts]     = useState([]);
+  const [ratesData,    setRatesData]    = useState(null);
 
   // ── Computed totals ───────────────────────────────────────────────────
   const totals = computeTotals(items, discPct, discAmt, oldGold, isSameState);
@@ -229,19 +310,60 @@ export default function Billing({ t }) {
 
   async function fetchCustomers() {
     try {
-      const r = await fetch(`${API}/customers?limit=200`, { headers: authHeaders() });
+      const r = await fetch(`${API}/customers?limit=500&status=all`, { headers: authHeaders() });
       const d = await r.json();
-      if (d.success) setCustomers(d.data || []);
-    } catch {}
+      if (d.success) setCustomers(Array.isArray(d.data) ? d.data : []);
+    } catch (err) {
+      console.error("fetchCustomers error:", err);
+    }
   }
 
   async function fetchEmployees() {
     try {
-      const r = await fetch(`${API}/employees?limit=100`, { headers: authHeaders() });
+      const r = await fetch(`${API}/billing/staff`, { headers: authHeaders() });
       const d = await r.json();
-      if (d.success) setEmployees(d.data || []);
-    } catch {}
+      if (d.success && Array.isArray(d.data) && d.data.length > 0) {
+        setEmployees(d.data);
+      } else {
+        const r2 = await fetch(`${API}/employees?limit=200&status=ALL`, { headers: authHeaders() });
+        const d2 = await r2.json();
+        if (d2.success) setEmployees(Array.isArray(d2.data) ? d2.data : []);
+      }
+    } catch (err) {
+      try {
+        const r2 = await fetch(`${API}/employees?limit=200&status=ALL`, { headers: authHeaders() });
+        const d2 = await r2.json();
+        if (d2.success) setEmployees(Array.isArray(d2.data) ? d2.data : []);
+      } catch (e) {
+        console.error("fetchEmployees error:", e);
+      }
+    }
   }
+
+  async function fetchProducts() {
+    try {
+      const r = await fetch(`${API}/products?limit=500&status=ALL`, { headers: authHeaders() });
+      const d = await r.json();
+      if (d.success) setProducts(Array.isArray(d.data) ? d.data : []);
+    } catch (err) {
+      console.error("fetchProducts error:", err);
+    }
+  }
+
+  const fetchRates = useCallback(async () => {
+    try {
+      const res = await apiRequest("/metal-rates/current").catch(() => null);
+      if (res && res.success) {
+        setRatesData(res);
+        return;
+      }
+      const r = await fetch(`${API}/metal-rates/current`, { headers: authHeaders() });
+      const d = await r.json();
+      if (d.success) setRatesData(d);
+    } catch (err) {
+      console.error("fetchRates error:", err);
+    }
+  }, []);
 
   async function fetchInvoices() {
     setListLoading(true);
@@ -285,7 +407,31 @@ export default function Billing({ t }) {
     fetchKpis();
     fetchCustomers();
     fetchEmployees();
-  }, []); // eslint-disable-line
+    fetchProducts();
+    fetchRates();
+
+    const handleRateUpdate = () => fetchRates();
+    window.addEventListener("metal-rates-updated", handleRateUpdate);
+    window.addEventListener("focus", handleRateUpdate);
+    return () => {
+      window.removeEventListener("metal-rates-updated", handleRateUpdate);
+      window.removeEventListener("focus", handleRateUpdate);
+    };
+  }, [fetchRates]); // eslint-disable-line
+
+  useEffect(() => {
+    if (ratesData) {
+      setItems(prev => prev.map(item => {
+        const rate = getSellingRate(item.metal_type || "Gold", item.purity || "22K (916)", ratesData);
+        if (!item.rate || Number(item.rate) !== rate) {
+          const updated = { ...item, rate };
+          updated.amount = computeItemAmount(updated);
+          return updated;
+        }
+        return item;
+      }));
+    }
+  }, [ratesData]); // eslint-disable-line
 
   useEffect(() => {
     if (tab === "list")    fetchInvoices();
@@ -306,6 +452,12 @@ export default function Billing({ t }) {
         const newItem = { ...item, [key]: val };
         // Auto-update GST rate when HSN changes
         if (key === "hsn") newItem.gst_pct = getGSTRate(val);
+        // Auto-update Ceritage Selling Rate when purity changes
+        if (key === "purity" || key === "metal_type") {
+          const m = key === "metal_type" ? val : newItem.metal_type || "Gold";
+          const p = key === "purity" ? val : newItem.purity || "22K (916)";
+          newItem.rate = getSellingRate(m, p, ratesData);
+        }
         newItem.amount = computeItemAmount(newItem);
         return newItem;
       });
@@ -314,7 +466,10 @@ export default function Billing({ t }) {
   }
 
   function addItem() {
-    setItems(prev => [...prev, { ...EMPTY_ITEM }]);
+    const defaultRate = getSellingRate("Gold", "22K (916)", ratesData);
+    const item = { ...EMPTY_ITEM, rate: defaultRate };
+    item.amount = computeItemAmount(item);
+    setItems(prev => [...prev, item]);
   }
 
   function removeItem(idx) {
@@ -329,15 +484,21 @@ export default function Billing({ t }) {
       const d = await r.json();
       if (d.success) {
         const p = d.data;
+        const resolvedMetal = p.metal_type || (String(p.name).toLowerCase().includes("silver") ? "Silver" : "Gold");
+        const resolvedPurity = p.purity || "22K (916)";
+        const sellingRate = getSellingRate(resolvedMetal, resolvedPurity, ratesData);
+
         setItems(prev => prev.map((item, i) => {
           if (i !== idx) return item;
           const newItem = {
             ...item,
             product_id:  p.id,
             description: p.name,
+            metal_type:  resolvedMetal,
             hsn:         p.hsn_code || "7113",
-            purity:      p.purity || "",
+            purity:      resolvedPurity,
             weight:      p.gross_weight || "",
+            rate:        sellingRate,
             making:      p.making_charges || "",
             stone:       p.stone_charges || "0",
             gst_pct:     getGSTRate(p.hsn_code || "7113"),
@@ -359,6 +520,30 @@ export default function Billing({ t }) {
 
     setSaving(true); setSaveError("");
 
+    // Determine resolved paid amount and payment status
+    let resolvedPaidAmount = 0;
+    let resolvedStatus = status;
+
+    if (status === "Draft") {
+      resolvedStatus = "Draft";
+      resolvedPaidAmount = parseFloat(amtReceived) || 0;
+    } else if (payMode === "Credit") {
+      resolvedStatus = "Credit";
+      resolvedPaidAmount = 0;
+    } else if (payMode === "EMI") {
+      resolvedPaidAmount = parseFloat(emiDown) || 0;
+      resolvedStatus = resolvedPaidAmount >= totals.grandTotal ? "Paid" : (resolvedPaidAmount > 0 ? "Partial" : "Credit");
+    } else {
+      if (payMode === "Cash" || amtReceived) {
+        const rawAmt = parseFloat(amtReceived) || 0;
+        resolvedPaidAmount = rawAmt >= totals.grandTotal ? totals.grandTotal : rawAmt;
+        resolvedStatus = resolvedPaidAmount >= totals.grandTotal ? "Paid" : (resolvedPaidAmount > 0 ? "Partial" : "Credit");
+      } else {
+        resolvedPaidAmount = totals.grandTotal;
+        resolvedStatus = "Paid";
+      }
+    }
+
     const payload = {
       invoice_type:       invType,
       customer_id:        customerId,
@@ -371,27 +556,37 @@ export default function Billing({ t }) {
       coupon_code:        couponCode  || null,
       gift_voucher:       giftVoucher || null,
       old_gold_exchange:  parseFloat(oldGold)  || 0,
+      subtotal:           totals.subtotal,
+      taxable_amount:     totals.taxableAmt,
       cgst:               totals.cgst,
       sgst:               totals.sgst,
       igst:               totals.igst,
       tcs:                totals.tcs,
       grand_total:        totals.grandTotal,
-      paid_amount:        status === "Paid"  ? totals.grandTotal : parseFloat(amtReceived) || 0,
+      paid_amount:        resolvedPaidAmount,
       notes:              notes || null,
-      status,
-      items: items.map(item => ({
-        product_id:   item.product_id || null,
-        description:  item.description,
-        hsn:          item.hsn || "7113",
-        purity:       item.purity || null,
-        weight:       parseFloat(item.weight)  || 0,
-        rate:         parseFloat(item.rate)    || 0,
-        making:       parseFloat(item.making)  || 0,
-        stone:        parseFloat(item.stone)   || 0,
-        gst_pct:      parseFloat(item.gst_pct) || 3,
-        discount_pct: parseFloat(item.discount_pct) || 0,
-        amount:       item.amount,
-      })),
+      status:             resolvedStatus,
+      items: items.map(item => {
+        const weight = parseFloat(item.weight) || 0;
+        const rate = parseFloat(item.rate) || 0;
+        const makingRate = parseFloat(item.making) || 0;
+        const makingAmt = parseFloat((weight * makingRate).toFixed(2));
+        return {
+          product_id:   item.product_id || null,
+          description:  item.description,
+          hsn:          item.hsn || "7113",
+          purity:       item.purity || null,
+          weight,
+          rate,
+          making:       makingAmt,
+          making_charges: makingAmt,
+          making_rate:  makingRate,
+          stone:        parseFloat(item.stone)   || 0,
+          gst_pct:      parseFloat(item.gst_pct) || 3,
+          discount_pct: parseFloat(item.discount_pct) || 0,
+          amount:       item.amount,
+        };
+      }),
     };
 
     try {
@@ -418,7 +613,7 @@ export default function Billing({ t }) {
     setInvType("Retail Invoice"); setInvoiceDate(new Date().toISOString().split("T")[0]);
     setCustomerId(""); setCustomerGST(""); setSalesperson(""); setHsnCode("7113");
     setItems([{ ...EMPTY_ITEM }]);
-    setDiscPct("0"); setDiscAmt("0"); setCouponCode(""); setGiftVoucher(""); setOldGold("0");
+    setDiscPct(""); setDiscAmt(""); setCouponCode(""); setGiftVoucher(""); setOldGold("");
     setPayMode("Cash"); setAmtReceived(""); setUpiTxnId(""); setCardLast4(""); setNotes("");
     setSaveError("");
   }
@@ -549,6 +744,15 @@ export default function Billing({ t }) {
   // ── Selected customer info ────────────────────────────────────────────
   const selCustomer = customers.find(c => String(c.id) === String(customerId));
 
+  const scrollToCard = (id) => {
+    setTimeout(() => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 120);
+  };
+
   // ═════════════════════════════════════════════════════════════════════════
   // RENDER
   // ═════════════════════════════════════════════════════════════════════════
@@ -559,9 +763,9 @@ export default function Billing({ t }) {
         subtitle="Retail · Wholesale · Tax Invoice · GST 3% · TCS · Old Gold Exchange"
         t={t}
         actions={<>
-          <BtnOutline t={t} onClick={() => { setNoteType("Credit"); setTab("notes"); }}>Credit Note</BtnOutline>
+          <BtnOutline t={t} onClick={() => { setNoteType("Credit"); setTab("notes"); scrollToCard("credit-note-form-card"); }}>Credit Note</BtnOutline>
           <BtnOutline t={t} onClick={() => { setNoteType("Debit");  setTab("notes"); }}>Debit Note</BtnOutline>
-          <BtnPrimary onClick={() => { resetForm(); setTab("new"); }}>+ New Invoice</BtnPrimary>
+          <BtnPrimary onClick={() => { resetForm(); setTab("new"); scrollToCard("invoice-details-card"); }}>+ New Invoice</BtnPrimary>
         </>}
       />
 
@@ -573,7 +777,11 @@ export default function Billing({ t }) {
         <StatCard label="Returns Today"    value={kpis.returns_today    ?? 0}                                                                      color={BRAND.pink}   t={t} />
       </div>
 
-      <Tabs tabs={TABS} active={tab} onChange={setTab} t={t} />
+      <Tabs tabs={TABS} active={tab} onChange={(tId) => {
+        setTab(tId);
+        if (tId === "new") scrollToCard("invoice-details-card");
+        if (tId === "notes") scrollToCard("credit-note-form-card");
+      }} t={t} />
 
       {/* ══════════════════════════════════════════════════════════════════
           NEW INVOICE TAB
@@ -605,7 +813,7 @@ export default function Billing({ t }) {
             <div>
 
               {/* Invoice Details */}
-              <Card t={t}>
+              <Card t={t} id="invoice-details-card">
                 <CardHeader title="Invoice Details" t={t}
                   actions={
                     <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:12, color:t.textSub, cursor:"pointer" }}>
@@ -622,25 +830,49 @@ export default function Billing({ t }) {
                     <Input t={t} type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
                   </FormGroup>
                   <FormGroup label="Customer *" t={t} half>
-                    <Select t={t} value={customerId} onChange={e => setCustomerId(e.target.value)}>
-                      <option value="">-- Select Customer --</option>
-                      {customers.map(c => (
-                        <option key={c.id} value={c.id}>{c.full_name} — {c.phone}</option>
-                      ))}
-                    </Select>
+                    <SearchableSelect
+                      t={t}
+                      value={customerId}
+                      placeholder="-- Select Customer --"
+                      searchPlaceholder="Search customer by name, phone, city..."
+                      options={customers.map(c => ({
+                        value: c.id,
+                        label: c.full_name,
+                        sublabel: `${c.phone || "No phone"}${c.city ? ` · ${c.city}` : ""}`,
+                        badge: c.tier || (c.gst_number || c.gstin ? "GST" : null),
+                        badgeColor: c.tier === "Platinum" ? "rgba(230,59,138,0.2)" : c.tier === "Gold" ? "rgba(245,158,11,0.2)" : "rgba(59,85,230,0.12)",
+                        badgeTextColor: c.tier === "Platinum" ? BRAND.pink : c.tier === "Gold" ? "#f59e0b" : BRAND.blue,
+                        searchKey: `${c.full_name || ""} ${c.phone || ""} ${c.city || ""} ${c.gst_number || c.gstin || ""} ${c.customer_id || ""}`,
+                      }))}
+                      onChange={(val) => {
+                        setCustomerId(val);
+                        const found = customers.find(c => String(c.id) === String(val));
+                        if (found && (found.gstin || found.gst_number)) setCustomerGST(found.gstin || found.gst_number);
+                      }}
+                    />
                   </FormGroup>
                   <FormGroup label="Customer GSTIN" t={t} half>
                     <Input t={t} placeholder="For B2B / Wholesale"
-                      value={customerGST || selCustomer?.gst_number || ""}
+                      value={customerGST || selCustomer?.gst_number || selCustomer?.gstin || ""}
                       onChange={e => setCustomerGST(e.target.value)} />
                   </FormGroup>
                   <FormGroup label="Salesperson" t={t} half>
-                    <Select t={t} value={salesperson} onChange={e => setSalesperson(e.target.value)}>
-                      <option value="">-- Select --</option>
-                      {employees.map(e => (
-                        <option key={e.id} value={e.id}>{e.full_name}</option>
-                      ))}
-                    </Select>
+                    <SearchableSelect
+                      t={t}
+                      value={salesperson}
+                      placeholder="-- Select Salesperson --"
+                      searchPlaceholder="Search staff by name or role..."
+                      options={employees.map(e => ({
+                        value: e.id,
+                        label: e.full_name || e.name || e.username || `Staff #${e.id}`,
+                        sublabel: e.username && e.username !== (e.full_name || e.name) ? `@${e.username}` : (e.role ? `Role: ${e.role}` : null),
+                        badge: e.role ? e.role.toUpperCase() : "STAFF",
+                        badgeColor: "rgba(139, 59, 200, 0.15)",
+                        badgeTextColor: BRAND.purple,
+                        searchKey: `${e.full_name || ""} ${e.name || ""} ${e.username || ""} ${e.role || ""}`,
+                      }))}
+                      onChange={(val) => setSalesperson(val)}
+                    />
                   </FormGroup>
                   <FormGroup label="HSN Code" t={t} half>
                     <Input t={t} value={hsnCode} onChange={e => setHsnCode(e.target.value)} maxLength={6} />
@@ -674,13 +906,22 @@ export default function Billing({ t }) {
                     </div>
                     <FormGrid>
                       <FormGroup label="Product (optional)" t={t} half>
-                        <Select t={t} value={item.product_id}
-                          onChange={e => fillProductItem(idx, e.target.value)}>
-                          <option value="">-- Select Product --</option>
-                          {customers.length > 0 && (
-                            <option disabled style={{ color: t.textFaint }}>── Products ──</option>
-                          )}
-                        </Select>
+                        <SearchableSelect
+                          t={t}
+                          value={item.product_id}
+                          placeholder="-- Select Product --"
+                          searchPlaceholder="Search product by name, SKU, purity..."
+                          options={products.map(p => ({
+                            value: p.id,
+                            label: p.name,
+                            sublabel: `${p.sku || p.product_code || "No SKU"}${p.purity ? ` · ${p.purity}` : ""}${p.gross_weight ? ` · ${parseFloat(p.gross_weight).toFixed(3)}g` : ""}${p.product_category || p.jewellery_category ? ` · ${p.product_category || p.jewellery_category}` : ""}`,
+                            badge: p.purity || (p.stock_qty != null ? `Qty: ${p.stock_qty}` : null),
+                            badgeColor: "rgba(59,85,230,0.15)",
+                            badgeTextColor: BRAND.blue,
+                            searchKey: `${p.name || ""} ${p.sku || ""} ${p.product_code || ""} ${p.purity || ""} ${p.product_category || ""} ${p.jewellery_category || ""}`,
+                          }))}
+                          onChange={(val) => fillProductItem(idx, val)}
+                        />
                       </FormGroup>
                       <FormGroup label="Description *" t={t} half>
                         <Input t={t} placeholder="e.g. 22K Gold Ring"
@@ -701,23 +942,43 @@ export default function Billing({ t }) {
                         <Input t={t} value={`CGST ${item.gst_pct/2}% + SGST ${item.gst_pct/2}%`}
                           readOnly style={{ opacity:0.6, fontSize:11, fontFamily:"monospace" }} />
                       </FormGroup>
-                      <FormGroup label="Purity" t={t} half>
-                        <Input t={t} placeholder="e.g. 22K (916)"
-                          value={item.purity}
-                          onChange={e => updateItem(idx, "purity", e.target.value)} />
+                      <FormGroup label="Purity *" t={t} half>
+                        <Select t={t} value={item.purity || "22K (916)"}
+                          onChange={e => updateItem(idx, "purity", e.target.value)}>
+                          <option value="22K (916)">22K Gold (916) — Standard Hallmark</option>
+                          <option value="24K (999)">24K Gold (999) — Pure Gold (99.9%)</option>
+                          <option value="18K (750)">18K Gold (750) — Studded / Diamond</option>
+                          <option value="14K (585)">14K Gold (585) — Modern Lightweight</option>
+                          <option value="Silver 999">Silver 999 — Pure Silver (99.9%)</option>
+                          <option value="Silver 92.5 (925)">Silver 92.5 (925) — Sterling Silver</option>
+                          <option value="Platinum 999">Platinum 999 — Fine Platinum</option>
+                        </Select>
                       </FormGroup>
-                      <FormGroup label="Weight (g)" t={t} half>
+                      <FormGroup label="Weight (g) *" t={t} half>
                         <Input t={t} type="number" step="0.001" placeholder="0.000"
                           value={item.weight}
                           onChange={e => updateItem(idx, "weight", e.target.value)} />
                       </FormGroup>
-                      <FormGroup label="Gold Rate (₹/g)" t={t} half>
-                        <Input t={t} type="number" step="1" placeholder="e.g. 7100"
+                      <FormGroup label="Gold Rate (₹/g) · Ceritage Selling Rate [Read-only]" t={t} half>
+                        <Input t={t} type="number" step="0.01" readOnly
                           value={item.rate}
-                          onChange={e => updateItem(idx, "rate", e.target.value)} />
+                          placeholder="Fetching Ceritage rate..."
+                          style={{
+                            background: t.card2 || "rgba(139,59,200,0.07)",
+                            border: `1.5px solid ${BRAND.purple}`,
+                            fontWeight: 700,
+                            color: BRAND.purple,
+                            cursor: "not-allowed",
+                            fontFamily: "monospace",
+                          }}
+                        />
+                        <div style={{ fontSize: 10, color: BRAND.purple, marginTop: 3, display: "flex", justifyContent: "space-between" }}>
+                          <span>🔒 Ceritage Selling Rate (Live)</span>
+                          <span>{item.rate ? `₹${parseFloat(item.rate).toLocaleString("en-IN")}/g` : ""}</span>
+                        </div>
                       </FormGroup>
-                      <FormGroup label="Making Charges (₹)" t={t} half>
-                        <Input t={t} type="number" step="0.01" placeholder="0.00"
+                      <FormGroup label={`Making Rate (₹/g)${item.weight && item.making ? ` · Total: ₹${(parseFloat(item.weight||0)*parseFloat(item.making||0)).toLocaleString("en-IN")}` : ""}`} t={t} half>
+                        <Input t={t} type="number" step="0.01" placeholder="e.g. 450"
                           value={item.making}
                           onChange={e => updateItem(idx, "making", e.target.value)} />
                       </FormGroup>
@@ -732,8 +993,14 @@ export default function Billing({ t }) {
                           onChange={e => updateItem(idx, "discount_pct", e.target.value)} />
                       </FormGroup>
                     </FormGrid>
-                    <div style={{ textAlign:"right", marginTop:6, fontSize:14, fontWeight:700, color:BRAND.purple }}>
-                      Item Total: ₹{item.amount.toLocaleString("en-IN")}
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8, fontSize:12, color:t.textSub, borderTop:`1px dashed ${t.borderDash}`, paddingTop:6 }}>
+                      <div>
+                        Gold Value: <strong style={{ color: t.text }}>₹{(parseFloat(item.weight||0)*parseFloat(item.rate||0)).toLocaleString("en-IN")}</strong>
+                        {item.weight && item.making ? <span> · Making: <strong style={{ color: t.text }}>₹{(parseFloat(item.weight||0)*parseFloat(item.making||0)).toLocaleString("en-IN")}</strong></span> : null}
+                      </div>
+                      <div style={{ fontSize:13, fontWeight:700, color:BRAND.purple }}>
+                        Item Total (with GST): ₹{item.amount.toLocaleString("en-IN")}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -743,17 +1010,20 @@ export default function Billing({ t }) {
                   <div style={{ width:300, background: t.card2||t.card,
                     border:`1px solid ${t.borderDash}`, borderRadius:10, padding:"14px 16px" }}>
                     {[
+                      ["Gold Value",           `₹${totals.totalGoldVal.toLocaleString("en-IN")}`],
+                      ["Making Charges",       `₹${totals.totalMaking.toLocaleString("en-IN")}`],
+                      ...(totals.totalStone > 0 ? [["Stone / Other", `₹${totals.totalStone.toLocaleString("en-IN")}`]] : []),
                       ["Subtotal",             `₹${totals.subtotal.toLocaleString("en-IN")}`],
-                      ["Discount",             `- ₹${totals.invDiscAmt.toLocaleString("en-IN")}`],
+                      ...(totals.invDiscAmt > 0 ? [["Discount", `- ₹${totals.invDiscAmt.toLocaleString("en-IN")}`]] : []),
                       ["Taxable Amount",       `₹${totals.taxableAmt.toLocaleString("en-IN")}`],
                       ...(isSameState
                          ? [["CGST (1.5%)", `₹${totals.cgst.toLocaleString("en-IN")}`],
-                           ["SGST (1.5%)", `₹${totals.sgst.toLocaleString("en-IN")}`]]
+                            ["SGST (1.5%)", `₹${totals.sgst.toLocaleString("en-IN")}`]]
                         : [["IGST (3%)",   `₹${totals.igst.toLocaleString("en-IN")}`]]),
+                      ...(totals.tcs > 0
+                         ? [["TCS (1%)",    `₹${totals.tcs.toLocaleString("en-IN")}`]] : []),
                       ...(parseFloat(oldGold) > 0
                          ? [["Old Gold Exchange", `- ₹${parseFloat(oldGold).toLocaleString("en-IN")}`]] : []),
-                      ...(totals.tcs > 0
-                         ? [["TCS (1%) — Cash >₹2L", `₹${totals.tcs.toLocaleString("en-IN")}`]] : []),
                     ].map(([k, v]) => (
                       <div key={k} style={{ display:"flex", justifyContent:"space-between",
                         padding:"4px 0", fontSize:13, color:t.textSub, borderBottom:`1px dashed ${t.borderDash}` }}>
@@ -775,11 +1045,11 @@ export default function Billing({ t }) {
                 <FormGrid>
                   <FormGroup label="Invoice Discount (%)" t={t} half>
                     <Input t={t} type="number" step="0.1" placeholder="0"
-                      value={discPct} onChange={e => { setDiscPct(e.target.value); setDiscAmt("0"); }} />
+                      value={discPct} onChange={e => { setDiscPct(e.target.value); if (e.target.value) setDiscAmt(""); }} />
                   </FormGroup>
                   <FormGroup label="Invoice Discount (₹)" t={t} half>
                     <Input t={t} type="number" step="0.01" placeholder="0.00"
-                      value={discAmt} onChange={e => { setDiscAmt(e.target.value); setDiscPct("0"); }} />
+                      value={discAmt} onChange={e => { setDiscAmt(e.target.value); if (e.target.value) setDiscPct(""); }} />
                   </FormGroup>
                   <FormGroup label="Coupon Code" t={t} half>
                     <Input t={t} placeholder="e.g. DIWALI10" value={couponCode}
@@ -808,7 +1078,14 @@ export default function Billing({ t }) {
                 <CardHeader title="Payment Mode" t={t} />
                 <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:16 }}>
                   {PAY_MODES.map(m => (
-                    <button key={m} onClick={() => setPayMode(m)}
+                    <button key={m} onClick={() => {
+                      setPayMode(m);
+                      if (m === "Credit") {
+                        setNoteType("Credit");
+                        setTab("notes");
+                        scrollToCard("credit-note-form-card");
+                      }
+                    }}
                       style={{
                         padding:"6px 14px", borderRadius:20, cursor:"pointer",
                         fontSize:12, fontWeight:600, fontFamily:"inherit",
@@ -829,7 +1106,13 @@ export default function Billing({ t }) {
                     </FormGroup>
                     <FormGroup label="Balance / Change (₹)" t={t} half>
                       <Input t={t} readOnly
-                        value={amtReceived  ? `₹${change >= 0  ? change.toLocaleString("en-IN") : "Insufficient"}` : "—"}
+                        value={
+                          !amtReceived
+                            ? "—"
+                            : change >= 0
+                              ? (change === 0 ? "₹0.00" : `Change: ₹${change.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+                              : `Balance Due: ₹${Math.abs(change).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        }
                         style={{ color: change >= 0 ? "#2ecc71" : BRAND.pink, fontWeight:700 }} />
                     </FormGroup>
                   </FormGrid>
@@ -1222,7 +1505,7 @@ export default function Billing({ t }) {
       {tab === "notes" && (
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
           {/* Form */}
-          <Card t={t} style={{ marginBottom:0 }}>
+          <Card t={t} id="credit-note-form-card" style={{ marginBottom:0 }}>
             <CardHeader title="Issue Credit / Debit Note" t={t} />
             <div style={{ display:"flex", gap:0, border:`1px solid ${t.inputBorder}`, borderRadius:9, overflow:"hidden", marginBottom:14 }}>
               {["Credit","Debit"].map(nt => (
@@ -1237,10 +1520,19 @@ export default function Billing({ t }) {
             </div>
             <FormGrid>
               <FormGroup label="Customer *" t={t} half>
-                <Select t={t} value={noteCustomer} onChange={e => setNoteCustomer(e.target.value)}>
-                  <option value="">-- Select --</option>
-                  {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-                </Select>
+                <SearchableSelect
+                  t={t}
+                  value={noteCustomer}
+                  placeholder="-- Select Customer --"
+                  searchPlaceholder="Search customer by name, phone, city..."
+                  options={customers.map(c => ({
+                    value: c.id,
+                    label: c.full_name,
+                    sublabel: `${c.phone || ""}${c.city ? ` · ${c.city}` : ""}`,
+                    searchKey: `${c.full_name || ""} ${c.phone || ""} ${c.city || ""}`,
+                  }))}
+                  onChange={(val) => setNoteCustomer(val)}
+                />
               </FormGroup>
               <FormGroup label="Against Invoice" t={t} half>
                 <Input t={t} placeholder="INV-2026-XXXX" value={noteAgainst}
@@ -1328,11 +1620,19 @@ export default function Billing({ t }) {
         </>}>
         <FormGrid>
           <FormGroup label="Customer" t={t} half>
-            <Select t={t} value={retForm.customer_id}
-              onChange={e => setRetForm(p => ({ ...p, customer_id: e.target.value }))}>
-              <option value="">-- Select --</option>
-              {customers.map(c => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-            </Select>
+            <SearchableSelect
+              t={t}
+              value={retForm.customer_id}
+              placeholder="-- Select Customer --"
+              searchPlaceholder="Search customer by name, phone..."
+              options={customers.map(c => ({
+                value: c.id,
+                label: c.full_name,
+                sublabel: `${c.phone || ""}${c.city ? ` · ${c.city}` : ""}`,
+                searchKey: `${c.full_name || ""} ${c.phone || ""} ${c.city || ""}`,
+              }))}
+              onChange={(val) => setRetForm(p => ({ ...p, customer_id: val }))}
+            />
           </FormGroup>
           <FormGroup label="Original Invoice No." t={t} half>
             <Input t={t} placeholder="INV-2026-XXXX" value={retForm.invoice_ref}

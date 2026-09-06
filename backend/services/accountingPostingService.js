@@ -132,10 +132,11 @@ async function postInvoiceSale(conn, options) {
   const cgst = money(options.cgst);
   const sgst = money(options.sgst);
   const igst = money(options.igst);
+  const tcs = money(options.tcs);
   const advanceApplied = money(options.advance_applied);
   const tenderTotal = money((options.tenders || []).reduce((sum, tender) => sum + money(tender.amount), 0));
   const taxTotal = money(cgst + sgst + igst);
-  const taxable = money(options.taxable_amount ?? (grandTotal - taxTotal));
+  const taxable = money(options.taxable_amount ?? (grandTotal - taxTotal - tcs));
   const receivable = money(grandTotal - tenderTotal - advanceApplied);
 
   if (receivable < -0.01) throw new Error("Invoice tenders and advance exceed invoice grand total");
@@ -155,6 +156,7 @@ async function postInvoiceSale(conn, options) {
   if (cgst > 0) lines.push({ account_code: ACCOUNT_CODES.GST_OUTPUT, debit: 0, credit: cgst, narration: `Output CGST ${options.invoice_no}` });
   if (sgst > 0) lines.push({ account_code: ACCOUNT_CODES.GST_OUTPUT, debit: 0, credit: sgst, narration: `Output SGST ${options.invoice_no}` });
   if (igst > 0) lines.push({ account_code: ACCOUNT_CODES.GST_OUTPUT, debit: 0, credit: igst, narration: `Output IGST ${options.invoice_no}` });
+  if (tcs > 0) lines.push({ account_code: ACCOUNT_CODES.GST_OUTPUT, debit: 0, credit: tcs, narration: `TCS payable ${options.invoice_no}` });
 
   const journal = await postJournal(conn, {
     voucher_type: "JOURNAL",

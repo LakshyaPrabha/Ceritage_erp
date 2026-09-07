@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 
 const API = window.__CERITAGE_API__ || "/api";
@@ -142,7 +142,7 @@ export default function Register() {
       // Registration successful — go to step 3 (success)
       setStep(3);
     } catch (err) {
-      setError("Cannot connect to server. Make sure the backend is running on port 5000.");
+      setError(err.message || "Cannot connect to server. Please try again.");
       setLoading(false);
     }
   }

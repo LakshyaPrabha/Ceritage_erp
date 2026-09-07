@@ -3,10 +3,8 @@ import Login    from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 
-// ── Backend URL — ek jagah define, sab jagah kaam ──────────
-// WSL mein chal raha hai toh WSL IP use karo
-// IP check karo: WSL terminal mein `hostname -I` run karo
-window.__CERITAGE_API__ = "http://localhost:5000/api";
+// ── Backend URL — relative /api works for both local dev and production ──────────
+window.__CERITAGE_API__ = import.meta.env.VITE_API_BASE_URL || "/api";
 
 function PrivateRoute({ children }) {
   const token = localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");

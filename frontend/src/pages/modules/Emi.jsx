@@ -1,4 +1,4 @@
-﻿import { BRAND } from "../../theme.js";
+import { BRAND } from "../../theme.js";
 import { useState, useEffect, useCallback } from "react";
 import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
          BtnPrimary, BtnOutline, BtnSm, Modal, FormGroup, FormGrid,
@@ -6,7 +6,7 @@ import { PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
 import { apiRequest, formatCurrency } from "../../lib/api";
 
 // ── Razorpay Checkout helper for EMI installment payment ─────────────────────
-const API_BASE = window.__CERITAGE_API__ || "http://localhost:5000/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || (typeof window !== "undefined" && window.__CERITAGE_API__) || "/api";
 
 function authHeadersEmi() {
   const token = sessionStorage.getItem("ceritage_token") || localStorage.getItem("ceritage_token");

@@ -27,9 +27,9 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
-// â”€â”€ Health check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-app.get("/", (req, res) => {
-  res.json({ message: "Ceritage ERP Backend is running", version: "2.0" });
+// ── Health check ─────────────────────────────────────────────────────────────
+app.get("/api/health", (req, res) => {
+  res.json({ success: true, message: "Ceritage ERP Backend is running", version: "2.0" });
 });
 
 app.get("/api/db-test", async (req, res) => {
@@ -78,9 +78,24 @@ app.use("/api/ai",            require("./routes/ai"));
 app.use("/api/reports", require("./routes/reports"));
 app.use("/api/security", require("./routes/security"));
 
-// â”€â”€ 404 handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-app.use((req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` });
+const path = require("path");
+const fs = require("fs");
+
+// ── Serve React Frontend static build if dist exists ─────────────────────────
+const frontendDistPath = path.resolve(__dirname, "../frontend/dist");
+if (fs.existsSync(frontendDistPath)) {
+  app.use(express.static(frontendDistPath));
+  app.use((req, res, next) => {
+    if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      return res.sendFile(path.join(frontendDistPath, 'index.html'));
+    }
+    next();
+  });
+}
+
+// ── 404 handler for unmatched API routes ─────────────────────────────────────
+app.use("/api", (req, res) => {
+  res.status(404).json({ success: false, message: `API Route ${req.method} ${req.path} not found` });
 });
 
 // â”€â”€ Global error handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

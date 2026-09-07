@@ -5,7 +5,7 @@ import {PageHeader, Card, CardHeader, StatCard, Tabs, DataTable,
   FormGroup, FormGrid, Input, Select, SectionTitle,
 } from "../../components/ui";
 
-const API = window.__CERITAGE_API__ || "http://localhost:5000/api";
+const API = import.meta.env.VITE_API_BASE_URL || (typeof window !== "undefined" && window.__CERITAGE_API__) || "/api";
 function authHeaders() {
   const token = localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");
   return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };

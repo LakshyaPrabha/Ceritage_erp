@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (typeof window !== "undefined" && window.__CERITAGE_API__) || "/api";
 
 export function getAuthToken() {
   return localStorage.getItem("ceritage_token") || sessionStorage.getItem("ceritage_token");

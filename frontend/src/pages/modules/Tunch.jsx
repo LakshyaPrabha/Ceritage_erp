@@ -5,7 +5,7 @@ import {
   BtnPrimary, BtnOutline, BtnSm, FormGroup, FormGrid, Input, Select, Modal
 } from "../../components/ui";
 
-const API = "http://localhost:5000/api";
+const API = import.meta.env.VITE_API_BASE_URL || (typeof window !== "undefined" && window.__CERITAGE_API__) || "/api";
 
 function authHeaders() {
   const token = sessionStorage.getItem("ceritage_token") || localStorage.getItem("ceritage_token");

@@ -9,7 +9,7 @@ import {
 } from "../../components/ui";
 import { getAuthToken, getActiveBranchId, apiRequest } from "../../lib/api";
 
-const API = import.meta.env.VITE_API_BASE_URL || window.__CERITAGE_API__ || "http://localhost:5000/api";
+const API = import.meta.env.VITE_API_BASE_URL || (typeof window !== "undefined" && window.__CERITAGE_API__) || "/api";
 
 function authHeaders() {
   const token = getAuthToken();

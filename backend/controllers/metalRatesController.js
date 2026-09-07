@@ -1,5 +1,6 @@
 const metalRateService = require("../services/metalRateService");
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // ── GET /api/metal-rates/current ─────────────────────────────────────────────
 async function getCurrent(req, res) {
@@ -14,10 +15,10 @@ async function getCurrent(req, res) {
 
     // Fallback query from gold_rates table
     try {
-      const branchId = req.user?.branch_id || 1;
+      const bf = await branchFilter(req);
       const [rows] = await db.query(
-        "SELECT * FROM gold_rates WHERE branch_id = ? OR branch_id IS NULL ORDER BY effective_date DESC, id DESC LIMIT 1",
-        [branchId]
+        `SELECT * FROM gold_rates WHERE ${bf.clause} ORDER BY effective_date DESC, id DESC LIMIT 1`,
+        [...bf.params]
       );
       if (rows.length > 0) {
         const r = rows[0];
@@ -61,14 +62,14 @@ async function getCurrent(req, res) {
 async function getHistory(req, res) {
   try {
     const { days = 30 } = req.query;
-    const branchId = req.user?.branch_id || 1;
+    const bf = await branchFilter(req);
 
     const [rows] = await db.query(
       `SELECT * FROM gold_rates
-       WHERE (branch_id = ? OR branch_id IS NULL)
+       WHERE ${bf.clause}
          AND effective_date >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
        ORDER BY effective_date DESC, id DESC`,
-      [branchId, parseInt(days, 10)]
+      [...bf.params, parseInt(days, 10)]
     );
 
     return res.json({ success: true, data: rows });
@@ -84,7 +85,7 @@ async function refreshRates(req, res) {
     const data = await metalRateService.refreshRates({ slot: "MANUAL", updatedBy, force: true });
     return res.json({
       success: true,
-      message: "Market rates successfully refreshed from Metals.Dev!",
+      message: "Market rates successfully refreshed from API-Ninjas!",
       data,
     });
   } catch (err) {
@@ -101,8 +102,22 @@ async function refreshRates(req, res) {
 // ── POST /api/metal-rates/adjustments ────────────────────────────────────────
 async function updateAdjustments(req, res) {
   try {
-    const { metal, purity, adjustmentPerGram } = req.body;
-    const updatedBy = req.user?.username || "Admin";
+    const { metal, purity, adjustmentPerGram, adjustments } = req.body;
+    const updatedBy = req.user?.username || req.user?.full_name || "Admin";
+
+    if (Array.isArray(adjustments)) {
+      for (const adj of adjustments) {
+        if (adj.metal && adj.purity) {
+          await metalRateService.updateShopAdjustment({
+            metal: adj.metal,
+            purity: adj.purity,
+            adjustmentPerGram: adj.adjustmentPerGram,
+            updatedBy,
+          });
+        }
+      }
+      return res.json({ success: true, message: "Shop metal adjustments updated successfully." });
+    }
 
     if (!metal || !purity) {
       return res.status(400).json({ success: false, message: "Metal and Purity are required." });

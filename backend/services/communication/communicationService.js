@@ -157,16 +157,17 @@ async function sendMessage(params) {
   );
 
   // 8. Audit Log
-  await db.query(
-    `INSERT INTO customer_audit_logs (customer_id, action, performed_by, details)
-     VALUES (?, ?, ?, ?)`,
-    [
-      cust.id,
-      result.success ? "COMMUNICATION_SENT" : "COMMUNICATION_FAILED",
-      performedBy,
-      `Dispatched ${normChannel} (${templateCode}) for ${eventType}: ${result.message || 'Success'}`
-    ]
-  );
+  try {
+    const act = result.success ? "COMMUNICATION_SENT" : "COMMUNICATION_FAILED";
+    const commDetails = `Dispatched ${normChannel} (${templateCode}) for ${eventType}: ${result.message || 'Success'}`;
+    await db.query(
+      `INSERT INTO customer_audit_logs (customer_id, action_type, action, performed_by, description, details)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [cust.id, act, act, performedBy, commDetails, commDetails]
+    );
+  } catch (commAuditErr) {
+    console.warn("Communication audit log notice:", commAuditErr.message);
+  }
 
   return {
     success: result.success,

@@ -1,6 +1,7 @@
 const db = require("../config/db");
 const communicationService = require("../services/communication/communicationService");
 const dispatcherService = require("../services/communication/dispatcherService");
+const { branchFilter } = require("../utils/branchScope");
 
 // GET /api/communications/providers/status
 function getProvidersStatus(req, res) {
@@ -109,13 +110,14 @@ async function updateTemplate(req, res) {
 async function getCommunicationLogs(req, res) {
   try {
     const { channel, status, customer_id, search, limit = 50, offset = 0 } = req.query;
+    const bf = branchFilter(req, "c.branch_id");
     let query = `
       SELECT cl.*, c.full_name AS customer_name, c.customer_id AS cust_code
       FROM communication_logs cl
       JOIN customers c ON cl.customer_id = c.id
-      WHERE 1=1
+      WHERE ${bf.sql}
     `;
-    const params = [];
+    const params = [...bf.params];
 
     if (channel) {
       query += " AND cl.channel = ?";
@@ -141,15 +143,19 @@ async function getCommunicationLogs(req, res) {
     const [rows] = await db.query(query, params);
 
     const [[countRow]] = await db.query(
-      "SELECT COUNT(*) AS total_logs, SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END) AS sent_today FROM communication_logs"
+      `SELECT COUNT(*) AS total_logs, SUM(CASE WHEN DATE(cl.created_at) = CURDATE() THEN 1 ELSE 0 END) AS sent_today 
+       FROM communication_logs cl
+       JOIN customers c ON cl.customer_id = c.id
+       WHERE ${bf.sql}`,
+      bf.params
     );
 
     res.json({
       success: true,
       data: rows,
       meta: {
-        total: countRow.total_logs,
-        sentToday: countRow.sent_today
+        total: countRow?.total_logs || 0,
+        sentToday: countRow?.sent_today || 0
       }
     });
   } catch (err) {
@@ -160,12 +166,13 @@ async function getCommunicationLogs(req, res) {
 // GET /api/communications/logs/:id
 async function getLogById(req, res) {
   try {
+    const bf = branchFilter(req, "c.branch_id");
     const [rows] = await db.query(
       `SELECT cl.*, c.full_name AS customer_name, c.customer_id AS cust_code
        FROM communication_logs cl
        JOIN customers c ON cl.customer_id = c.id
-       WHERE cl.id = ?`,
-      [req.params.id]
+       WHERE cl.id = ? AND ${bf.sql}`,
+      [req.params.id, ...bf.params]
     );
 
     if (rows.length === 0) return res.status(404).json({ success: false, message: "Communication log not found" });

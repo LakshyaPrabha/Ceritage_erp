@@ -52,29 +52,204 @@ async function logCustomerAudit(customerId, action, performedBy = "System", deta
   }
 }
 
+/**
+ * Ensure customers table has all required columns and synchronization
+ */
+async function addCol(table, colName, colDef) {
+  try {
+    const [cols] = await db.query(`SHOW COLUMNS FROM \`${table}\``);
+    const colNames = new Set(cols.map(c => c.Field.toLowerCase()));
+    if (!colNames.has(colName.toLowerCase())) {
+      await db.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${colName}\` ${colDef}`);
+    }
+  } catch (err) {
+    console.warn(`Column check notice for ${table}.${colName}:`, err.message);
+  }
+}
+
+let tablesChecked = false;
+async function ensureCustomerColumns() {
+  if (tablesChecked) return;
+  try {
+    // 1. Ensure required columns on customers table
+    await addCol("customers", "branch_id", "INT DEFAULT 1 AFTER id");
+    await addCol("customers", "sub_branch_id", "INT NULL AFTER branch_id");
+    await addCol("customers", "customer_id", "VARCHAR(50) NULL AFTER sub_branch_id");
+    await addCol("customers", "customer_code", "VARCHAR(50) NULL AFTER customer_id");
+    await addCol("customers", "tier", "VARCHAR(50) DEFAULT 'Regular'");
+    await addCol("customers", "wallet_balance", "DECIMAL(12,2) DEFAULT 0.00");
+    await addCol("customers", "loyalty_points", "INT DEFAULT 0");
+    await addCol("customers", "balance_due", "DECIMAL(12,2) DEFAULT 0.00");
+    await addCol("customers", "credit_limit", "DECIMAL(12,2) DEFAULT 0.00");
+    await addCol("customers", "kyc_status", "VARCHAR(50) DEFAULT 'Pending'");
+    await addCol("customers", "opt_in_whatsapp", "BOOLEAN DEFAULT TRUE");
+    await addCol("customers", "opt_in_sms", "BOOLEAN DEFAULT TRUE");
+    await addCol("customers", "opt_in_marketing", "BOOLEAN DEFAULT FALSE");
+    await addCol("customers", "preferred_channel", "VARCHAR(20) DEFAULT 'WHATSAPP'");
+
+    // 2. Ensure customer_wallet_transactions exists
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS customer_wallet_transactions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT NOT NULL,
+        transaction_type VARCHAR(50) NOT NULL,
+        amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        balance_after DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+        reference_type VARCHAR(50) NULL,
+        reference_id VARCHAR(100) NULL,
+        description TEXT NULL,
+        performed_by VARCHAR(100) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cwt_cust (customer_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // 3. Ensure customer_notes exists
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS customer_notes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT NOT NULL,
+        note_text TEXT NOT NULL,
+        category VARCHAR(50) DEFAULT 'General',
+        is_pinned BOOLEAN DEFAULT FALSE,
+        created_by VARCHAR(100) DEFAULT 'Staff',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_cn_cust (customer_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    // Auto-sync customer_id, customer_code & sub_branch_id for existing records
+    await db.query(`
+      UPDATE customers 
+      SET customer_id = COALESCE(customer_id, customer_code, CONCAT('CUST-', LPAD(id, 4, '0'))),
+          customer_code = COALESCE(customer_code, customer_id, CONCAT('CUST-', LPAD(id, 4, '0'))),
+          sub_branch_id = COALESCE(sub_branch_id, branch_id, 1)
+      WHERE customer_id IS NULL OR customer_code IS NULL OR sub_branch_id IS NULL
+    `);
+
+    tablesChecked = true;
+  } catch (err) {
+    console.warn("Customer table column check notice:", err.message);
+  }
+}
+
+/**
+ * Generate globally unique auto-sequenced Customer ID:
+ * Format: {JEWELER_CODE}-{BRANCH_CODE}-CUST-{0001}
+ * 
+ * Examples:
+ * - Manoj Jewellers (Delhi Main HQ):      MAN-DEL-CUST-0001
+ * - Manoj Jewellers (Noida Sub-Branch):   MAN-NOI-CUST-0001
+ * - Sharma Jewellers (Mumbai Main HQ):    SHA-MUM-CUST-0001
+ * - Sharma Jewellers (Pune Sub-Branch):   SHA-PUN-CUST-0001
+ */
+async function generateBranchCustomerCode(mainBranchId, subBranchId) {
+  try {
+    const targetMainId = Number(mainBranchId || 1);
+    const targetSubId = Number(subBranchId || targetMainId);
+
+    const [[mainBranch]] = await db.query(
+      "SELECT id, name, city FROM branches WHERE id = ?",
+      [targetMainId]
+    );
+
+    const [[subBranch]] = await db.query(
+      "SELECT id, name, city, parent_branch_id FROM branches WHERE id = ?",
+      [targetSubId]
+    );
+
+    const clean = (str, len = 3) => {
+      if (!str) return "";
+      const cleaned = str.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+      return cleaned.slice(0, len);
+    };
+
+    // 1. Jeweler Organization Code (e.g. Manoj Jewellers -> MAN, Sharma -> SHA)
+    const jewelerPrefix = clean(mainBranch?.name || `J${targetMainId}`, 3) || `J${targetMainId}`;
+
+    // 2. Branch / City Code:
+    let branchPrefix = "HQ";
+    if (subBranch && subBranch.parent_branch_id && subBranch.id !== targetMainId) {
+      // Sub-Branch Showroom (e.g. Noida -> NOI, Gurgaon -> GUR)
+      branchPrefix = clean(subBranch.city || subBranch.name || `SB${subBranch.id}`, 3) || `SB${subBranch.id}`;
+    } else {
+      // Main HQ Showroom (e.g. Delhi -> DEL, Mumbai -> MUM)
+      branchPrefix = clean(mainBranch?.city || "HQ", 3) || "HQ";
+    }
+
+    const prefix = `${jewelerPrefix}-${branchPrefix}-CUST`;
+
+    // 3. Determine highest sequential number for this specific Jeweler + Branch
+    const [existingCodes] = await db.query(
+      `SELECT customer_id, customer_code FROM customers 
+       WHERE (branch_id = ? OR sub_branch_id = ?) 
+          OR customer_id LIKE ? OR customer_code LIKE ?`,
+      [targetMainId, targetSubId, `${prefix}-%`, `${prefix}-%`]
+    );
+
+    let highestNum = 0;
+    existingCodes.forEach(row => {
+      const code = row.customer_id || row.customer_code || "";
+      if (code.startsWith(prefix)) {
+        const match = code.match(/(\d+)$/);
+        if (match) {
+          const n = parseInt(match[1], 10);
+          if (n > highestNum) highestNum = n;
+        }
+      }
+    });
+
+    const nextNumber = highestNum + 1;
+    return `${prefix}-${String(nextNumber).padStart(4, "0")}`;
+  } catch (err) {
+    console.warn("Customer Code Generation notice:", err.message);
+    const [[lastCust]] = await db.query("SELECT MAX(id) AS max_id FROM customers");
+    const nextId = (lastCust?.max_id || 0) + 1;
+    return `CUST-${String(nextId).padStart(4, "0")}`;
+  }
+}
+
 // GET /api/customers/kpis
 async function getKpis(req, res) {
   try {
-    const bf = branchFilter(req);
+    await ensureCustomerColumns();
+    const scope = req.branchScope || await getBranchScope(req);
+    const rootId = scope.rootBranchId || req.user?.root_branch_id || req.user?.branch_id || 1;
+    const activeId = scope.activeBranchId || 1;
+    const isMain = scope.isMain;
+
+    const conditions = ["(status IS NULL OR UPPER(status) = 'ACTIVE')"];
+    const params = [];
+
+    if (isMain) {
+      conditions.push("(branch_id = ? OR sub_branch_id IN (?))");
+      params.push(rootId, scope.allowedBranchIds);
+    } else {
+      conditions.push("(sub_branch_id = ? OR (branch_id = ? AND sub_branch_id IS NULL))");
+      params.push(activeId, activeId);
+    }
+
+    const whereSql = conditions.join(" AND ");
+
     const [[totals]] = await db.query(
       `SELECT
-         COUNT(CASE WHEN status = 'ACTIVE' THEN 1 END) AS total_customers,
-         SUM(CASE WHEN status = 'ACTIVE' AND tier = 'Platinum' THEN 1 ELSE 0 END) AS platinum,
-         SUM(CASE WHEN status = 'ACTIVE' AND tier = 'Gold' THEN 1 ELSE 0 END) AS gold,
-         SUM(CASE WHEN status = 'ACTIVE' AND balance_due > 0 THEN 1 ELSE 0 END) AS pending_dues,
-         SUM(CASE WHEN status = 'ARCHIVED' THEN 1 ELSE 0 END) AS archived_customers,
-         SUM(CASE WHEN status = 'ACTIVE' AND (MONTH(date_of_birth) = MONTH(CURDATE()) OR MONTH(anniversary) = MONTH(CURDATE())) THEN 1 ELSE 0 END) AS birthdays_this_month
+         COUNT(CASE WHEN status IS NULL OR UPPER(status) = 'ACTIVE' THEN 1 END) AS total_customers,
+         SUM(CASE WHEN (status IS NULL OR UPPER(status) = 'ACTIVE') AND tier = 'Platinum' THEN 1 ELSE 0 END) AS platinum,
+         SUM(CASE WHEN (status IS NULL OR UPPER(status) = 'ACTIVE') AND tier = 'Gold' THEN 1 ELSE 0 END) AS gold,
+         SUM(CASE WHEN (status IS NULL OR UPPER(status) = 'ACTIVE') AND balance_due > 0 THEN 1 ELSE 0 END) AS pending_dues,
+         SUM(CASE WHEN UPPER(status) = 'ARCHIVED' THEN 1 ELSE 0 END) AS archived_customers,
+         SUM(CASE WHEN (status IS NULL OR UPPER(status) = 'ACTIVE') AND (MONTH(date_of_birth) = MONTH(CURDATE()) OR MONTH(anniversary) = MONTH(CURDATE())) THEN 1 ELSE 0 END) AS birthdays_this_month
        FROM customers
-       WHERE ${bf.sql}`,
-      bf.params
+       WHERE ${whereSql}`,
+      params
     );
 
     const [[emis]] = await db.query(
       `SELECT COUNT(*) AS active_emis
        FROM emi_plans ep
        INNER JOIN customers c ON c.id = ep.customer_id
-       WHERE ep.status = 'Active' AND c.status = 'ACTIVE' AND ${branchFilter(req, 'c.branch_id').sql}`,
-      branchFilter(req, 'c.branch_id').params
+       WHERE ep.status = 'Active' AND (c.status IS NULL OR UPPER(c.status) = 'ACTIVE') AND ${isMain ? `(c.branch_id = ? OR c.sub_branch_id IN (?))` : `(c.sub_branch_id = ?)`}`,
+      isMain ? [rootId, scope.allowedBranchIds] : [activeId]
     );
 
     res.json({
@@ -98,20 +273,35 @@ async function getKpis(req, res) {
 // ─────────────────────────────────────────────────────────────
 async function getAll(req, res) {
   try {
-    // Ensure branch_id column exists
-    try {
-      const [cols] = await db.query("SHOW COLUMNS FROM customers");
-      const existingCols = new Set(cols.map((c) => c.Field.toLowerCase()));
-      if (!existingCols.has("branch_id")) {
-        await db.query("ALTER TABLE customers ADD COLUMN branch_id INT DEFAULT 1 AFTER customer_id");
-      }
-    } catch { /* silent */ }
+    await ensureCustomerColumns();
 
     const { search, tier, city, kyc_status, status = "active", branch, page = 1, limit = 100 } = req.query;
     const offset = (page - 1) * limit;
-    const bf = branchFilter(req, "c.branch_id");
-    const conditions = [bf.sql];
-    const params = [...bf.params];
+    
+    const scope = req.branchScope || await getBranchScope(req);
+    const rootId = scope.rootBranchId || req.user?.root_branch_id || req.user?.branch_id || 1;
+    const activeId = scope.activeBranchId || 1;
+    const isMain = scope.isMain;
+
+    const conditions = [];
+    const params = [];
+
+    if (branch && branch === "all") {
+      // Superadmin / Jeweler viewing all their branches
+      conditions.push("(c.branch_id = ? OR c.sub_branch_id IN (?))");
+      params.push(rootId, scope.allowedBranchIds);
+    } else if (branch && branch !== "all") {
+      conditions.push("(c.sub_branch_id = ? OR c.branch_id = ?)");
+      params.push(branch, branch);
+    } else if (isMain) {
+      // Main HQ selected -> Show all customers under this jeweler's main branch and sub-branches
+      conditions.push("(c.branch_id = ? OR c.sub_branch_id IN (?))");
+      params.push(rootId, scope.allowedBranchIds);
+    } else {
+      // Specific Sub-Branch selected -> Show only this sub-branch's customers
+      conditions.push("(c.sub_branch_id = ? OR (c.branch_id = ? AND c.sub_branch_id IS NULL))");
+      params.push(activeId, activeId);
+    }
 
     if (status === "active") {
       conditions.push("(c.status IS NULL OR UPPER(c.status) = 'ACTIVE')");
@@ -119,16 +309,11 @@ async function getAll(req, res) {
       conditions.push("UPPER(c.status) = 'ARCHIVED'");
     }
 
-    if (branch) {
-      conditions.push("c.branch_id = ?");
-      params.push(branch);
-    }
-
     if (search) {
       const cleanPhoneSearch = normalizePhone(search);
-      conditions.push("(c.full_name LIKE ? OR c.phone LIKE ? OR c.customer_id LIKE ? OR c.city LIKE ? OR c.phone LIKE ?)");
+      conditions.push("(c.full_name LIKE ? OR c.phone LIKE ? OR c.customer_id LIKE ? OR c.customer_code LIKE ? OR c.city LIKE ? OR c.phone LIKE ?)");
       const s = `%${search}%`;
-      params.push(s, s, s, s, `%${cleanPhoneSearch}%`);
+      params.push(s, s, s, s, s, `%${cleanPhoneSearch}%`);
     }
     if (tier)       { conditions.push("c.tier = ?");       params.push(tier); }
     if (city)       { conditions.push("c.city = ?");        params.push(city); }
@@ -138,12 +323,18 @@ async function getAll(req, res) {
 
     const [rows] = await db.query(
       `SELECT c.*,
-              COALESCE(b.name, 'Main Showroom') AS branch_name,
-              COALESCE(b.city, '') AS branch_city,
+              COALESCE(c.customer_id, c.customer_code, CONCAT('CUST-', LPAD(c.id, 4, '0'))) AS customer_id,
+              COALESCE(c.customer_code, c.customer_id, CONCAT('CUST-', LPAD(c.id, 4, '0'))) AS customer_code,
+              COALESCE(MAX(mb.name), MAX(b.name), 'Main Showroom') AS branch_name,
+              COALESCE(MAX(mb.city), MAX(b.city), '') AS branch_city,
+              COALESCE(MAX(sb.name), MAX(b.name), 'Main Showroom') AS sub_branch_name,
+              COALESCE(MAX(sb.city), MAX(b.city), '') AS sub_branch_city,
               COALESCE(SUM(i.grand_total), 0) AS total_purchase,
               COUNT(DISTINCT i.id) AS total_orders
        FROM customers c
-       LEFT JOIN branches b ON c.branch_id = b.id
+       LEFT JOIN branches b ON c.sub_branch_id = b.id
+       LEFT JOIN branches mb ON c.branch_id = mb.id
+       LEFT JOIN sub_branches sb ON (c.sub_branch_id = sb.branch_id OR c.sub_branch_id = sb.id)
        LEFT JOIN invoices i ON i.customer_id = c.id
        ${whereClause}
        GROUP BY c.id
@@ -173,13 +364,22 @@ async function getAll(req, res) {
 // GET /api/customers/:id
 // ─────────────────────────────────────────────────────────────
 async function getById(req, res) {
-  const branch_id = req.user.branch_id;
   try {
+    await ensureCustomerColumns();
     const [rows] = await db.query(
       `SELECT c.*,
+              COALESCE(c.customer_id, c.customer_code, CONCAT('CUST-', LPAD(c.id, 4, '0'))) AS customer_id,
+              COALESCE(c.customer_code, c.customer_id, CONCAT('CUST-', LPAD(c.id, 4, '0'))) AS customer_code,
+              COALESCE(MAX(mb.name), MAX(b.name), 'Main Showroom') AS branch_name,
+              COALESCE(MAX(mb.city), MAX(b.city), '') AS branch_city,
+              COALESCE(MAX(sb.name), MAX(b.name), 'Main Showroom') AS sub_branch_name,
+              COALESCE(MAX(sb.city), MAX(b.city), '') AS sub_branch_city,
               COALESCE(SUM(i.grand_total), 0) AS total_purchase,
               COUNT(DISTINCT i.id) AS total_orders
        FROM customers c
+       LEFT JOIN branches b ON c.sub_branch_id = b.id
+       LEFT JOIN branches mb ON c.branch_id = mb.id
+       LEFT JOIN sub_branches sb ON (c.sub_branch_id = sb.branch_id OR c.sub_branch_id = sb.id)
        LEFT JOIN invoices i ON i.customer_id = c.id
        WHERE c.id = ?
        GROUP BY c.id`,
@@ -233,31 +433,55 @@ async function create(req, res) {
   }
 
   try {
+    await ensureCustomerColumns();
+
     const [existing] = await db.query(
-      `SELECT id, customer_id, full_name, status FROM customers WHERE phone = ?`,
+      `SELECT id, customer_id, customer_code, full_name, status FROM customers WHERE phone = ?`,
       [normalizedPhone]
     );
 
     if (existing.length > 0) {
       const found = existing[0];
+      const existingDisplayId = found.customer_id || found.customer_code || `CUST-${found.id}`;
       if (found.status === "ACTIVE") {
         return res.status(409).json({
           success: false,
-          message: `A customer with phone number ${normalizedPhone} is already registered (${found.full_name}, ID: ${found.customer_id}).`,
-          existingCustomer: { id: found.id, customer_id: found.customer_id, full_name: found.full_name }
+          message: `A customer with phone number ${normalizedPhone} is already registered (${found.full_name}, ID: ${existingDisplayId}).`,
+          existingCustomer: { id: found.id, customer_id: existingDisplayId, full_name: found.full_name }
         });
       } else {
         return res.status(409).json({
           success: false,
-          message: `A customer with this phone number was previously archived (${found.full_name}, ID: ${found.customer_id}). Please restore the profile or use another number.`,
-          archivedCustomer: { id: found.id, customer_id: found.customer_id, full_name: found.full_name }
+          message: `A customer with this phone number was previously archived (${found.full_name}, ID: ${existingDisplayId}). Please restore the profile or use another number.`,
+          archivedCustomer: { id: found.id, customer_id: existingDisplayId, full_name: found.full_name }
         });
       }
     }
 
-    const [[lastCust]] = await db.query("SELECT MAX(id) AS max_id FROM customers");
-    const nextId = (lastCust.max_id || 0) + 1;
-    const customer_id = `CUST-${String(nextId).padStart(4, "0")}`;
+    const requestedBranchId = Number(req.body.branch_id || req.headers?.["x-branch-id"] || req.user?.branch_id || 1);
+    
+    // Resolve main_branch_id (Jeweler Root HQ) and sub_branch_id (Showroom)
+    const [[targetBranch]] = await db.query(
+      "SELECT id, name, city, parent_branch_id FROM branches WHERE id = ?",
+      [requestedBranchId]
+    );
+
+    let main_branch_id = requestedBranchId;
+    let sub_branch_id = requestedBranchId;
+
+    if (targetBranch) {
+      if (targetBranch.parent_branch_id) {
+        main_branch_id = targetBranch.parent_branch_id;
+        sub_branch_id = targetBranch.id;
+      } else {
+        main_branch_id = targetBranch.id;
+        sub_branch_id = targetBranch.id;
+      }
+    }
+
+    // Auto-generate branch/sub-branch specific customer ID
+    const customer_id = await generateBranchCustomerCode(main_branch_id, sub_branch_id);
+    const customer_code = customer_id;
 
     const calculatedKyc = kyc_status || (pan || aadhaar ? "Complete" : "Pending");
     const initialWallet = Number(wallet_balance || 0);
@@ -268,16 +492,14 @@ async function create(req, res) {
       preferred_channel = "WHATSAPP"
     } = req.body;
 
-    const assignedBranchId = Number(req.body.branch_id || req.user?.branch_id || 1);
-
     const [result] = await db.query(
       `INSERT INTO customers
-       (customer_id, branch_id, full_name, phone, email, date_of_birth, anniversary, tier,
+       (customer_id, customer_code, branch_id, sub_branch_id, full_name, phone, email, date_of_birth, anniversary, tier,
         address, city, state, pincode, pan, aadhaar, gst_number, credit_limit, loyalty_points,
         wallet_balance, kyc_status, opt_in_whatsapp, opt_in_sms, opt_in_marketing, preferred_channel, status, balance_due)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 0)`,
       [
-        customer_id, assignedBranchId, full_name.trim(), normalizedPhone, email ? email.trim() : null,
+        customer_id, customer_code, main_branch_id, sub_branch_id, full_name.trim(), normalizedPhone, email ? email.trim() : null,
         date_of_birth || null, anniversary || null, tier,
         address ? address.trim() : null,
         city ? city.trim() : null, state ? state.trim() : null,
@@ -1505,9 +1727,11 @@ async function getCustomer360(req, res) {
 // GET /api/customers/reminders/upcoming
 async function getUpcomingReminders(req, res) {
   try {
-    const bf = branchFilter(req);
+    const bf = branchFilter(req, "branch_id");
     const [rows] = await db.query(
-      `SELECT id, customer_id, full_name, phone, tier, date_of_birth, anniversary,
+      `SELECT id,
+              COALESCE(customer_id, customer_code, CONCAT('CUST-', LPAD(id, 4, '0'))) AS customer_id,
+              full_name, phone, tier, date_of_birth, anniversary,
               CASE
                 WHEN date_of_birth IS NOT NULL AND MONTH(date_of_birth) = MONTH(CURDATE()) THEN 'Birthday'
                 WHEN anniversary IS NOT NULL AND MONTH(anniversary) = MONTH(CURDATE()) THEN 'Anniversary'
@@ -1515,7 +1739,7 @@ async function getUpcomingReminders(req, res) {
               END AS event_type,
               COALESCE(date_of_birth, anniversary) AS event_date
        FROM customers
-       WHERE status = 'ACTIVE' AND ${bf.sql}
+       WHERE (status IS NULL OR UPPER(status) = 'ACTIVE') AND ${bf.sql}
          AND ((date_of_birth IS NOT NULL AND MONTH(date_of_birth) = MONTH(CURDATE()))
           OR (anniversary IS NOT NULL AND MONTH(anniversary) = MONTH(CURDATE())))
        ORDER BY DAY(event_date) ASC`,
@@ -1532,12 +1756,14 @@ async function getDuesReport(req, res) {
   try {
     const bf = branchFilter(req, "c.branch_id");
     const [rows] = await db.query(
-      `SELECT c.id, c.customer_id, c.full_name, c.phone, c.tier, c.balance_due, c.credit_limit,
+      `SELECT c.id,
+              COALESCE(c.customer_id, c.customer_code, CONCAT('CUST-', LPAD(c.id, 4, '0'))) AS customer_id,
+              c.full_name, c.phone, c.tier, c.balance_due, c.credit_limit,
               COALESCE(SUM(i.grand_total), 0) AS total_purchase,
               COALESCE(SUM(i.paid_amount), 0) AS total_paid
        FROM customers c
        LEFT JOIN invoices i ON i.customer_id = c.id
-       WHERE c.status = 'ACTIVE' AND c.balance_due > 0 AND ${bf.sql}
+       WHERE (c.status IS NULL OR UPPER(c.status) = 'ACTIVE') AND c.balance_due > 0 AND ${bf.sql}
        GROUP BY c.id
        ORDER BY c.balance_due DESC`,
       bf.params
@@ -1551,13 +1777,15 @@ async function getDuesReport(req, res) {
 // GET /api/customers/reports/wallet
 async function getWalletReport(req, res) {
   try {
-    const bf = branchFilter(req);
+    const bf = branchFilter(req, "branch_id");
     const [rows] = await db.query(
-      `SELECT id, customer_id, full_name, phone, tier, loyalty_points,
+      `SELECT id,
+              COALESCE(customer_id, customer_code, CONCAT('CUST-', LPAD(id, 4, '0'))) AS customer_id,
+              full_name, phone, tier, loyalty_points,
               (loyalty_points * 0.25) AS redeemable_value,
               wallet_balance
        FROM customers
-       WHERE status = 'ACTIVE' AND ${bf.sql}
+       WHERE (status IS NULL OR UPPER(status) = 'ACTIVE') AND ${bf.sql}
        ORDER BY loyalty_points DESC, wallet_balance DESC`,
       bf.params
     );
@@ -1572,12 +1800,14 @@ async function getCreditReport(req, res) {
   try {
     const bf = branchFilter(req, "c.branch_id");
     const [rows] = await db.query(
-      `SELECT c.id, c.customer_id, c.full_name, c.phone, c.tier, c.credit_limit,
+      `SELECT c.id,
+              COALESCE(c.customer_id, c.customer_code, CONCAT('CUST-', LPAD(c.id, 4, '0'))) AS customer_id,
+              c.full_name, c.phone, c.tier, c.credit_limit,
               c.balance_due AS used_credit,
               GREATEST(0, c.credit_limit - c.balance_due) AS available_credit,
               c.balance_due
        FROM customers c
-       WHERE c.status = 'ACTIVE' AND (c.credit_limit > 0 OR c.balance_due > 0) AND ${bf.sql}
+       WHERE (c.status IS NULL OR UPPER(c.status) = 'ACTIVE') AND (c.credit_limit > 0 OR c.balance_due > 0) AND ${bf.sql}
        ORDER BY c.credit_limit DESC`,
       bf.params
     );
@@ -1590,11 +1820,13 @@ async function getCreditReport(req, res) {
 // GET /api/customers/reports/kyc
 async function getKycReport(req, res) {
   try {
-    const bf = branchFilter(req);
+    const bf = branchFilter(req, "branch_id");
     const [rows] = await db.query(
-      `SELECT id, customer_id, full_name, phone, pan, aadhaar, gst_number, kyc_status
+      `SELECT id,
+              COALESCE(customer_id, customer_code, CONCAT('CUST-', LPAD(id, 4, '0'))) AS customer_id,
+              full_name, phone, pan, aadhaar, gst_number, kyc_status
        FROM customers
-       WHERE status = 'ACTIVE' AND ${bf.sql}
+       WHERE (status IS NULL OR UPPER(status) = 'ACTIVE') AND ${bf.sql}
        ORDER BY kyc_status ASC, created_at DESC`,
       bf.params
     );

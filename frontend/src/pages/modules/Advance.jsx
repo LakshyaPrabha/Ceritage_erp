@@ -367,7 +367,7 @@ export default function Advance({ t }) {
       >
         <div>
           <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "1px" }}>
-            Live Showroom Benchmark Rates (Metals.Dev Synced)
+            Live Showroom Benchmark Rates (API-Ninjas Synced)
           </div>
           <div style={{ display: "flex", gap: 18, marginTop: 6, flexWrap: "wrap" }}>
             <div>

@@ -1,9 +1,13 @@
 const db = require("../config/db");
-const MetalsDevProvider = require("./providers/MetalsDevProvider");
+const ApiNinjasProvider = require("./providers/ApiNinjasProvider");
 
 class MetalRateService {
   constructor() {
-    this.provider = new MetalsDevProvider();
+    this.provider = new ApiNinjasProvider();
+  }
+
+  getProvider() {
+    return this.provider;
   }
 
   /**
@@ -11,11 +15,11 @@ class MetalRateService {
    */
   async getDailySyncStatus() {
     try {
-      const dailyLimit = parseInt(process.env.METALS_DEV_DAILY_REQUEST_LIMIT || "2", 10);
+      const dailyLimit = parseInt(process.env.API_NINJAS_DAILY_LIMIT || "100", 10);
       const [rows] = await db.query(
         `SELECT slot, status, created_at
          FROM api_sync_logs
-         WHERE DATE(created_at) = CURDATE() AND provider = 'Metals.Dev'`
+         WHERE DATE(created_at) = CURDATE() AND (provider = 'API-Ninjas' OR provider = 'Metals.Dev')`
       );
 
       const successfulCalls = rows.filter(r => r.status === "SUCCESS");
@@ -30,16 +34,16 @@ class MetalRateService {
         canRequest: requestsToday < dailyLimit,
         daySlotCompleted,
         eveningSlotCompleted,
-        daySlotTime: process.env.METALS_DEV_DAY_TIME || "10:30",
-        eveningSlotTime: process.env.METALS_DEV_EVENING_TIME || "18:30",
+        daySlotTime: process.env.API_NINJAS_DAY_TIME || "10:30",
+        eveningSlotTime: process.env.API_NINJAS_EVENING_TIME || "18:30",
         lastSync: rows.length > 0 ? rows[rows.length - 1] : null,
       };
     } catch (err) {
       console.error("Error reading daily sync status:", err.message);
       return {
-        dailyLimit: 2,
+        dailyLimit: 100,
         requestsToday: 0,
-        remainingRequests: 2,
+        remainingRequests: 100,
         canRequest: true,
         daySlotCompleted: false,
         eveningSlotCompleted: false,
@@ -56,7 +60,7 @@ class MetalRateService {
     try {
       await db.query(
         `INSERT INTO api_sync_logs (provider, slot, status, message)
-         VALUES ('Metals.Dev', ?, ?, ?)`,
+         VALUES ('API-Ninjas', ?, ?, ?)`,
         [slot, status, message]
       );
     } catch (err) {
@@ -94,9 +98,9 @@ class MetalRateService {
   }
 
   /**
-   * Save a set of normalized Metals.Dev rates into database
+   * Save a set of normalized API-Ninjas rates into database
    */
-  async saveRates(normalizedData, updatedBy = "Metals.Dev Sync") {
+  async saveRates(normalizedData, updatedBy = "API-Ninjas Sync") {
     if (!normalizedData || !normalizedData.liveMarket) return;
 
     const { liveMarket, mcxReference, lbmaReference, timestamp } = normalizedData;
@@ -107,7 +111,7 @@ class MetalRateService {
       await db.query(
         `INSERT INTO metal_benchmark_rates
          (metal, purity, source, source_price, source_unit, price_per_gram, rate_type, source_timestamp, fetched_at)
-         VALUES (?, ?, 'Metals.Dev', ?, ?, ?, ?, ?, NOW())`,
+         VALUES (?, ?, 'API-Ninjas', ?, ?, ?, ?, ?, NOW())`,
         [
           metal,
           String(purity),
@@ -121,13 +125,13 @@ class MetalRateService {
     };
 
     // 1. Save Live Market Rates
-    await insertRecord("GOLD", "999", liveMarket.gold24K, "LIVE_MARKET");
-    await insertRecord("GOLD", "916", liveMarket.gold22K, "LIVE_MARKET");
-    await insertRecord("GOLD", "750", liveMarket.gold18K, "LIVE_MARKET");
-    await insertRecord("GOLD", "585", liveMarket.gold14K, "LIVE_MARKET");
-    await insertRecord("SILVER", "999", liveMarket.silver999, "LIVE_MARKET");
-    await insertRecord("PLATINUM", "999", liveMarket.platinum999, "LIVE_MARKET");
-    await insertRecord("PALLADIUM", "999", liveMarket.palladium999, "LIVE_MARKET");
+    await insertRecord("GOLD", "999", liveMarket.gold_24k || liveMarket.gold24K, "LIVE_MARKET");
+    await insertRecord("GOLD", "916", liveMarket.gold_22k || liveMarket.gold22K, "LIVE_MARKET");
+    await insertRecord("GOLD", "750", liveMarket.gold_18k || liveMarket.gold18K, "LIVE_MARKET");
+    await insertRecord("GOLD", "585", liveMarket.gold_14k || liveMarket.gold14K, "LIVE_MARKET");
+    await insertRecord("SILVER", "999", liveMarket.silver_999 || liveMarket.silver999, "LIVE_MARKET");
+    await insertRecord("PLATINUM", "999", liveMarket.platinum_999 || liveMarket.platinum999, "LIVE_MARKET");
+    await insertRecord("PALLADIUM", "999", liveMarket.palladium_999 || liveMarket.palladium999, "LIVE_MARKET");
 
     // 2. Save MCX Reference Rates (if present)
     if (mcxReference) {
@@ -157,10 +161,10 @@ class MetalRateService {
             liveMarket.gold24K,
             liveMarket.gold18K || null,
             liveMarket.gold14K || null,
-            liveMarket.silver999 || null,
-            liveMarket.platinum999 || null,
+            liveMarket.silver_999 || liveMarket.silver999 || null,
+            liveMarket.platinum_999 || liveMarket.platinum999 || null,
             updatedBy,
-            "Metals.Dev Live Market Feed"
+            "API-Ninjas Live Market Feed"
           ]
         );
       }
@@ -187,7 +191,7 @@ class MetalRateService {
   }
 
   /**
-   * Refresh rates by fetching from Metals.Dev with strict 2 requests/day limit
+   * Refresh rates by fetching from API-Ninjas
    * @param {Object} opts - { slot: 'DAY' | 'EVENING' | 'MANUAL', updatedBy, force }
    */
   async refreshRates({ slot = "MANUAL", updatedBy = "Admin", force = false } = {}) {
@@ -195,25 +199,19 @@ class MetalRateService {
 
     // Check if slot was already executed today
     if (slot === "DAY" && quota.daySlotCompleted && !force) {
-      console.log("[Metals.Dev Sync] Day slot rate was already fetched today. Skipping external API call.");
+      console.log("[API-Ninjas Sync] Day slot rate was already fetched today. Skipping external API call.");
       return this.getCurrentRates();
     }
     if (slot === "EVENING" && quota.eveningSlotCompleted && !force) {
-      console.log("[Metals.Dev Sync] Evening slot rate was already fetched today. Skipping external API call.");
+      console.log("[API-Ninjas Sync] Evening slot rate was already fetched today. Skipping external API call.");
       return this.getCurrentRates();
     }
 
-    // Check daily limit (2 requests/day)
-    if (!quota.canRequest && !force) {
-      throw new Error(
-        `Daily request limit (${quota.dailyLimit} requests/day) reached for today. Market rates for today are already saved in the database.`
-      );
-    }
-
     try {
-      const normalizedData = await this.provider.fetchRates();
+      const provider = this.getProvider();
+      const normalizedData = await provider.fetchRates();
       await this.saveRates(normalizedData, `${updatedBy} (${slot})`);
-      await this.logSyncAttempt({ slot, status: "SUCCESS", message: "Rates fetched successfully" });
+      await this.logSyncAttempt({ slot, status: "SUCCESS", message: `Rates fetched successfully from ${provider.name}` });
       return this.getCurrentRates();
     } catch (err) {
       await this.logSyncAttempt({ slot, status: "FAILED", message: err.message });
@@ -222,7 +220,7 @@ class MetalRateService {
   }
 
   /**
-   * Get current structured rates response combining Metals.Dev live market,
+   * Get current structured rates response combining API-Ninjas live market,
    * MCX reference, LBMA reference, shop adjustments, and daily quota status.
    */
   async getCurrentRates() {
@@ -232,7 +230,7 @@ class MetalRateService {
 
     let updatedAt = null;
     let isStale = false;
-    let source = "Metals.Dev";
+    let source = "API-Ninjas";
 
     // If metal_benchmark_rates is empty, check legacy gold_rates table
     if (stored.length === 0) {
@@ -299,7 +297,7 @@ class MetalRateService {
 
     return {
       success: true,
-      source: "Metals.Dev",
+      source: "API-Ninjas",
       currency: "INR",
       unit: "g",
       updatedAt,

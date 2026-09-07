@@ -89,8 +89,9 @@ exports.getAll = async (req, res) => {
 exports.getById = async (req, res) => {
   try {
     const { id } = req.params;
+    const bf = branchFilter(req, "branch_id");
 
-    const [[jangad]] = await db.query("SELECT * FROM jangads WHERE id = ?", [id]);
+    const [[jangad]] = await db.query(`SELECT * FROM jangads WHERE id = ? AND ${bf.sql}`, [id, ...bf.params]);
     if (!jangad) return res.status(404).json({ success: false, message: "Jangad record not found" });
 
     const [items] = await db.query("SELECT * FROM jangad_items WHERE jangad_id = ? ORDER BY id ASC", [id]);
@@ -115,7 +116,7 @@ exports.create = async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    const branchId = req.user?.branch_id || 1;
+    const branchId = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
     const {
       customer_id,
       customer_name,

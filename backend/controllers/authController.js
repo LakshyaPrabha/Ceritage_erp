@@ -3,6 +3,73 @@ const jwt = require("jsonwebtoken");
 const db = require("../config/db");
 
 
+let authTablesChecked = false;
+
+async function addCol(table, col, def) {
+  try {
+    const [cols] = await db.query(`SHOW COLUMNS FROM \`${table}\` LIKE ?`, [col]);
+    if (cols.length === 0) {
+      await db.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${col}\` ${def}`);
+    }
+  } catch (err) {
+    console.warn(`Notice adding column ${col} to ${table}:`, err.message);
+  }
+}
+
+async function ensureAuthTables() {
+  if (authTablesChecked) return;
+  try {
+    // 1. branches columns
+    await addCol("branches", "parent_branch_id", "INT NULL");
+    await addCol("branches", "is_main", "TINYINT(1) DEFAULT 1");
+    await addCol("branches", "branch_type", "VARCHAR(50) DEFAULT 'MAIN_HQ'");
+    await addCol("branches", "created_by", "INT NULL");
+
+    // 2. sub_branches table & columns
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS sub_branches (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        branch_id INT NULL,
+        main_branch_id INT NOT NULL,
+        name VARCHAR(150) NOT NULL,
+        city VARCHAR(100) NULL,
+        address VARCHAR(255) NULL,
+        manager_id INT NULL,
+        phone VARCHAR(30) NULL,
+        gstin VARCHAR(30) NULL,
+        is_primary_hq TINYINT(1) DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'Active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (main_branch_id) REFERENCES branches(id) ON DELETE CASCADE
+      )
+    `);
+
+    await addCol("sub_branches", "branch_id", "INT NULL");
+    await addCol("sub_branches", "main_branch_id", "INT NOT NULL");
+    await addCol("sub_branches", "is_primary_hq", "TINYINT(1) DEFAULT 0");
+    await addCol("sub_branches", "gstin", "VARCHAR(30) NULL");
+    await addCol("sub_branches", "phone", "VARCHAR(30) NULL");
+    await addCol("sub_branches", "address", "VARCHAR(255) NULL");
+    await addCol("sub_branches", "city", "VARCHAR(100) NULL");
+    await addCol("sub_branches", "status", "VARCHAR(50) DEFAULT 'Active'");
+
+    // 3. users columns
+    await addCol("users", "sub_branch_id", "INT NULL");
+    await addCol("users", "branch_id", "INT DEFAULT 1");
+
+    // 4. customers columns
+    await addCol("customers", "branch_id", "INT DEFAULT 1");
+    await addCol("customers", "sub_branch_id", "INT NULL");
+    await addCol("customers", "customer_id", "VARCHAR(50) NULL");
+    await addCol("customers", "customer_code", "VARCHAR(50) NULL");
+
+    authTablesChecked = true;
+  } catch (e) {
+    console.warn("Auth table check notice:", e.message);
+  }
+}
+
 async function register(req, res) {
   const { full_name, username, email, password, business_name, phone, city } = req.body;
 
@@ -18,6 +85,8 @@ async function register(req, res) {
   }
 
   try {
+    await ensureAuthTables();
+
     // Check if username already exists
     const [existing] = await db.query(
       "SELECT id FROM users WHERE username = ?",
@@ -27,32 +96,46 @@ async function register(req, res) {
       return res.status(409).json({ success: false, message: "Username already taken. Please choose another." });
     }
 
-    // Create the branch for this business
+    // 1. Create the Main Branch (HQ) for this Jeweler Business in branches table
     const [branchResult] = await db.query(
-      "INSERT INTO branches (name, city, status) VALUES (?, ?, 'Active')",
-      [business_name, city || null]
+      "INSERT INTO branches (name, city, phone, parent_branch_id, is_main, branch_type, status) VALUES (?, ?, ?, NULL, 1, 'MAIN_HQ', 'Active')",
+      [business_name.trim(), city ? city.trim() : null, phone ? phone.trim() : null]
     );
-    const branch_id = branchResult.insertId;
+    const main_branch_id = branchResult.insertId;
 
-    // Hash password
+    // 2. Create the Primary Sub-Branch / Showroom entry in sub_branches table
+    const [subBranchResult] = await db.query(
+      "INSERT INTO sub_branches (branch_id, main_branch_id, name, city, phone, is_primary_hq, status) VALUES (?, ?, ?, ?, ?, 1, 'Active')",
+      [
+        main_branch_id,
+        main_branch_id,
+        `${business_name.trim()} (Main Showroom)`,
+        city ? city.trim() : null,
+        phone ? phone.trim() : null,
+      ]
+    );
+    const sub_branch_id = subBranchResult.insertId;
+
+    // 3. Hash password
     const password_hash = await bcrypt.hash(password, 12);
 
-    // Create admin user
+    // 4. Create admin user linked to this Main Branch & Sub-Branch
     const [userResult] = await db.query(
-      `INSERT INTO users (username, password_hash, full_name, role, branch_id, status)
-       VALUES (?, ?, ?, 'admin', ?, 'active')`,
-      [username.toLowerCase(), password_hash, full_name, branch_id]
+      `INSERT INTO users (username, password_hash, full_name, role, branch_id, sub_branch_id, status)
+       VALUES (?, ?, ?, 'admin', ?, ?, 'active')`,
+      [username.toLowerCase(), password_hash, full_name.trim(), main_branch_id, sub_branch_id]
     );
 
     res.status(201).json({
       success: true,
       message: "Account created successfully. You can now log in.",
       data: {
-        id:       userResult.insertId,
-        username: username.toLowerCase(),
+        id:            userResult.insertId,
+        username:      username.toLowerCase(),
         full_name,
-        role:     "admin",
-        branch_id,
+        role:          "admin",
+        branch_id:     main_branch_id,
+        sub_branch_id: sub_branch_id,
       },
     });
   } catch (err) {
@@ -70,10 +153,15 @@ async function login(req, res) {
   }
 
   try {
+    await ensureAuthTables();
+
     const [rows] = await db.query(
-      `SELECT u.*, b.name AS branch_name
+      `SELECT u.*,
+              b.name AS branch_name, b.city AS branch_city, b.parent_branch_id,
+              sb.name AS sub_branch_name, sb.city AS sub_branch_city
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
+       LEFT JOIN sub_branches sb ON u.sub_branch_id = sb.id
        WHERE u.username = ? AND u.status = 'active'`,
       [username.trim().toLowerCase()]
     );
@@ -231,14 +319,18 @@ async function login(req, res) {
       console.warn("Audit log insert warning:", logErr.message);
     }
 
+    const rootBranchId = user.parent_branch_id || user.branch_id || 1;
     const token = jwt.sign(
       {
-        id:          user.id,
-        username:    user.username,
-        role:        user.role,
-        branch_id:   user.branch_id,
-        branch_name: user.branch_name,
-        full_name:   user.full_name,
+        id:             user.id,
+        username:       user.username,
+        role:           user.role,
+        branch_id:      user.branch_id,
+        sub_branch_id:  user.sub_branch_id,
+        root_branch_id: rootBranchId,
+        branch_name:    user.branch_name,
+        sub_branch_name:user.sub_branch_name,
+        full_name:      user.full_name,
         permissions,
       },
       process.env.JWT_SECRET,
@@ -250,12 +342,15 @@ async function login(req, res) {
       message: "Login successful",
       token,
       user: {
-        id:          user.id,
-        username:    user.username,
-        full_name:   user.full_name,
-        role:        user.role,
-        branch_id:   user.branch_id,
-        branch_name: user.branch_name,
+        id:             user.id,
+        username:       user.username,
+        full_name:      user.full_name,
+        role:           user.role,
+        branch_id:      user.branch_id,
+        sub_branch_id:  user.sub_branch_id,
+        root_branch_id: rootBranchId,
+        branch_name:    user.branch_name,
+        sub_branch_name:user.sub_branch_name,
         permissions,
       },
     });

@@ -78,12 +78,14 @@ async function getAll(req, res) {
 
 // POST /api/karigar — create a new karigar
 async function create(req, res) {
-  const { name, full_name, phone, specialization, branch_id = 1 } = req.body;
+  const { name, full_name, phone, specialization, branch_id } = req.body;
   const karigarName = name || full_name;
 
   if (!karigarName || !phone) {
     return res.status(400).json({ success: false, message: "Karigar name and phone are required" });
   }
+
+  const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
 
   try {
     const [[{ maxId }]] = await db.query("SELECT COALESCE(MAX(id), 0) + 1 AS maxId FROM karigars");
@@ -92,7 +94,7 @@ async function create(req, res) {
     const [result] = await db.query(
       `INSERT INTO karigars (karigar_code, name, phone, specialization, gold_balance_grams, silver_balance_grams, making_charges_due, branch_id, status)
        VALUES (?, ?, ?, ?, 0.000, 0.000, 0.00, ?, 'ACTIVE')`,
-      [code, karigarName.trim(), phone.trim(), specialization || "General Goldsmith", branch_id]
+      [code, karigarName.trim(), phone.trim(), specialization || "General Goldsmith", activeBranchId]
     );
 
     res.status(201).json({
@@ -109,8 +111,9 @@ async function create(req, res) {
 async function getWorkOrders(req, res) {
   try {
     const { karigar_id, status } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req, "wo.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (karigar_id) {
       where += " AND wo.karigar_id = ?";
@@ -332,8 +335,9 @@ async function makePayment(req, res) {
 async function getIssues(req, res) {
   try {
     const { karigar_id } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req, "gi.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
     if (karigar_id) { where += " AND gi.karigar_id = ?"; params.push(karigar_id); }
 
     const [rows] = await db.query(
@@ -354,8 +358,9 @@ async function getIssues(req, res) {
 async function getReceives(req, res) {
   try {
     const { karigar_id } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req, "gr.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
     if (karigar_id) { where += " AND gr.karigar_id = ?"; params.push(karigar_id); }
 
     const [rows] = await db.query(
@@ -376,8 +381,9 @@ async function getReceives(req, res) {
 async function getPayments(req, res) {
   try {
     const { karigar_id } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req, "kp.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
     if (karigar_id) { where += " AND kp.karigar_id = ?"; params.push(karigar_id); }
 
     const [rows] = await db.query(

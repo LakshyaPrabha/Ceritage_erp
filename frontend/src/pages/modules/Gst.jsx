@@ -43,7 +43,7 @@ const TABS = [
 export default function Gst({ t }) {
   const [tab, setTab] = useState("dashboard");
   const [fy, setFy] = useState("2026-27");
-  const [period, setPeriod] = useState("2026-08");
+  const [period, setPeriod] = useState("2026-09");
 
   // Live State from 22-Step Pipeline
   const [controlData, setControlData] = useState(null);
@@ -55,6 +55,16 @@ export default function Gst({ t }) {
   const [returnsWorking, setReturnsWorking] = useState({ b2b: [], b2c_summary: {}, hsn_summary: {} });
   const [gstr2bList, setGstr2bList] = useState([]);
   const [taxRules, setTaxRules] = useState([]);
+
+  // Tax Rule Creation Modal State
+  const [addRuleModal, setAddRuleModal] = useState(false);
+  const [newRule, setNewRule] = useState({
+    rule_code: "",
+    hsn_code: "7113",
+    product_category: "Gold Jewellery",
+    gst_rate: 3.0,
+    effective_from: new Date().toISOString().split("T")[0]
+  });
 
   // Drilldown Modal
   const [selectedError, setSelectedError] = useState(null);
@@ -88,24 +98,24 @@ export default function Gst({ t }) {
   // ── Load Sub-tab Data ──────────────────────────────────────────────────────
   const loadErrors = useCallback(async () => {
     try {
-      const d = await apiRequest("/gst/errors");
+      const d = await apiRequest(`/gst/errors?tax_period=${period}&financial_year=${fy}`);
       if (d.success) setErrorsList(d.data || []);
     } catch { /* silent */ }
-  }, []);
+  }, [period, fy]);
 
   const loadReturnsWorking = useCallback(async () => {
     try {
-      const d = await apiRequest("/gst/returns-working");
+      const d = await apiRequest(`/gst/returns-working?tax_period=${period}&financial_year=${fy}`);
       if (d.success) setReturnsWorking(d.data || { b2b: [], b2c_summary: {}, hsn_summary: {} });
     } catch { /* silent */ }
-  }, []);
+  }, [period, fy]);
 
   const loadGstr2b = useCallback(async () => {
     try {
-      const d = await apiRequest("/gst/gstr2b");
+      const d = await apiRequest(`/gst/gstr2b?tax_period=${period}&financial_year=${fy}`);
       if (d.success) setGstr2bList(d.data || []);
     } catch { /* silent */ }
-  }, []);
+  }, [period, fy]);
 
   const loadTaxMaster = useCallback(async () => {
     try {
@@ -116,14 +126,15 @@ export default function Gst({ t }) {
 
   useEffect(() => {
     runGstValidationPipeline();
-  }, [runGstValidationPipeline]);
+    loadTaxMaster();
+  }, [runGstValidationPipeline, loadTaxMaster]);
 
   useEffect(() => {
     if (tab === "errors") loadErrors();
     if (tab === "returns") loadReturnsWorking();
     if (tab === "gstr2b") loadGstr2b();
     if (tab === "tax_master") loadTaxMaster();
-  }, [tab, loadErrors, loadReturnsWorking, loadGstr2b, loadTaxMaster]);
+  }, [tab, period, fy, loadErrors, loadReturnsWorking, loadGstr2b, loadTaxMaster]);
 
   // ── 1-Click Recalculate & Fix Invoice GST ──────────────────────────────────
   async function handleRecalculate(errorItem) {
@@ -190,6 +201,64 @@ export default function Gst({ t }) {
     }
   }
 
+  // ── Tax Master CRUD Handlers ──────────────────────────────────────────────
+  async function handleSaveRule() {
+    if (!newRule.rule_code || !newRule.product_category) {
+      return alert("Please enter Rule Code and Product Category.");
+    }
+    try {
+      const d = await apiRequest("/gst/tax-master", {
+        method: "POST",
+        body: JSON.stringify(newRule),
+      });
+      if (d.success) {
+        alert(d.message || "Tax rule added successfully.");
+        setAddRuleModal(false);
+        setNewRule({
+          rule_code: "",
+          hsn_code: "7113",
+          product_category: "Gold Jewellery",
+          gst_rate: 3.0,
+          effective_from: new Date().toISOString().split("T")[0]
+        });
+        loadTaxMaster();
+      } else {
+        alert(d.message || "Failed to add tax rule.");
+      }
+    } catch (err) {
+      alert(err.message || "Error saving tax rule.");
+    }
+  }
+
+  async function handleDeleteRule(id) {
+    if (!window.confirm("Are you sure you want to delete this tax rule?")) return;
+    try {
+      const d = await apiRequest(`/gst/tax-master/${id}`, { method: "DELETE" });
+      if (d.success) {
+        loadTaxMaster();
+      } else {
+        alert(d.message || "Failed to delete rule.");
+      }
+    } catch (err) {
+      alert(err.message || "Error deleting rule.");
+    }
+  }
+
+  async function handleClearTaxMaster() {
+    if (!window.confirm("Are you sure you want to CLEAR ALL tax rules? The table will be 100% empty.")) return;
+    try {
+      const d = await apiRequest("/gst/tax-master/clear", { method: "POST" });
+      if (d.success) {
+        alert(d.message || "Tax master cleared.");
+        loadTaxMaster();
+      } else {
+        alert(d.message || "Failed to clear tax rules.");
+      }
+    } catch (err) {
+      alert(err.message || "Error clearing tax rules.");
+    }
+  }
+
   const s = controlData?.summary || {};
   const hs = controlData?.health_score || { score: 0, status: "SYNCING", breakdown: {} };
   const bd = hs.breakdown || {};
@@ -210,7 +279,7 @@ export default function Gst({ t }) {
             GST Control Centre & Statutory Audit Engine
           </h1>
           <div style={{ fontSize: 13, color: t.textSub }}>
-            Showroom: <strong>{controlData?.branch_name || "Main Store"}</strong> · GSTIN: <strong>{controlData?.gstin || "24AAACG1234F1Z5"}</strong>
+            Showroom: <strong>{controlData?.branch_name || "Main Showroom"}</strong> · GSTIN: <strong>{controlData?.gstin || "—"}</strong>
           </div>
         </div>
 
@@ -220,10 +289,14 @@ export default function Gst({ t }) {
             <option value="2026-27">FY 2026-27</option>
             <option value="2025-26">FY 2025-26</option>
           </Select>
-          <Select t={t} style={{ width: 140 }} value={period} onChange={e => setPeriod(e.target.value)}>
+          <Select t={t} style={{ width: 180 }} value={period} onChange={e => setPeriod(e.target.value)}>
+            <option value="2026-09">September 2026 (Current)</option>
             <option value="2026-08">August 2026</option>
             <option value="2026-07">July 2026</option>
             <option value="2026-06">June 2026</option>
+            <option value="2026-05">May 2026</option>
+            <option value="2026-04">April 2026</option>
+            <option value="all">All Months (Full FY)</option>
           </Select>
           <BtnPrimary onClick={runGstValidationPipeline} disabled={validating}>
             {validating ? `Validating Engine (${progress}%)...` : "GENERATE COMPLETE GST REPORT"}
@@ -360,24 +433,20 @@ export default function Gst({ t }) {
           </Card>
 
           <Card t={t}>
-            <CardHeader title="Statutory Jewellery Tax Rules (HSN 7113)" t={t} />
+            <CardHeader title="Live Tax Master Rules (Active in Database)" t={t} />
             <div style={{ display: "grid", gap: 10, fontSize: 13 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: t.card2 || t.card, borderRadius: 6 }}>
-                <span style={{ color: t.textSub }}>Gold & Diamond Articles (HSN 7113)</span>
-                <strong>3.0% (1.5% CGST + 1.5% SGST)</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: t.card2 || t.card, borderRadius: 6 }}>
-                <span style={{ color: t.textSub }}>Silver Jewellery (HSN 7106)</span>
-                <strong>3.0% (1.5% CGST + 1.5% SGST)</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: t.card2 || t.card, borderRadius: 6 }}>
-                <span style={{ color: t.textSub }}>Job Work / Making Charges (HSN 9988)</span>
-                <strong>5.0% (2.5% CGST + 2.5% SGST)</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: t.card2 || t.card, borderRadius: 6 }}>
-                <span style={{ color: t.textSub }}>Old Gold Exchange Accounting</span>
-                <strong style={{ color: "#27ae60" }}>Separate Purchase Ledger</strong>
-              </div>
+              {taxRules && taxRules.length > 0 ? (
+                taxRules.map(tr => (
+                  <div key={tr.id || tr.rule_code} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: t.card2 || t.card, borderRadius: 6 }}>
+                    <span style={{ color: t.textSub }}>{tr.product_category} (HSN {tr.hsn_code})</span>
+                    <strong style={{ color: BRAND.purple }}>{Number(tr.gst_rate).toFixed(1)}% ({Number(tr.cgst_rate).toFixed(1)}% CGST + {Number(tr.sgst_rate).toFixed(1)}% SGST)</strong>
+                  </div>
+                ))
+              ) : (
+                <div style={{ padding: "14px", color: t.textMuted, fontSize: 13, textAlign: "center" }}>
+                  No tax rules configured in database. Table is 100% empty.
+                </div>
+              )}
             </div>
           </Card>
         </div>
@@ -522,9 +591,24 @@ export default function Gst({ t }) {
       {/* ─────────────────────────────────────────────────────────────────────────── */}
       {tab === "tax_master" && (
         <Card t={t}>
-          <CardHeader title="Statutory GST Tax Rules & Versioned HSN Directory" t={t} />
+          <CardHeader
+            title={`Statutory GST Tax Rules & Versioned HSN Directory (${taxRules.length} Active Rules in DB)`}
+            t={t}
+            actions={
+              <div style={{ display: "flex", gap: 10 }}>
+                {taxRules.length > 0 && (
+                  <BtnOutline t={t} onClick={handleClearTaxMaster}>
+                    Clear All Rules (Empty DB)
+                  </BtnOutline>
+                )}
+                <BtnPrimary onClick={() => setAddRuleModal(true)}>
+                  + Add New Tax Rule
+                </BtnPrimary>
+              </div>
+            }
+          />
           <DataTable
-            columns={["Rule Code", "HSN Code", "Product Category", "GST Rate", "CGST", "SGST", "IGST", "Effective From", "Status"]}
+            columns={["Rule Code", "HSN Code", "Product Category", "GST Rate", "CGST", "SGST", "IGST", "Effective From", "Status", "Action"]}
             rows={taxRules.map(tr => ({
               "Rule Code": <code>{tr.rule_code}</code>,
               "HSN Code": <strong>{tr.hsn_code}</strong>,
@@ -542,8 +626,14 @@ export default function Gst({ t }) {
                   ACTIVE
                 </span>
               ),
+              "Action": (
+                <BtnSm t={t} onClick={() => handleDeleteRule(tr.id)}>
+                  Delete
+                </BtnSm>
+              ),
             }))}
             t={t}
+            emptyMsg="No tax rules configured in database. Table is 100% empty. Click '+ Add New Tax Rule' to create a rule."
           />
         </Card>
       )}
@@ -631,6 +721,70 @@ export default function Gst({ t }) {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* ── ADD NEW TAX RULE MODAL ────────────────────────────────────────── */}
+      <Modal
+        open={addRuleModal}
+        onClose={() => setAddRuleModal(false)}
+        title="Add New GST Tax Rule (Database Master)"
+        t={t}
+        footer={
+          <>
+            <BtnOutline t={t} onClick={() => setAddRuleModal(false)}>Cancel</BtnOutline>
+            <BtnPrimary onClick={handleSaveRule}>Save Rule to Database</BtnPrimary>
+          </>
+        }
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <FormGroup label="Rule Code" t={t}>
+            <Input
+              t={t}
+              placeholder="e.g. GST-GOLD-CUSTOM"
+              value={newRule.rule_code}
+              onChange={e => setNewRule({ ...newRule, rule_code: e.target.value.toUpperCase() })}
+            />
+          </FormGroup>
+
+          <FormGrid>
+            <FormGroup label="HSN Code" t={t}>
+              <Input
+                t={t}
+                placeholder="e.g. 7113"
+                value={newRule.hsn_code}
+                onChange={e => setNewRule({ ...newRule, hsn_code: e.target.value })}
+              />
+            </FormGroup>
+            <FormGroup label="Total GST Rate (%)" t={t}>
+              <Input
+                t={t}
+                type="number"
+                step="0.01"
+                placeholder="3.0"
+                value={newRule.gst_rate}
+                onChange={e => setNewRule({ ...newRule, gst_rate: parseFloat(e.target.value) || 0 })}
+              />
+            </FormGroup>
+          </FormGrid>
+
+          <FormGroup label="Product Category / Description" t={t}>
+            <Input
+              t={t}
+              placeholder="e.g. 22K Gold Jewellery Articles"
+              value={newRule.product_category}
+              onChange={e => setNewRule({ ...newRule, product_category: e.target.value })}
+            />
+          </FormGroup>
+
+          <FormGroup label="Effective Date" t={t}>
+            <Input
+              t={t}
+              type="date"
+              value={newRule.effective_from}
+              onChange={e => setNewRule({ ...newRule, effective_from: e.target.value })}
+            />
+          </FormGroup>
+        </div>
       </Modal>
     </div>
   );

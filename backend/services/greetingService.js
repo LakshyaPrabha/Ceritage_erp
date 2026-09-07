@@ -63,9 +63,9 @@ async function generateGreeting(customer, occasionType, options = {}) {
 
           try {
             await conn.query(
-              `INSERT INTO customer_audit_logs (customer_id, action_type, performed_by, description)
-               VALUES (?, 'OCCASION_BONUS_POINTS_GRANTED', ?, ?)`,
-              [customer.id, performed_by, `Granted ${pts} bonus loyalty points for ${normType} ${year}`]
+              `INSERT INTO customer_audit_logs (customer_id, action_type, action, performed_by, description, details)
+               VALUES (?, 'OCCASION_BONUS_POINTS_GRANTED', 'OCCASION_BONUS_POINTS_GRANTED', ?, ?, ?)`,
+              [customer.id, performed_by, `Granted ${pts} bonus loyalty points for ${normType} ${year}`, `Granted ${pts} bonus loyalty points for ${normType} ${year}`]
             );
           } catch (e) {
             console.warn("Audit notice:", e.message);
@@ -115,10 +115,11 @@ async function generateGreeting(customer, occasionType, options = {}) {
     }
 
     try {
+      const gDesc = `Generated ${normType} greeting card${couponCode ? ` (Coupon: ${couponCode})` : ''}`;
       await db.query(
-        `INSERT INTO customer_audit_logs (customer_id, action_type, performed_by, description)
-         VALUES (?, 'OCCASION_GREETING_GENERATED', ?, ?)`,
-        [customer.id, performed_by, `Generated ${normType} greeting card${couponCode ? ` (Coupon: ${couponCode})` : ''}`]
+        `INSERT INTO customer_audit_logs (customer_id, action_type, action, performed_by, description, details)
+         VALUES (?, 'OCCASION_GREETING_GENERATED', 'OCCASION_GREETING_GENERATED', ?, ?, ?)`,
+        [customer.id, performed_by, gDesc, gDesc]
       );
     } catch (e) {
       console.warn("Audit notice:", e.message);

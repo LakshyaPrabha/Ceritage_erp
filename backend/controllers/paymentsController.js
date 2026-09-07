@@ -1,9 +1,15 @@
 const db = require("../config/db");
 const accounting = require("../services/accountingPostingService");
+const { branchFilter } = require("../utils/branchScope");
 
 // ── GET /api/payments/kpis ──────────────────────────────────────────────────
 async function getKpis(req, res) {
   try {
+    const bfInv = branchFilter(req, "branch_id");
+    const bfCust = branchFilter(req, "c.branch_id");
+    const bfSup = branchFilter(req, "branch_id");
+    const bfEmi = branchFilter(req, "branch_id");
+
     // 1. Sales Invoices by payment mode
     const [invRows] = await db.query(`
       SELECT
@@ -12,19 +18,20 @@ async function getKpis(req, res) {
         COUNT(*) AS count,
         COALESCE(SUM(CASE WHEN DATE(created_at) = CURRENT_DATE THEN paid_amount ELSE 0 END), 0) AS today_paid
       FROM invoices
-      WHERE status != 'Cancelled'
+      WHERE status != 'Cancelled' AND ${bfInv.sql}
       GROUP BY payment_mode
-    `);
+    `, bfInv.params).catch(() => [[]]);
 
     // 2. Customer Ledger payments (settlements)
     const [ledgerRows] = await db.query(`
       SELECT
-        COALESCE(SUM(credit), 0) AS total_paid,
+        COALESCE(SUM(l.credit), 0) AS total_paid,
         COUNT(*) AS count,
-        COALESCE(SUM(CASE WHEN DATE(date) = CURRENT_DATE THEN credit ELSE 0 END), 0) AS today_paid
-      FROM customer_ledger
-      WHERE credit > 0
-    `);
+        COALESCE(SUM(CASE WHEN DATE(l.date) = CURRENT_DATE THEN l.credit ELSE 0 END), 0) AS today_paid
+      FROM customer_ledger l
+      LEFT JOIN customers c ON l.customer_id = c.id
+      WHERE l.credit > 0 AND ${bfCust.sql}
+    `, bfCust.params).catch(() => [[]]);
 
     // 3. Supplier Payments (outflows)
     const [supRows] = await db.query(`
@@ -34,8 +41,9 @@ async function getKpis(req, res) {
         COUNT(*) AS count,
         COALESCE(SUM(CASE WHEN DATE(created_at) = CURRENT_DATE THEN amount ELSE 0 END), 0) AS today_paid
       FROM supplier_payments
+      WHERE ${bfSup.sql}
       GROUP BY payment_mode
-    `);
+    `, bfSup.params).catch(() => [[]]);
 
     // 4. EMI Payments
     const [emiRows] = await db.query(`
@@ -45,8 +53,9 @@ async function getKpis(req, res) {
         COUNT(*) AS count,
         COALESCE(SUM(CASE WHEN DATE(created_at) = CURRENT_DATE THEN amount ELSE 0 END), 0) AS today_paid
       FROM emi_payments
+      WHERE ${bfEmi.sql}
       GROUP BY payment_mode
-    `);
+    `, bfEmi.params).catch(() => [[]]);
 
     let cashTotal = 0;
     let upiTotal = 0;
@@ -181,15 +190,16 @@ async function getTransactions(req, res) {
 
     // 1. Invoices
     try {
+      const bfInv = branchFilter(req, "i.branch_id");
       const [invRows] = await db.query(`
         SELECT i.id, i.invoice_no AS ref_no, i.customer_id, c.full_name AS party_name,
                i.payment_mode, i.paid_amount AS amount, i.grand_total, i.status, i.created_at
         FROM invoices i
         LEFT JOIN customers c ON i.customer_id = c.id
-        WHERE i.paid_amount > 0
+        WHERE i.paid_amount > 0 AND ${bfInv.sql}
         ORDER BY i.created_at DESC
         LIMIT 100
-      `);
+      `, bfInv.params);
       invRows.forEach(i => {
         txns.push({
           id: `INV-${i.id}`,
@@ -210,15 +220,16 @@ async function getTransactions(req, res) {
 
     // 2. Customer Ledger Payments
     try {
+      const bfCust = branchFilter(req, "c.branch_id");
       const [ledRows] = await db.query(`
         SELECT l.id, l.reference AS ref_no, l.customer_id, c.full_name AS party_name,
                l.credit AS amount, l.particulars, l.created_at, l.date
         FROM customer_ledger l
         LEFT JOIN customers c ON l.customer_id = c.id
-        WHERE l.credit > 0
+        WHERE l.credit > 0 AND ${bfCust.sql}
         ORDER BY l.created_at DESC
         LIMIT 100
-      `);
+      `, bfCust.params);
       ledRows.forEach(l => {
         txns.push({
           id: `LED-${l.id}`,
@@ -239,14 +250,16 @@ async function getTransactions(req, res) {
 
     // 3. Supplier Payments
     try {
+      const bfSup = branchFilter(req, "sp.branch_id");
       const [supRows] = await db.query(`
         SELECT sp.id, sp.pay_id AS ref_no, sp.supplier_id, s.company_name AS party_name,
                sp.payment_mode, sp.amount, sp.reference, sp.created_at
         FROM supplier_payments sp
         LEFT JOIN suppliers s ON sp.supplier_id = s.id
+        WHERE ${bfSup.sql}
         ORDER BY sp.created_at DESC
         LIMIT 100
-      `);
+      `, bfSup.params);
       supRows.forEach(sp => {
         txns.push({
           id: `SP-${sp.id}`,
@@ -267,14 +280,16 @@ async function getTransactions(req, res) {
 
     // 4. EMI Payments
     try {
+      const bfEmi = branchFilter(req, "ep.branch_id");
       const [emiRows] = await db.query(`
         SELECT ep.id, ep.payment_no AS ref_no, ep.customer_id, c.full_name AS party_name,
                ep.payment_mode, ep.amount, ep.created_at
         FROM emi_payments ep
         LEFT JOIN customers c ON ep.customer_id = c.id
+        WHERE ${bfEmi.sql}
         ORDER BY ep.created_at DESC
         LIMIT 100
-      `);
+      `, bfEmi.params);
       emiRows.forEach(ep => {
         txns.push({
           id: `EMI-${ep.id}`,

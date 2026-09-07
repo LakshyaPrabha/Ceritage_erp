@@ -98,8 +98,9 @@ exports.getById = async (req, res) => {
   try {
     await ensureTables();
     const { id } = req.params;
+    const bf = branchFilter(req);
 
-    const [rows] = await db.query("SELECT * FROM employees WHERE id = ?", [id]);
+    const [rows] = await db.query(`SELECT * FROM employees WHERE id = ? AND ${bf.sql}`, [id, ...bf.params]);
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: "Employee not found" });
     }
@@ -142,7 +143,10 @@ exports.create = async (req, res) => {
       bank_account,
       ifsc,
       notes,
+      branch_id,
     } = req.body;
+
+    const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
 
     if (!name || !phone) {
       return res.status(400).json({ success: false, message: "Employee name and phone are required" });
@@ -163,7 +167,7 @@ exports.create = async (req, res) => {
       role || null,
       department || null,
       salary ? parseFloat(salary) : 0,
-      req.user?.branch_id || 1,
+      activeBranchId,
       joining_date || new Date().toISOString().split("T")[0],
       pan || null,
       aadhaar || null,
@@ -187,6 +191,7 @@ exports.update = async (req, res) => {
   try {
     await ensureTables();
     const { id } = req.params;
+    const bf = branchFilter(req);
     const {
       name,
       phone,
@@ -206,7 +211,7 @@ exports.update = async (req, res) => {
     await db.query(`
       UPDATE employees 
       SET name=?, phone=?, email=?, role=?, department=?, salary=?, status=?, joining_date=?, pan=?, aadhaar=?, bank_account=?, ifsc=?, notes=?
-      WHERE id=?
+      WHERE id=? AND ${bf.sql}
     `, [
       name,
       phone,
@@ -222,6 +227,7 @@ exports.update = async (req, res) => {
       ifsc || null,
       notes || null,
       id,
+      ...bf.params
     ]);
 
     return res.json({ success: true, message: "Employee profile updated successfully" });
@@ -235,8 +241,9 @@ exports.delete = async (req, res) => {
   try {
     await ensureTables();
     const { id } = req.params;
+    const bf = branchFilter(req);
 
-    await db.query("UPDATE employees SET status='Inactive' WHERE id=?", [id]);
+    await db.query(`UPDATE employees SET status='Inactive' WHERE id=? AND ${bf.sql}`, [id, ...bf.params]);
     return res.json({ success: true, message: "Employee marked as Inactive" });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -248,9 +255,10 @@ exports.getAttendance = async (req, res) => {
   try {
     await ensureTables();
     const { date, employee_id } = req.query;
+    const bf = branchFilter(req, "e.branch_id");
 
-    let where = "WHERE 1=1";
-    const params = [];
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (date) {
       where += " AND a.attendance_date = ?";
@@ -316,8 +324,9 @@ exports.markAllPresent = async (req, res) => {
   try {
     await ensureTables();
     const date = req.body.date || new Date().toISOString().split("T")[0];
+    const bf = branchFilter(req);
 
-    const [activeEmployees] = await db.query("SELECT id FROM employees WHERE status = 'Active'");
+    const [activeEmployees] = await db.query(`SELECT id FROM employees WHERE status = 'Active' AND ${bf.sql}`, bf.params);
 
     for (const emp of activeEmployees) {
       await db.query(`
@@ -340,6 +349,7 @@ exports.markAllPresent = async (req, res) => {
 exports.getLeaves = async (req, res) => {
   try {
     await ensureTables();
+    const bf = branchFilter(req, "e.branch_id");
     const [rows] = await db.query(`
       SELECT 
         l.*,
@@ -349,8 +359,9 @@ exports.getLeaves = async (req, res) => {
         e.department
       FROM leaves l
       JOIN employees e ON l.employee_id = e.id
+      WHERE ${bf.sql}
       ORDER BY l.created_at DESC
-    `);
+    `, bf.params);
 
     return res.json({ success: true, data: rows });
   } catch (err) {
@@ -412,8 +423,9 @@ exports.getPayroll = async (req, res) => {
   try {
     await ensureTables();
     const month = req.query.month || new Date().toISOString().slice(0, 7); // e.g. "2026-08"
+    const bf = branchFilter(req);
 
-    const [employees] = await db.query("SELECT * FROM employees WHERE status = 'Active'");
+    const [employees] = await db.query(`SELECT * FROM employees WHERE status = 'Active' AND ${bf.sql}`, bf.params);
 
     const payrollSummary = [];
 
@@ -515,3 +527,4 @@ exports.paySalary = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
+

@@ -1,4 +1,21 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
+
+let tablesReady = false;
+async function ensureTables() {
+  if (tablesReady) return;
+  try {
+    const [cols] = await db.query(
+      "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fine_metal_ledger' AND COLUMN_NAME = 'branch_id'"
+    );
+    if (cols.length === 0) {
+      await db.query("ALTER TABLE fine_metal_ledger ADD COLUMN branch_id INT DEFAULT 1");
+    }
+    tablesReady = true;
+  } catch (err) {
+    console.warn("fine_metal_ledger table check error:", err.message);
+  }
+}
 
 // Helper function to resolve purity fraction
 function getPurityFraction(purity, metalType = "Gold") {
@@ -19,14 +36,17 @@ function getPurityFraction(purity, metalType = "Gold") {
 // ── GET /api/tunch/summary ──────────────────────────────────────────────────
 async function getSummary(req, res) {
   try {
+    await ensureTables();
+    const bf = branchFilter(req);
+
     // 1. Inventory Products Fine Gold / Silver Stock
     const [prodRows] = await db.query(`
       SELECT metal_type, purity,
              COALESCE(SUM(stock_qty * net_weight), 0) AS total_gross
       FROM products
-      WHERE (status = 'Active' OR status IS NULL) AND stock_qty > 0
+      WHERE (status = 'Active' OR status IS NULL) AND stock_qty > 0 AND ${bf.sql}
       GROUP BY metal_type, purity
-    `);
+    `, bf.params);
 
     let inventoryFineGold = 0;
     let inventoryFineSilver = 0;
@@ -43,8 +63,8 @@ async function getSummary(req, res) {
 
     // 2. Karigar Metal Balance (Issued - Received)
     const [issueRows] = await db.query(`
-      SELECT metal_type, purity, gross_weight, net_weight FROM gold_issues
-    `);
+      SELECT metal_type, purity, gross_weight, net_weight FROM gold_issues WHERE ${bf.sql}
+    `, bf.params);
     let totalIssuedFine = 0;
     issueRows.forEach(i => {
       const frac = getPurityFraction(i.purity, i.metal_type);
@@ -52,8 +72,8 @@ async function getSummary(req, res) {
     });
 
     const [recvRows] = await db.query(`
-      SELECT metal_type, purity, gross_weight, net_weight, wastage_reported FROM gold_receives
-    `);
+      SELECT metal_type, purity, gross_weight, net_weight, wastage_reported FROM gold_receives WHERE ${bf.sql}
+    `, bf.params);
     let totalRecvFine = 0;
     let totalWastage = 0;
     recvRows.forEach(r => {
@@ -70,7 +90,8 @@ async function getSummary(req, res) {
         COALESCE(SUM(CASE WHEN metal_type = 'Gold' THEN fine_weight ELSE 0 END), 0) AS old_fine_gold,
         COALESCE(SUM(CASE WHEN metal_type = 'Silver' THEN fine_weight ELSE 0 END), 0) AS old_fine_silver
       FROM old_metal_purchases
-    `);
+      WHERE ${bf.sql}
+    `, bf.params).catch(() => [[{ old_fine_gold: 0, old_fine_silver: 0 }]]);
 
     // 4. Gold Exchanges from Customers
     const [[exchangeStats]] = await db.query(`
@@ -78,7 +99,8 @@ async function getSummary(req, res) {
         COALESCE(SUM(CASE WHEN metal_type = 'Gold' THEN fine_weight ELSE 0 END), 0) AS ex_fine_gold,
         COALESCE(SUM(CASE WHEN metal_type = 'Silver' THEN fine_weight ELSE 0 END), 0) AS ex_fine_silver
       FROM gold_exchanges
-    `);
+      WHERE ${bf.sql}
+    `, bf.params).catch(() => [[{ ex_fine_gold: 0, ex_fine_silver: 0 }]]);
 
     // 5. Direct Fine Metal Ledger Manual Entries
     const [[ledgerStats]] = await db.query(`
@@ -88,10 +110,11 @@ async function getSummary(req, res) {
         COALESCE(SUM(CASE WHEN metal_type = 'Silver' AND flow = 'INWARD' THEN fine_weight ELSE 0 END), 0) -
         COALESCE(SUM(CASE WHEN metal_type = 'Silver' AND flow = 'OUTWARD' THEN fine_weight ELSE 0 END), 0) AS ledger_fine_silver
       FROM fine_metal_ledger
-    `);
+      WHERE ${bf.sql}
+    `, bf.params).catch(() => [[{ ledger_fine_gold: 0, ledger_fine_silver: 0 }]]);
 
-    const totalFineGold = inventoryFineGold + karigarHoldingFine + Number(oldMetalStats.old_fine_gold) + Number(exchangeStats.ex_fine_gold) + Number(ledgerStats.ledger_fine_gold);
-    const totalFineSilver = inventoryFineSilver + Number(oldMetalStats.old_fine_silver) + Number(exchangeStats.ex_fine_silver) + Number(ledgerStats.ledger_fine_silver);
+    const totalFineGold = inventoryFineGold + karigarHoldingFine + Number(oldMetalStats?.old_fine_gold || 0) + Number(exchangeStats?.ex_fine_gold || 0) + Number(ledgerStats?.ledger_fine_gold || 0);
+    const totalFineSilver = inventoryFineSilver + Number(oldMetalStats?.old_fine_silver || 0) + Number(exchangeStats?.ex_fine_silver || 0) + Number(ledgerStats?.ledger_fine_silver || 0);
 
     res.json({
       success: true,
@@ -103,8 +126,8 @@ async function getSummary(req, res) {
         karigar_received_fine: Number(totalRecvFine.toFixed(3)),
         karigar_holding_fine: Number(karigarHoldingFine.toFixed(3)),
         total_wastage_fine: Number(totalWastage.toFixed(3)),
-        scrap_gold_fine: Number(Number(oldMetalStats.old_fine_gold).toFixed(3)),
-        exchange_gold_fine: Number(Number(exchangeStats.ex_fine_gold).toFixed(3))
+        scrap_gold_fine: Number(Number(oldMetalStats?.old_fine_gold || 0).toFixed(3)),
+        exchange_gold_fine: Number(Number(exchangeStats?.ex_fine_gold || 0).toFixed(3))
       }
     });
   } catch (err) {
@@ -115,7 +138,9 @@ async function getSummary(req, res) {
 // ── GET /api/tunch/ledger (Unified Metal Movements) ─────────────────────────
 async function getLedger(req, res) {
   try {
+    await ensureTables();
     const { metal_type, search } = req.query;
+    const bf = branchFilter(req);
     const movements = [];
 
     // 1. Direct Fine Metal Ledger entries
@@ -123,9 +148,10 @@ async function getLedger(req, res) {
       SELECT id, voucher_no, transaction_type, metal_type, purity, gross_weight, wastage,
              fine_weight, flow, party_name, narration, created_at AS date
       FROM fine_metal_ledger
+      WHERE ${bf.sql}
       ORDER BY created_at DESC
       LIMIT 100
-    `);
+    `, bf.params).catch(() => [[]]);
     dirRows.forEach(r => {
       movements.push({
         id: `FML-${r.id}`,
@@ -144,14 +170,16 @@ async function getLedger(req, res) {
     });
 
     // 2. Gold Issues to Karigars (Outward)
+    const bfGi = branchFilter(req, "gi.branch_id");
     const [issueRows] = await db.query(`
       SELECT gi.id, gi.issue_no, gi.issue_date AS date, gi.metal_type, gi.gross_weight, gi.purity,
              gi.work_order_ref, k.name AS karigar_name
       FROM gold_issues gi
       LEFT JOIN karigars k ON gi.karigar_id = k.id
+      WHERE ${bfGi.sql}
       ORDER BY gi.created_at DESC
       LIMIT 100
-    `);
+    `, bfGi.params).catch(() => [[]]);
     issueRows.forEach(gi => {
       const frac = getPurityFraction(gi.purity, gi.metal_type);
       const fine = Number(gi.gross_weight || 0) * frac;
@@ -172,14 +200,16 @@ async function getLedger(req, res) {
     });
 
     // 3. Gold Receives from Karigars (Inward)
+    const bfGr = branchFilter(req, "gr.branch_id");
     const [recvRows] = await db.query(`
       SELECT gr.id, gr.receive_no, gr.receive_date AS date, gr.metal_type, gr.gross_weight, gr.net_weight, gr.purity,
              gr.wastage_reported, k.name AS karigar_name
       FROM gold_receives gr
       LEFT JOIN karigars k ON gr.karigar_id = k.id
+      WHERE ${bfGr.sql}
       ORDER BY gr.created_at DESC
       LIMIT 100
-    `);
+    `, bfGr.params).catch(() => [[]]);
     recvRows.forEach(gr => {
       const frac = getPurityFraction(gr.purity, gr.metal_type);
       const fine = Number(gr.net_weight || gr.gross_weight || 0) * frac;
@@ -200,14 +230,16 @@ async function getLedger(req, res) {
     });
 
     // 4. Old Metal Purchases (Inward)
+    const bfOm = branchFilter(req, "om.branch_id");
     const [omRows] = await db.query(`
       SELECT om.id, om.purchase_no AS voucher_no, om.metal_type, om.purity,
              om.gross_weight, om.fine_weight, om.created_at AS date, c.full_name AS customer_name
       FROM old_metal_purchases om
       LEFT JOIN customers c ON om.customer_id = c.id
+      WHERE ${bfOm.sql}
       ORDER BY om.created_at DESC
       LIMIT 100
-    `);
+    `, bfOm.params).catch(() => [[]]);
     omRows.forEach(om => {
       movements.push({
         id: `OMP-${om.id}`,
@@ -226,14 +258,16 @@ async function getLedger(req, res) {
     });
 
     // 5. Gold Exchanges (Inward)
+    const bfGe = branchFilter(req, "ge.branch_id");
     const [exRows] = await db.query(`
       SELECT ge.id, ge.exchange_no AS voucher_no, ge.metal_type, ge.purity,
              ge.gross_weight, ge.net_weight, ge.fine_weight, ge.created_at AS date, c.full_name AS customer_name
       FROM gold_exchanges ge
       LEFT JOIN customers c ON ge.customer_id = c.id
+      WHERE ${bfGe.sql}
       ORDER BY ge.created_at DESC
       LIMIT 100
-    `);
+    `, bfGe.params).catch(() => [[]]);
     exRows.forEach(ge => {
       const frac = getPurityFraction(ge.purity, ge.metal_type);
       const fine = Number(ge.fine_weight || (Number(ge.net_weight || ge.gross_weight || 0) * frac));
@@ -289,17 +323,18 @@ async function getLedger(req, res) {
 // ── GET /api/tunch/karigar-balances ─────────────────────────────────────────
 async function getKarigarBalances(req, res) {
   try {
+    const bfK = branchFilter(req);
     const [karigars] = await db.query(`
-      SELECT id, name, phone, specialization FROM karigars WHERE status = 'Active' ORDER BY name ASC
-    `);
+      SELECT id, name, phone, specialization FROM karigars WHERE status = 'Active' AND ${bfK.sql} ORDER BY name ASC
+    `, bfK.params);
 
     const [issues] = await db.query(`
-      SELECT karigar_id, metal_type, purity, gross_weight, net_weight FROM gold_issues
-    `);
+      SELECT karigar_id, metal_type, purity, gross_weight, net_weight FROM gold_issues WHERE ${bfK.sql}
+    `, bfK.params).catch(() => [[]]);
 
     const [receives] = await db.query(`
-      SELECT karigar_id, metal_type, purity, gross_weight, net_weight, wastage_reported FROM gold_receives
-    `);
+      SELECT karigar_id, metal_type, purity, gross_weight, net_weight, wastage_reported FROM gold_receives WHERE ${bfK.sql}
+    `, bfK.params).catch(() => [[]]);
 
     const issueMap = {};
     issues.forEach(i => {
@@ -344,6 +379,7 @@ async function getKarigarBalances(req, res) {
 // ── POST /api/tunch/record (Transactional Fine Metal Adjustment) ────────────
 async function recordMovement(req, res) {
   const {
+    branch_id,
     transaction_type = "MANUAL_ENTRY",
     metal_type = "Gold",
     purity = "24K",
@@ -360,6 +396,7 @@ async function recordMovement(req, res) {
     return res.status(400).json({ success: false, message: "Enter a valid positive gross metal weight in grams." });
   }
 
+  const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
   const purityFraction = getPurityFraction(purity, metal_type);
   const netWeight = Math.max(0, gw - (parseFloat(wastage) || 0));
   const fineWeight = Number((netWeight * purityFraction).toFixed(3));
@@ -367,16 +404,18 @@ async function recordMovement(req, res) {
 
   const conn = await db.getConnection();
   try {
+    await ensureTables();
     await conn.beginTransaction();
 
-    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM fine_metal_ledger");
-    const voucher_no = `FML-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM fine_metal_ledger").catch(() => [[{ count: 0 }]]);
+    const voucher_no = `FML-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, "0")}`;
 
     await conn.query(`
       INSERT INTO fine_metal_ledger
-        (voucher_no, transaction_type, metal_type, purity, purity_fraction, gross_weight, wastage, fine_weight, flow, party_type, party_name, narration, performed_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (branch_id, voucher_no, transaction_type, metal_type, purity, purity_fraction, gross_weight, wastage, fine_weight, flow, party_type, party_name, narration, performed_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
+      activeBranchId,
       voucher_no, transaction_type, metal_type, purity, purityFraction, gw, wastage || 0,
       fineWeight, flow, party_type, party_name || "Store Vault", narration || null, performedBy
     ]);

@@ -535,6 +535,16 @@ export default function Customers({ t }) {
     loadCustomers();
     loadMembershipData();
     loadOccasionsData();
+
+    const handleBranchChanged = () => {
+      loadKpis();
+      loadCustomers();
+      loadMembershipData();
+      loadOccasionsData();
+    };
+
+    window.addEventListener("branch-changed", handleBranchChanged);
+    return () => window.removeEventListener("branch-changed", handleBranchChanged);
   }, [loadKpis, loadCustomers, loadMembershipData, loadOccasionsData]);
 
   // ── Load Tab Data ──
@@ -690,11 +700,14 @@ export default function Customers({ t }) {
 
   // ── Membership Handlers ──
   const openEnrollModal = (cust = null, plan = null) => {
+    const defaultCust = cust || (customers.length > 0 ? customers[0] : null);
+    const defaultPlan = plan || (membershipPlans.find(p => p.name !== "Regular") || membershipPlans[0] || null);
+
     setEnrollForm({
-      customer_id: cust ? cust.id : (customers[0]?.id || ""),
-      plan_id: plan ? plan.id : (membershipPlans[1]?.id || membershipPlans[0]?.id || ""),
+      customer_id: defaultCust ? defaultCust.id : "",
+      plan_id: defaultPlan ? defaultPlan.id : "",
       start_date: new Date().toISOString().slice(0, 10),
-      fee_paid: plan?.annual_fee || 0,
+      fee_paid: defaultPlan?.annual_fee || 0,
       payment_mode: "Cash",
       notes: "Enrolled from Membership Portal",
     });
@@ -727,9 +740,11 @@ export default function Customers({ t }) {
         body: JSON.stringify(enrollForm),
       });
       setEnrollModal(false);
-      await loadMembershipData();
-      await loadCustomers();
-      await loadKpis();
+      await Promise.all([
+        loadMembershipData(),
+        loadCustomers(),
+        loadKpis()
+      ]);
     } catch (err) {
       setMemMsg(`✗ ${err.message}`);
     }
@@ -744,9 +759,11 @@ export default function Customers({ t }) {
         body: JSON.stringify(renewForm),
       });
       setRenewModal(false);
-      await loadMembershipData();
-      await loadCustomers();
-      await loadKpis();
+      await Promise.all([
+        loadMembershipData(),
+        loadCustomers(),
+        loadKpis()
+      ]);
     } catch (err) {
       setMemMsg(`✗ ${err.message}`);
     }
@@ -882,9 +899,11 @@ export default function Customers({ t }) {
     try {
       await apiRequest("/customers", { method: "POST", body: JSON.stringify(formData) });
       setAddModal(false);
-      await loadCustomers();
-      await loadKpis();
-      await loadOccasionsData();
+      await Promise.all([
+        loadCustomers(),
+        loadKpis(),
+        loadOccasionsData()
+      ]);
     } catch (err) {
       setFormMsg(`✗ ${err.message}`);
     } finally {
@@ -900,9 +919,11 @@ export default function Customers({ t }) {
     try {
       await apiRequest(`/customers/${custDetails.id}`, { method: "PUT", body: JSON.stringify(formData) });
       setEditModal(false);
-      await loadCustomers();
-      await loadKpis();
-      await loadOccasionsData();
+      await Promise.all([
+        loadCustomers(),
+        loadKpis(),
+        loadOccasionsData()
+      ]);
     } catch (err) {
       setFormMsg(`✗ ${err.message}`);
     } finally {
@@ -918,9 +939,11 @@ export default function Customers({ t }) {
     try {
       await apiRequest(`/customers/${selectedCustId}/payments`, { method: "POST", body: JSON.stringify(paymentForm) });
       setPaymentModal(false);
-      await handleLoadLedger(selectedCustId);
-      await loadCustomers();
-      await loadKpis();
+      await Promise.all([
+        handleLoadLedger(selectedCustId),
+        loadCustomers(),
+        loadKpis()
+      ]);
     } catch (err) {
       setPayMsg(`✗ ${err.message}`);
     } finally {
@@ -935,8 +958,10 @@ export default function Customers({ t }) {
       await apiRequest(`/customers/${selectedCustId}/wallet/credit`, { method: "POST", body: JSON.stringify(walletTopupForm) });
       setAddWalletModal(false);
       setWalletTopupForm({ amount: "", payment_mode: "Cash", notes: "" });
-      await handleLoadWalletLoyalty(selectedCustId);
-      await loadCustomers();
+      await Promise.all([
+        handleLoadWalletLoyalty(selectedCustId),
+        loadCustomers()
+      ]);
     } catch (err) {
       setWalletMsg(`✗ ${err.message}`);
     }
@@ -949,8 +974,10 @@ export default function Customers({ t }) {
       await apiRequest(`/customers/${selectedCustId}/wallet/adjust`, { method: "POST", body: JSON.stringify(walletAdjustForm) });
       setAdjustWalletModal(false);
       setWalletAdjustForm({ amount: "", type: "CREDIT", reason: "" });
-      await handleLoadWalletLoyalty(selectedCustId);
-      await loadCustomers();
+      await Promise.all([
+        handleLoadWalletLoyalty(selectedCustId),
+        loadCustomers()
+      ]);
     } catch (err) {
       setWalletMsg(`✗ ${err.message}`);
     }
@@ -963,8 +990,10 @@ export default function Customers({ t }) {
       await apiRequest(`/customers/${selectedCustId}/loyalty/adjust`, { method: "POST", body: JSON.stringify(loyaltyAdjustForm) });
       setAdjustLoyaltyModal(false);
       setLoyaltyAdjustForm({ points: "", type: "EARN", reason: "" });
-      await handleLoadWalletLoyalty(selectedCustId);
-      await loadCustomers();
+      await Promise.all([
+        handleLoadWalletLoyalty(selectedCustId),
+        loadCustomers()
+      ]);
     } catch (err) {
       setLoyaltyMsg(`✗ ${err.message}`);
     }
@@ -1073,7 +1102,7 @@ export default function Customers({ t }) {
           <DataTable
             columns={["Customer ID", "Full Name", "Phone", "Registered Branch", "Tier", "City", "Wallet", "Points", "Balance Due", "Actions"]}
             rows={customers.map(c => ({
-              "Customer ID": <code>{c.customer_id || `CUST-${c.id}`}</code>,
+              "Customer ID": <code>{c.customer_id || c.customer_code || `CUST-${c.id}`}</code>,
               "Full Name": <strong>{c.full_name}</strong>,
               "Phone": c.phone,
               "Registered Branch": (
@@ -1082,7 +1111,9 @@ export default function Customers({ t }) {
                   background: "rgba(59,85,230,0.1)", color: BRAND.blue,
                   display: "inline-flex", alignItems: "center", gap: 4
                 }}>
-                   {c.branch_name || "Main Showroom"}
+                   {c.sub_branch_name && c.sub_branch_name !== c.branch_name
+                    ? `${c.branch_name} › ${c.sub_branch_name}`
+                    : (c.branch_name || "Main Showroom")}
                 </span>
               ),
               "Tier": (
@@ -2128,7 +2159,7 @@ export default function Customers({ t }) {
                 <option value="">-- Select Customer --</option>
                 {customers.map(c => (
                   <option key={c.id} value={c.id}>
-                    {c.full_name} ({c.phone}) - Current: {c.tier}
+                    {c.full_name} ({c.phone}) - Current: {c.tier || 'Regular'}
                   </option>
                 ))}
               </Select>

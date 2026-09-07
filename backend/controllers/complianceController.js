@@ -57,6 +57,7 @@ exports.getAllLogs = async (req, res) => {
   try {
     const { section, pmla_only, search, from_date, to_date } = req.query;
     const bf = branchFilter(req, "c.branch_id");
+    const branchId = req.user?.branch_id || req.branchId || 1;
 
     const conditions = [bf.sql];
     const params = [...bf.params];
@@ -97,6 +98,7 @@ exports.getAllLogs = async (req, res) => {
 
     // If compliance table is fresh, also check invoices directly
     if (rows.length === 0) {
+      const invBf = branchFilter(req, "i.branch_id");
       const [invRows] = await db.query(`
         SELECT 
           i.id AS invoice_id,
@@ -118,12 +120,12 @@ exports.getAllLogs = async (req, res) => {
           'TCS_COLLECTED' AS status
         FROM invoices i
         LEFT JOIN customers cust ON i.customer_id = cust.id
-        WHERE (i.branch_id = ? OR i.branch_id IS NULL)
+        WHERE ${invBf.sql}
           AND i.grand_total >= 200000
           AND i.status != 'Cancelled'
         ORDER BY i.id DESC
         LIMIT 50
-      `, [branchId]);
+      `, invBf.params);
 
       return res.json({ success: true, data: invRows });
     }
@@ -139,7 +141,7 @@ exports.getAllLogs = async (req, res) => {
 // POST /api/compliance/record-tcs
 exports.recordTcsLog = async (req, res) => {
   try {
-    const branchId = req.user?.branch_id || 1;
+    const branchId = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
     const {
       invoice_id,
       invoice_no,
@@ -233,7 +235,7 @@ exports.recordTcsLog = async (req, res) => {
 // POST /api/compliance/form60
 exports.createForm60 = async (req, res) => {
   try {
-    const branchId = req.user?.branch_id || 1;
+    const branchId = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
     const {
       customer_id,
       declarant_name,
@@ -296,10 +298,10 @@ exports.createForm60 = async (req, res) => {
 // GET /api/compliance/form60
 exports.getForm60Declarations = async (req, res) => {
   try {
-    const branchId = req.user?.branch_id || 1;
+    const bf = branchFilter(req);
     const [rows] = await db.query(
-      "SELECT * FROM form60_declarations WHERE branch_id = ? ORDER BY id DESC",
-      [branchId]
+      `SELECT * FROM form60_declarations WHERE ${bf.sql} ORDER BY id DESC`,
+      bf.params
     );
     return res.json({ success: true, data: rows });
   } catch (err) {
@@ -311,8 +313,9 @@ exports.getForm60Declarations = async (req, res) => {
 // GET /api/compliance/form27eq
 exports.getForm27Eq = async (req, res) => {
   try {
-    const branchId = req.user?.branch_id || 1;
+    const branchId = Number(req.query.branch_id || req.branchId || req.user?.branch_id || 1);
     const { quarter = "Q2", financial_year = "2026-27" } = req.query;
+    const bf = branchFilter(req, "c.branch_id");
 
     const [rows] = await db.query(`
       SELECT 
@@ -328,9 +331,9 @@ exports.getForm27Eq = async (req, res) => {
         c.status,
         c.created_at
       FROM compliance_tcs_logs c
-      WHERE c.branch_id = ? AND c.tcs_amount > 0
+      WHERE ${bf.sql} AND c.tcs_amount > 0
       ORDER BY c.invoice_date ASC
-    `, [branchId]);
+    `, bf.params);
 
     const totalCollected = rows.reduce((a, b) => a + Number(b.tcs_amount || 0), 0);
 
@@ -353,3 +356,4 @@ exports.getForm27Eq = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
+

@@ -317,10 +317,11 @@ async function acknowledgeOccasion(customerId, occasionType, occasionDate, ackno
 
   // Audit log with schema-safe column names
   try {
+    const occDesc = `Acknowledged ${normType} for ${dateStr} (${notes || 'Staff contact'})`;
     await db.query(
-      `INSERT INTO customer_audit_logs (customer_id, action_type, performed_by, description)
-       VALUES (?, 'OCCASION_REMINDER_ACKNOWLEDGED', ?, ?)`,
-      [customerId, acknowledgedBy, `Acknowledged ${normType} for ${dateStr} (${notes || 'Staff contact'})`]
+      `INSERT INTO customer_audit_logs (customer_id, action_type, action, performed_by, description, details)
+       VALUES (?, 'OCCASION_REMINDER_ACKNOWLEDGED', 'OCCASION_REMINDER_ACKNOWLEDGED', ?, ?, ?)`,
+      [customerId, acknowledgedBy, occDesc, occDesc]
     );
   } catch (err) {
     console.warn("Audit log notice:", err.message);

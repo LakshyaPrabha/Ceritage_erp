@@ -88,7 +88,7 @@ async function create(req, res) {
     const [[{ maxId }]] = await db.query("SELECT COALESCE(MAX(id), 0) + 1 AS maxId FROM orders");
     const orderNo = `ORD-${new Date().getFullYear()}-${String(maxId).padStart(4, "0")}`;
 
-    const activeBranchId = Number(req.headers?.["x-branch-id"] || req.user?.branch_id || 1);
+    const activeBranchId = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
     const [result] = await db.query(
       `INSERT INTO orders
          (order_no, customer_id, branch_id, item_name, metal_type, purity, approx_weight, advance_paid, estimated_total, due_date, status)
@@ -116,7 +116,8 @@ async function updateStatus(req, res) {
   }
 
   try {
-    const [result] = await db.query("UPDATE orders SET status = ? WHERE id = ?", [status, req.params.id]);
+    const bf = branchFilter(req, "branch_id");
+    const [result] = await db.query(`UPDATE orders SET status = ? WHERE id = ? AND ${bf.sql}`, [status, req.params.id, ...bf.params]);
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, message: "Order not found" });
     }

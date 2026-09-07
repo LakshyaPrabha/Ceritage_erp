@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 function pct(numerator, denominator) {
   const bottom = Number(denominator || 0);
@@ -8,34 +9,38 @@ function pct(numerator, denominator) {
 
 // GET /api/analytics/summary
 async function getSummary(req, res) {
-  const branch_id = req.user.branch_id;
   try {
     const { year = new Date().getFullYear() } = req.query;
     const targetYear = parseInt(year, 10) || new Date().getFullYear();
+    const bf = branchFilter(req);
+    const bfInv = branchFilter(req, "i.branch_id");
+    const allowedBranches = req.allowedBranchIds && req.allowedBranchIds.length > 0 ? req.allowedBranchIds : [req.branchId || 1];
 
     const [[summary]] = await db.query(
       `SELECT
          COALESCE(SUM(CASE WHEN YEAR(invoice_date) = ? THEN grand_total ELSE 0 END),0) AS annual_revenue,
          COALESCE(SUM(CASE WHEN DATE(invoice_date) = CURDATE() THEN grand_total ELSE 0 END),0) AS today_sales,
          COUNT(CASE WHEN YEAR(invoice_date) = ? THEN 1 END) AS annual_bills
-       FROM invoices WHERE branch_id = ?`,
-      [targetYear, targetYear, branch_id]
+       FROM invoices WHERE ${bf.sql}`,
+      [targetYear, targetYear, ...bf.params]
     );
 
     const [[customers]] = await db.query(
-      "SELECT COUNT(*) AS total_customers FROM customers WHERE branch_id = ?",
-      [branch_id]
+      `SELECT COUNT(*) AS total_customers FROM customers WHERE ${bf.sql}`,
+      bf.params
     );
 
     const [[stock]] = await db.query(
       `SELECT
          COALESCE(SUM(CASE WHEN stock_qty <= COALESCE(min_stock, 2) THEN 1 ELSE 0 END), 0) AS low_out_stock,
          COALESCE(SUM(CASE WHEN stock_qty > 0 THEN stock_qty * COALESCE(purchase_price, 0) ELSE 0 END), 0) AS stock_value
-       FROM products`
+       FROM products WHERE ${bf.sql}`,
+      bf.params
     );
 
     const [[branches]] = await db.query(
-      "SELECT COUNT(*) AS active_branches FROM branches WHERE status = 'Active'"
+      "SELECT COUNT(*) AS active_branches FROM branches WHERE status = 'Active' AND (id IN (?) OR parent_branch_id IN (?))",
+      [allowedBranches, allowedBranches]
     );
 
     const [[profit]] = await db.query(
@@ -45,8 +50,8 @@ async function getSummary(req, res) {
        FROM invoice_items ii
        LEFT JOIN products p ON p.id = ii.product_id
        LEFT JOIN invoices i ON i.id = ii.invoice_id
-       WHERE YEAR(i.invoice_date) = ? AND i.branch_id = ?`,
-      [targetYear, branch_id]
+       WHERE YEAR(i.invoice_date) = ? AND ${bfInv.sql}`,
+      [targetYear, ...bfInv.params]
     );
 
     const grossProfit = Number(profit.revenue||0) - Number(profit.cost||0);
@@ -71,8 +76,8 @@ async function getSummary(req, res) {
 
 // GET /api/analytics/daily
 async function getDaily(req, res) {
-  const branch_id = req.user.branch_id;
   try {
+    const bf = branchFilter(req);
     const [rows] = await db.query(
       `SELECT invoice_date AS date, COUNT(*) AS bills,
               COALESCE(SUM(grand_total),0) AS revenue,
@@ -81,9 +86,9 @@ async function getDaily(req, res) {
               COALESCE(SUM(CASE WHEN payment_mode='UPI' THEN grand_total ELSE 0 END),0) AS upi,
               COALESCE(SUM(CASE WHEN payment_mode='Card' THEN grand_total ELSE 0 END),0) AS card
        FROM invoices
-       WHERE invoice_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND branch_id = ?
+       WHERE invoice_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND ${bf.sql}
        GROUP BY invoice_date ORDER BY invoice_date DESC`,
-      [branch_id]
+      bf.params
     );
     const totalRevenue = rows.reduce((sum, r) => sum + Number(r.revenue||0), 0);
     res.json({ success: true, data: rows.map(r => {
@@ -100,6 +105,7 @@ async function getMonthly(req, res) {
   try {
     const { year = new Date().getFullYear() } = req.query;
     const targetYear = parseInt(year, 10) || new Date().getFullYear();
+    const bf = branchFilter(req, "i.branch_id");
 
     const [rows] = await db.query(
       `SELECT
@@ -110,10 +116,10 @@ async function getMonthly(req, res) {
        FROM invoices i
        LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
        LEFT JOIN products p ON p.id = ii.product_id
-       WHERE YEAR(i.invoice_date) = ?
+       WHERE YEAR(i.invoice_date) = ? AND ${bf.sql}
        GROUP BY DATE_FORMAT(i.invoice_date, '%Y-%m')
        ORDER BY month DESC`,
-      [targetYear]
+      [targetYear, ...bf.params]
     );
 
     const totalRevenue = rows.reduce((sum, r) => sum + Number(r.revenue || 0), 0);
@@ -144,6 +150,7 @@ async function getMonthly(req, res) {
 // GET /api/analytics/yearly
 async function getYearly(req, res) {
   try {
+    const bf = branchFilter(req, "i.branch_id");
     const [rows] = await db.query(
       `SELECT
          YEAR(i.invoice_date) AS year,
@@ -153,8 +160,10 @@ async function getYearly(req, res) {
        FROM invoices i
        LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
        LEFT JOIN products p ON p.id = ii.product_id
+       WHERE ${bf.sql}
        GROUP BY YEAR(i.invoice_date)
-       ORDER BY year DESC`
+       ORDER BY year DESC`,
+      bf.params
     );
 
     res.json({
@@ -181,6 +190,7 @@ async function getYearly(req, res) {
 // GET /api/analytics/best
 async function getBestProducts(req, res) {
   try {
+    const bf = branchFilter(req, "i.branch_id");
     const [rows] = await db.query(
       `SELECT
          COALESCE(p.name, ii.item_description, 'Custom Jewellery Item') AS product,
@@ -190,9 +200,12 @@ async function getBestProducts(req, res) {
          COALESCE(SUM(COALESCE(p.purchase_price, 0)), 0) AS cost
        FROM invoice_items ii
        LEFT JOIN products p ON p.id = ii.product_id
+       LEFT JOIN invoices i ON i.id = ii.invoice_id
+       WHERE ${bf.sql}
        GROUP BY COALESCE(p.name, ii.item_description, 'Custom Jewellery Item'), COALESCE(p.product_category, 'Jewellery')
        ORDER BY revenue DESC
-       LIMIT 15`
+       LIMIT 15`,
+      bf.params
     );
 
     const totalRevenue = rows.reduce((sum, r) => sum + Number(r.revenue || 0), 0);
@@ -221,13 +234,15 @@ async function getBestProducts(req, res) {
 // GET /api/analytics/lowstock
 async function getLowStock(req, res) {
   try {
+    const bf = branchFilter(req);
     const [rows] = await db.query(
       `SELECT sku, name, COALESCE(product_category, jewellery_category, 'General') AS product_category,
               purity, stock_qty, min_stock, stock_status
        FROM products
-       WHERE stock_qty <= min_stock
+       WHERE stock_qty <= min_stock AND ${bf.sql}
        ORDER BY stock_qty ASC, name ASC
-       LIMIT 50`
+       LIMIT 50`,
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -238,6 +253,7 @@ async function getLowStock(req, res) {
 // GET /api/analytics/customers
 async function getCustomers(req, res) {
   try {
+    const bf = branchFilter(req, "c.branch_id");
     const [rows] = await db.query(
       `SELECT
          c.full_name AS customer,
@@ -248,9 +264,11 @@ async function getCustomers(req, res) {
          MAX(i.invoice_date) AS last_visit
        FROM customers c
        LEFT JOIN invoices i ON i.customer_id = c.id
+       WHERE ${bf.sql}
        GROUP BY c.id, c.full_name, c.tier
        ORDER BY total_spent DESC, visits DESC
-       LIMIT 25`
+       LIMIT 25`,
+      bf.params
     );
     res.json({
       success: true,
@@ -274,6 +292,7 @@ async function getProfit(req, res) {
   try {
     const { year = new Date().getFullYear() } = req.query;
     const targetYear = parseInt(year, 10) || new Date().getFullYear();
+    const bf = branchFilter(req, "i.branch_id");
 
     const [rows] = await db.query(
       `SELECT
@@ -283,10 +302,10 @@ async function getProfit(req, res) {
        FROM invoices i
        LEFT JOIN invoice_items ii ON ii.invoice_id = i.id
        LEFT JOIN products p ON p.id = ii.product_id
-       WHERE YEAR(i.invoice_date) = ?
+       WHERE YEAR(i.invoice_date) = ? AND ${bf.sql}
        GROUP BY DATE_FORMAT(i.invoice_date, '%Y-%m')
        ORDER BY month DESC`,
-      [targetYear]
+      [targetYear, ...bf.params]
     );
 
     res.json({
@@ -314,6 +333,8 @@ async function getProfit(req, res) {
 // GET /api/analytics/branch
 async function getBranch(req, res) {
   try {
+    const allowedBranches = req.allowedBranchIds && req.allowedBranchIds.length > 0 ? req.allowedBranchIds : [req.branchId || 1];
+    const bfProd = branchFilter(req, "p.branch_id");
     const [rows] = await db.query(
       `SELECT
          b.name AS branch,
@@ -321,14 +342,15 @@ async function getBranch(req, res) {
          COALESCE(SUM(i.grand_total), 0) AS sales,
          COUNT(DISTINCT i.id) AS bills,
          COUNT(DISTINCT i.customer_id) AS customers,
-         (SELECT COALESCE(SUM(stock_qty * COALESCE(purchase_price, 0)), 0) FROM products WHERE stock_qty > 0) AS stock_value,
+         (SELECT COALESCE(SUM(p.stock_qty * COALESCE(p.purchase_price, 0)), 0) FROM products p WHERE p.stock_qty > 0 AND ${bfProd.sql}) AS stock_value,
          COUNT(DISTINCT e.id) AS staff
        FROM branches b
        LEFT JOIN invoices i ON i.branch_id = b.id
        LEFT JOIN employees e ON e.branch_id = b.id AND e.status = 'Active'
-       WHERE b.status = 'Active'
+       WHERE b.status = 'Active' AND (b.id IN (?) OR b.parent_branch_id IN (?))
        GROUP BY b.id, b.name, b.city
-       ORDER BY sales DESC, b.name ASC`
+       ORDER BY sales DESC, b.name ASC`,
+      [...bfProd.params, allowedBranches, allowedBranches]
     );
     res.json({
       success: true,
@@ -349,6 +371,7 @@ async function getBranch(req, res) {
 // GET /api/analytics/employee
 async function getEmployee(req, res) {
   try {
+    const bf = branchFilter(req, "e.branch_id");
     const [rows] = await db.query(
       `SELECT
          COALESCE(e.name, 'Employee') AS employee,
@@ -361,8 +384,10 @@ async function getEmployee(req, res) {
          COALESCE(e.status, 'Active') AS rating
        FROM employees e
        LEFT JOIN invoices i ON i.salesperson_id = e.id
+       WHERE ${bf.sql}
        GROUP BY e.id, e.name, e.role, e.salary, e.status
-       ORDER BY sales_achieved DESC, e.name ASC`
+       ORDER BY sales_achieved DESC, e.name ASC`,
+      bf.params
     );
     res.json({
       success: true,
@@ -405,3 +430,4 @@ async function getTable(req, res) {
 }
 
 module.exports = { getSummary, getTable };
+

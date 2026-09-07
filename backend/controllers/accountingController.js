@@ -1,9 +1,25 @@
 const db = require("../config/db");
 const { branchFilter } = require("../utils/branchScope");
 
+let schemaEnsured = false;
+async function ensureAccountingSchema() {
+  if (schemaEnsured) return;
+  try {
+    const [cols] = await db.query("SHOW COLUMNS FROM journal_entries");
+    const colSet = new Set(cols.map(c => c.Field.toLowerCase()));
+    if (!colSet.has("branch_id")) {
+      await db.query("ALTER TABLE journal_entries ADD COLUMN branch_id INT DEFAULT 1 AFTER voucher_type");
+    }
+    schemaEnsured = true;
+  } catch (err) {
+    console.warn("Accounting schema check warning:", err.message);
+  }
+}
+
 // ── GET /api/accounting/summary ──────────────────────────────────────────────
 async function getSummary(req, res) {
   try {
+    await ensureAccountingSchema();
     const bf = branchFilter(req);
 
     // 1. Sales & Revenue
@@ -71,9 +87,10 @@ async function getSummary(req, res) {
       SELECT
         COALESCE(SUM(jl.debit), 0) AS manual_expenses
       FROM journal_entry_lines jl
+      JOIN journal_entries j ON jl.journal_id = j.id
       JOIN accounts a ON jl.account_id = a.id
-      WHERE a.type = 'EXPENSE'
-    `);
+      WHERE a.type = 'EXPENSE' AND ${branchFilter(req, 'j.branch_id').sql}
+    `, branchFilter(req, 'j.branch_id').params);
 
     // Derived Financial Balances
     const cashInHand = Math.max(0, Number(invStats.cash_inflow) + Number(custLedgerStats.ledger_cash) - Number(supPayStats.cash_outflow));
@@ -107,17 +124,22 @@ async function getSummary(req, res) {
 // ── GET /api/accounting/cashbook ─────────────────────────────────────────────
 async function getCashBook(req, res) {
   try {
+    await ensureAccountingSchema();
     const entries = [];
+    const bfInv = branchFilter(req, "i.branch_id");
+    const bfCust = branchFilter(req, "c.branch_id");
+    const bfSup = branchFilter(req, "s.branch_id");
+    const bfJ = branchFilter(req, "j.branch_id");
 
     // 1. Cash Invoices
     const [invRows] = await db.query(`
       SELECT i.id, i.invoice_no, i.created_at AS date, i.paid_amount, c.full_name AS customer_name
       FROM invoices i
       LEFT JOIN customers c ON i.customer_id = c.id
-      WHERE i.payment_mode = 'Cash' AND i.paid_amount > 0
+      WHERE i.payment_mode = 'Cash' AND i.paid_amount > 0 AND ${bfInv.sql}
       ORDER BY i.created_at DESC
       LIMIT 50
-    `);
+    `, bfInv.params);
     invRows.forEach(i => {
       entries.push({
         id: `INV-${i.id}`,
@@ -135,10 +157,10 @@ async function getCashBook(req, res) {
       SELECT l.id, l.date, l.credit, l.reference, l.particulars, c.full_name
       FROM customer_ledger l
       LEFT JOIN customers c ON l.customer_id = c.id
-      WHERE l.credit > 0 AND l.particulars LIKE '%Cash%'
+      WHERE l.credit > 0 AND l.particulars LIKE '%Cash%' AND ${bfCust.sql}
       ORDER BY l.created_at DESC
       LIMIT 50
-    `);
+    `, bfCust.params);
     ledRows.forEach(l => {
       entries.push({
         id: `LED-${l.id}`,
@@ -156,10 +178,10 @@ async function getCashBook(req, res) {
       SELECT sp.id, sp.pay_id, sp.amount, sp.created_at AS date, s.company_name
       FROM supplier_payments sp
       LEFT JOIN suppliers s ON sp.supplier_id = s.id
-      WHERE sp.payment_mode = 'Cash'
+      WHERE sp.payment_mode = 'Cash' AND ${bfSup.sql}
       ORDER BY sp.created_at DESC
       LIMIT 50
-    `);
+    `, bfSup.params);
     supRows.forEach(s => {
       entries.push({
         id: `SP-${s.id}`,
@@ -178,10 +200,10 @@ async function getCashBook(req, res) {
       FROM journal_entries j
       JOIN journal_entry_lines jl ON j.id = jl.journal_id
       JOIN accounts a ON jl.account_id = a.id
-      WHERE a.code = '1010'
+      WHERE a.code = '1010' AND ${bfJ.sql}
       ORDER BY j.entry_date DESC
       LIMIT 50
-    `);
+    `, bfJ.params);
     jRows.forEach(j => {
       entries.push({
         id: `JV-${j.voucher_no}`,
@@ -211,17 +233,20 @@ async function getCashBook(req, res) {
 // ── GET /api/accounting/bankbook ─────────────────────────────────────────────
 async function getBankBook(req, res) {
   try {
+    await ensureAccountingSchema();
     const entries = [];
+    const bfInv = branchFilter(req, "i.branch_id");
+    const bfSup = branchFilter(req, "s.branch_id");
 
     // 1. Digital Invoices (UPI / Card / NetBanking / Cheque)
     const [invRows] = await db.query(`
       SELECT i.id, i.invoice_no, i.created_at AS date, i.paid_amount, i.payment_mode, c.full_name AS customer_name
       FROM invoices i
       LEFT JOIN customers c ON i.customer_id = c.id
-      WHERE i.payment_mode != 'Cash' AND i.paid_amount > 0
+      WHERE i.payment_mode != 'Cash' AND i.paid_amount > 0 AND ${bfInv.sql}
       ORDER BY i.created_at DESC
       LIMIT 50
-    `);
+    `, bfInv.params);
     invRows.forEach(i => {
       entries.push({
         id: `INV-${i.id}`,
@@ -240,10 +265,10 @@ async function getBankBook(req, res) {
       SELECT sp.id, sp.pay_id, sp.amount, sp.payment_mode, sp.reference, sp.created_at AS date, s.company_name
       FROM supplier_payments sp
       LEFT JOIN suppliers s ON sp.supplier_id = s.id
-      WHERE sp.payment_mode != 'Cash'
+      WHERE sp.payment_mode != 'Cash' AND ${bfSup.sql}
       ORDER BY sp.created_at DESC
       LIMIT 50
-    `);
+    `, bfSup.params);
     supRows.forEach(s => {
       entries.push({
         id: `SP-${s.id}`,
@@ -274,26 +299,21 @@ async function getBankBook(req, res) {
 // ── GET /api/accounting/trial-balance ────────────────────────────────────────
 async function getTrialBalance(req, res) {
   try {
-    const branchId = req.branchId || null;
-    let accounts;
-    if (branchId) {
-      [accounts] = await db.query(
-        `SELECT a.code, a.name, a.group_name, a.type,
-                COALESCE(tb.balance, 0) AS current_balance
-         FROM accounts a
-         LEFT JOIN (
-           SELECT jl.account_id, COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS balance
-           FROM journal_entry_lines jl
-           JOIN journal_entries j ON j.id = jl.journal_id
-           WHERE j.branch_id = ?
-           GROUP BY jl.account_id
-         ) tb ON tb.account_id = a.id
-         ORDER BY a.code ASC`,
-        [branchId]
-      );
-    } else {
-      [accounts] = await db.query("SELECT * FROM accounts ORDER BY code ASC");
-    }
+    const bfJ = branchFilter(req, "j.branch_id");
+    const [accounts] = await db.query(
+      `SELECT a.code, a.name, a.group_name, a.type,
+              COALESCE(tb.balance, 0) AS current_balance
+       FROM accounts a
+       LEFT JOIN (
+         SELECT jl.account_id, COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS balance
+         FROM journal_entry_lines jl
+         JOIN journal_entries j ON j.id = jl.journal_id
+         WHERE ${bfJ.sql}
+         GROUP BY jl.account_id
+       ) tb ON tb.account_id = a.id
+       ORDER BY a.code ASC`,
+      bfJ.params
+    );
     let totalDebit = 0;
     let totalCredit = 0;
 
@@ -332,15 +352,21 @@ async function getTrialBalance(req, res) {
 // ── GET /api/accounting/pl ───────────────────────────────────────────────────
 async function getProfitAndLoss(req, res) {
   try {
+    const bf = branchFilter(req);
+    const bfKar = branchFilter(req, "k.branch_id");
+
     const [[inv]] = await db.query(`
       SELECT
         COALESCE(SUM(grand_total - (COALESCE(cgst, 0) + COALESCE(sgst, 0) + COALESCE(igst, 0))), 0) AS sales_revenue
-      FROM invoices WHERE status != 'Cancelled'
-    `);
+      FROM invoices WHERE status != 'Cancelled' AND ${bf.sql}
+    `, bf.params);
 
     const [[karigar]] = await db.query(`
-      SELECT COALESCE(SUM(amount), 0) AS labour_cost FROM karigar_payments
-    `);
+      SELECT COALESCE(SUM(kp.amount), 0) AS labour_cost
+      FROM karigar_payments kp
+      JOIN karigars k ON kp.karigar_id = k.id
+      WHERE ${bfKar.sql}
+    `, bfKar.params);
 
     const salesRevenue = Number(inv.sales_revenue);
     const makingRevenue = 0;
@@ -379,17 +405,19 @@ async function getProfitAndLoss(req, res) {
 // ── GET /api/accounting/balance-sheet ────────────────────────────────────────
 async function getBalanceSheet(req, res) {
   try {
+    const bf = branchFilter(req);
+
     const [[inv]] = await db.query(`
       SELECT
         COALESCE(SUM(CASE WHEN payment_mode = 'Cash' THEN paid_amount ELSE 0 END), 0) AS cash_in,
         COALESCE(SUM(CASE WHEN payment_mode != 'Cash' THEN paid_amount ELSE 0 END), 0) AS bank_in,
         COALESCE(SUM(balance_due), 0) AS receivables,
         COALESCE(SUM(cgst + sgst + igst), 0) AS gst_payable
-      FROM invoices WHERE status != 'Cancelled'
-    `);
+      FROM invoices WHERE status != 'Cancelled' AND ${bf.sql}
+    `, bf.params);
 
-    const [[sup]] = await db.query("SELECT COALESCE(SUM(outstanding), 0) AS payables FROM suppliers");
-    const [[stock]] = await db.query("SELECT COALESCE(SUM(stock_qty * purchase_price), 0) AS stock_val FROM products WHERE status = 'Active' OR status IS NULL");
+    const [[sup]] = await db.query(`SELECT COALESCE(SUM(outstanding), 0) AS payables FROM suppliers WHERE ${bf.sql}`, bf.params);
+    const [[stock]] = await db.query(`SELECT COALESCE(SUM(stock_qty * purchase_price), 0) AS stock_val FROM products WHERE (status = 'Active' OR status IS NULL) AND ${bf.sql}`, bf.params);
 
     const cash = Number(inv.cash_in);
     const bank = Number(inv.bank_in);
@@ -441,6 +469,8 @@ async function getAccounts(req, res) {
 // ── GET /api/accounting/journal ──────────────────────────────────────────────
 async function getJournalEntries(req, res) {
   try {
+    await ensureAccountingSchema();
+    const bfJ = branchFilter(req, "j.branch_id");
     const [entries] = await db.query(`
       SELECT j.*,
         JSON_ARRAYAGG(
@@ -457,9 +487,10 @@ async function getJournalEntries(req, res) {
       FROM journal_entries j
       LEFT JOIN journal_entry_lines jl ON j.id = jl.journal_id
       LEFT JOIN accounts a ON jl.account_id = a.id
+      WHERE ${bfJ.sql}
       GROUP BY j.id
       ORDER BY j.entry_date DESC, j.id DESC
-    `);
+    `, bfJ.params);
     res.json({ success: true, data: entries });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -468,12 +499,16 @@ async function getJournalEntries(req, res) {
 
 // ── POST /api/accounting/vouchers (Atomic Double-Entry Posting) ──────────────
 async function createVoucher(req, res) {
+  await ensureAccountingSchema();
   const {
     voucher_type = "JOURNAL",
     entry_date = new Date().toISOString().split("T")[0],
     narration,
+    branch_id,
     lines = []
   } = req.body;
+
+  const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
 
   if (!lines || lines.length < 2) {
     return res.status(400).json({ success: false, message: "A double-entry voucher requires at least two account lines (Debit and Credit)." });
@@ -510,9 +545,9 @@ async function createVoucher(req, res) {
     const createdBy = req.user?.full_name || req.user?.username || "Admin";
 
     const [jResult] = await conn.query(
-      `INSERT INTO journal_entries (voucher_no, voucher_type, entry_date, narration, total_debit, total_credit, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [voucher_no, voucher_type, entry_date, narration || null, totalDebit, totalCredit, createdBy]
+      `INSERT INTO journal_entries (voucher_no, voucher_type, branch_id, entry_date, narration, total_debit, total_credit, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [voucher_no, voucher_type, activeBranchId, entry_date, narration || null, totalDebit, totalCredit, createdBy]
     );
     const journalId = jResult.insertId;
 
@@ -557,3 +592,4 @@ module.exports = {
   getJournalEntries,
   createVoucher
 };
+

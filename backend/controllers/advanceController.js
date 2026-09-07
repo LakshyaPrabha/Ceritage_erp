@@ -1,5 +1,6 @@
 const db = require("../config/db");
 const accounting = require("../services/accountingPostingService");
+const { branchFilter } = require("../utils/branchScope");
 
 let tablesReady = false;
 
@@ -11,6 +12,7 @@ async function ensureTables() {
     await db.query(`
       CREATE TABLE IF NOT EXISTS rate_locks (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        branch_id INT DEFAULT 1,
         order_id VARCHAR(50) NULL,
         customer_id INT NULL,
         customer_name VARCHAR(150) NULL,
@@ -42,6 +44,7 @@ async function ensureTables() {
       }
     };
 
+    await addCol("branch_id", "INT DEFAULT 1");
     await addCol("lock_no", "VARCHAR(30) NULL AFTER id");
     await addCol("customer_phone", "VARCHAR(20) NULL");
     await addCol("metal_type", "VARCHAR(30) DEFAULT 'Gold'");
@@ -83,6 +86,7 @@ exports.getKpis = async (req, res) => {
   try {
     await ensureTables();
 
+    const bf = branchFilter(req, "branch_id");
     const [[stats]] = await db.query(`
       SELECT
         COUNT(CASE WHEN status='Active' THEN 1 END) AS active_locks,
@@ -94,7 +98,8 @@ exports.getKpis = async (req, res) => {
         COALESCE(SUM(advance_paid), 0) AS total_advance_collected,
         COALESCE(SUM(CASE WHEN status='Active' THEN weight_g END), 0) AS active_weight_g
       FROM rate_locks
-    `);
+      WHERE ${bf.sql}
+    `, bf.params);
 
     // Fetch Live Benchmark Rates for calculation
     const [rates] = await db.query(`
@@ -139,8 +144,9 @@ exports.getAll = async (req, res) => {
       "UPDATE rate_locks SET status='Expired' WHERE valid_till < CURDATE() AND status='Active'"
     );
 
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req, "rl.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
 
     if (status && status !== "All") {
       where += " AND rl.status = ?";
@@ -218,6 +224,7 @@ exports.getById = async (req, res) => {
   try {
     await ensureTables();
     const { id } = req.params;
+    const bf = branchFilter(req, "rl.branch_id");
 
     const [rows] = await db.query(`
       SELECT 
@@ -228,8 +235,8 @@ exports.getById = async (req, res) => {
         c.pan AS customer_pan
       FROM rate_locks rl
       LEFT JOIN customers c ON rl.customer_id = c.id
-      WHERE rl.id = ?
-    `, [id]);
+      WHERE rl.id = ? AND ${bf.sql}
+    `, [id, ...bf.params]);
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: "Rate lock not found" });
@@ -285,7 +292,7 @@ exports.create = async (req, res) => {
     const rateNum = parseFloat(locked_rate) || 0;
     const lockedValue = weightNum * rateNum;
     const advanceNum = parseFloat(advance_paid) || 0;
-    const activeBranchId = Number(req.branchId || req.user?.branch_id || 1);
+    const activeBranchId = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
     const lockNo = `RL-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
     const lockDateVal = lock_date || new Date().toISOString().slice(0, 10);
 
@@ -314,9 +321,10 @@ exports.create = async (req, res) => {
 
     const [result] = await conn.query(`
       INSERT INTO rate_locks 
-        (lock_no, order_id, customer_id, customer_name, customer_phone, metal_type, purity, item_description, locked_rate, weight_g, locked_value, advance_paid, payment_mode, payment_ref, lock_date, valid_till, status, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?)
+        (branch_id, lock_no, order_id, customer_id, customer_name, customer_phone, metal_type, purity, item_description, locked_rate, weight_g, locked_value, advance_paid, payment_mode, payment_ref, lock_date, valid_till, status, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?)
     `, [
+      activeBranchId,
       lockNo,
       order_id || null,
       customer_id || null,

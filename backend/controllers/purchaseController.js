@@ -65,16 +65,16 @@ async function getAll(req, res) {
   }
 }
 
-// â”€â”€ GET /api/purchases/orders/:id (PO Detail with Items) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── GET /api/purchases/orders/:id (PO Detail with Items) ────────────────────
 async function getById(req, res) {
-  const branch_id = req.user?.branch_id || 1;
   try {
+    const bf = branchFilter(req, "po.branch_id");
     const [[row]] = await db.query(
       `SELECT po.*, s.company_name AS supplier_name
        FROM purchase_orders po
        LEFT JOIN suppliers s ON po.supplier_id = s.id
-       WHERE po.id = ?`,
-      [req.params.id]
+       WHERE po.id = ? AND ${bf.sql}`,
+      [req.params.id, ...bf.params]
     );
     if (!row) return res.status(404).json({ success: false, message: "PO not found" });
     res.json({ success: true, data: row });
@@ -83,9 +83,9 @@ async function getById(req, res) {
   }
 }
 
-// â”€â”€ POST /api/purchases/orders (Create PO with Multi-Items) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── POST /api/purchases/orders (Create PO with Multi-Items) ──────────────────
 async function create(req, res) {
-  const branch_id = req.user?.branch_id || 1;
+  const branch_id = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
@@ -96,9 +96,9 @@ async function create(req, res) {
       expected_delivery, remarks,
     } = req.body;
 
-    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM purchase_orders");
+    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM purchase_orders").catch(() => [[{ count: 0 }]]);
     const year = new Date().getFullYear();
-    const po_no = `PO-${year}-${String(count + 1).padStart(4, "0")}`;
+    const po_no = `PO-${year}-${String((count || 0) + 1).padStart(4, "0")}`;
 
     const amount     = (parseFloat(weight_qty) || 0) * (parseFloat(rate) || 0);
     const gst_amount = amount * (parseFloat(gst_pct) / 100);
@@ -184,14 +184,14 @@ async function updatePO(req, res) {
   }
 }
 
-// â”€â”€â”€ GRNs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── GRNs ────────────────────────────────────────────────────────────────────
 async function getGRNs(req, res) {
-  const branch_id = req.user?.branch_id || 1;
   try {
     const { supplier_id, search, page = 1, limit = 50 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    const conditions = ["g.branch_id = ?"];
-    const params = [branch_id];
+    const bf = branchFilter(req, "g.branch_id");
+    const conditions = [bf.sql];
+    const params = [...bf.params];
 
     if (supplier_id) {
       conditions.push("g.supplier_id = ?");
@@ -203,7 +203,6 @@ async function getGRNs(req, res) {
     }
 
     const whereClause = "WHERE " + conditions.join(" AND ");
-
 
     const [rows] = await db.query(
       `SELECT g.*, s.company_name AS supplier_name, po.po_no
@@ -242,16 +241,17 @@ async function createGRN(req, res) {
   try {
     await conn.beginTransaction();
 
-    const { po_id, supplier_id, received_date, item_description, weight_qty, received_by, condition, notes } = req.body;
+    const { branch_id, po_id, supplier_id, received_date, item_description, weight_qty, received_by, condition, notes } = req.body;
+    const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
 
-    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM grns");
-    const grn_id = `GRN-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM grns").catch(() => [[{ count: 0 }]]);
+    const grn_id = `GRN-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, "0")}`;
 
     const [result] = await conn.query(
       `INSERT INTO grns
-         (grn_id, po_id, supplier_id, received_date, item_description, weight_qty, received_by, condition_status, notes)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
-      [grn_id, po_id || null, supplier_id || null,
+         (branch_id, grn_id, po_id, supplier_id, received_date, item_description, weight_qty, received_by, condition_status, notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [activeBranchId, grn_id, po_id || null, supplier_id || null,
        received_date || new Date().toISOString().slice(0, 10),
        item_description || null, weight_qty || 0,
        received_by || null, condition || "Good", notes || null]
@@ -275,15 +275,18 @@ async function createGRN(req, res) {
   }
 }
 
-// â”€â”€â”€ PURCHASE RETURNS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── PURCHASE RETURNS ────────────────────────────────────────────────────────
 async function getPurchaseReturns(req, res) {
   try {
+    const bf = branchFilter(req, "pr.branch_id");
     const [rows] = await db.query(
       `SELECT pr.*, s.company_name AS supplier_name
        FROM purchase_returns pr
        LEFT JOIN suppliers s ON pr.supplier_id = s.id
-       ORDER BY pr.return_date DESC, pr.created_at DESC`
-    );
+       WHERE ${bf.sql}
+       ORDER BY pr.return_date DESC, pr.created_at DESC`,
+      bf.params
+    ).catch(() => [[]]);
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -292,16 +295,17 @@ async function getPurchaseReturns(req, res) {
 
 async function createPurchaseReturn(req, res) {
   try {
-    const { po_ref, supplier_id, return_date, item_description, quantity, amount, reason, refund_mode, notes } = req.body;
+    const { branch_id, po_ref, supplier_id, return_date, item_description, quantity, amount, reason, refund_mode, notes } = req.body;
+    const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
 
-    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM purchase_returns");
-    const return_no = `PRTN-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM purchase_returns").catch(() => [[{ count: 0 }]]);
+    const return_no = `PRTN-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, "0")}`;
 
     const [result] = await db.query(
       `INSERT INTO purchase_returns
-         (return_no, po_ref, supplier_id, return_date, item_description, quantity, amount, reason, refund_mode, notes)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [return_no, po_ref || null, supplier_id || null,
+         (branch_id, return_no, po_ref, supplier_id, return_date, item_description, quantity, amount, reason, refund_mode, notes)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [activeBranchId, return_no, po_ref || null, supplier_id || null,
        return_date || new Date().toISOString().slice(0, 10),
        item_description, quantity || 0, amount || 0,
        reason, refund_mode || "NEFT", notes || null]
@@ -313,12 +317,13 @@ async function createPurchaseReturn(req, res) {
   }
 }
 
-// â”€â”€â”€ SUPPLIER PAYMENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── SUPPLIER PAYMENTS ───────────────────────────────────────────────────────
 async function getSupplierPayments(req, res) {
   try {
     const { supplier_id } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
+    const bf = branchFilter(req, "sp.branch_id");
+    let where = `WHERE ${bf.sql}`;
+    const params = [...bf.params];
     if (supplier_id) { where += " AND sp.supplier_id = ?"; params.push(supplier_id); }
 
     const [rows] = await db.query(
@@ -335,15 +340,15 @@ async function getSupplierPayments(req, res) {
 }
 
 async function createSupplierPayment(req, res) {
-  const branch_id = req.user?.branch_id || 1;
+  const branch_id = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
     const { supplier_id, amount, payment_mode, reference, po_ref, remark, paid_date } = req.body;
 
-    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM supplier_payments");
-    const pay_id = `PAY-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM supplier_payments").catch(() => [[{ count: 0 }]]);
+    const pay_id = `PAY-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, "0")}`;
 
     const [result] = await conn.query(
       `INSERT INTO supplier_payments
@@ -405,10 +410,20 @@ async function createSupplierPayment(req, res) {
   }
 }
 
-// â”€â”€â”€ SUPPLIER LEDGER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── SUPPLIER LEDGER ─────────────────────────────────────────────────────────
 async function getSupplierLedger(req, res) {
   try {
     const { supplier_id } = req.params;
+    const bf = branchFilter(req, "s.branch_id");
+
+    const [[sup]] = await db.query(
+      `SELECT s.id FROM suppliers s WHERE s.id = ? AND ${bf.sql}`,
+      [supplier_id, ...bf.params]
+    );
+    if (!sup) {
+      return res.status(404).json({ success: false, message: "Supplier not found or unauthorized" });
+    }
+
     const [rows] = await db.query(
       `SELECT * FROM supplier_ledger
        WHERE supplier_id = ?
@@ -428,22 +443,28 @@ async function getSupplierLedger(req, res) {
   }
 }
 
-// â”€â”€â”€ OLD METAL PURCHASES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── OLD METAL PURCHASES ─────────────────────────────────────────────────────
 async function getOldMetalPurchases(req, res) {
   try {
+    const bf = branchFilter(req, "om.branch_id");
     const [rows] = await db.query(
       `SELECT om.*, c.full_name AS customer_name
        FROM old_metal_purchases om
        LEFT JOIN customers c ON om.customer_id = c.id
-       ORDER BY om.created_at DESC`
-    );
+       WHERE ${bf.sql}
+       ORDER BY om.created_at DESC`,
+      bf.params
+    ).catch(() => [[]]);
+    const bfKpi = branchFilter(req, "branch_id");
     const [[kpis]] = await db.query(
       `SELECT COUNT(*) AS total_entries,
               COALESCE(SUM(CASE WHEN metal_type='Gold' THEN fine_weight END),0)   AS fine_gold,
               COALESCE(SUM(CASE WHEN metal_type='Silver' THEN fine_weight END),0) AS fine_silver,
               COALESCE(SUM(amount_paid),0) AS total_paid
-       FROM old_metal_purchases`
-    );
+       FROM old_metal_purchases
+       WHERE ${bfKpi.sql}`,
+      bfKpi.params
+    ).catch(() => [[{ total_entries: 0, fine_gold: 0, fine_silver: 0, total_paid: 0 }]]);
     res.json({ success: true, data: rows, kpis });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -452,10 +473,11 @@ async function getOldMetalPurchases(req, res) {
 
 async function createOldMetalPurchase(req, res) {
   try {
-    const { customer_id, metal_type = "Gold", gross_weight, stone_deduction, purity, rate, payment_mode = "Cash" } = req.body;
+    const { branch_id, customer_id, metal_type = "Gold", gross_weight, stone_deduction, purity, rate, payment_mode = "Cash" } = req.body;
+    const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
 
-    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM old_metal_purchases");
-    const purchase_no = `OMP-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM old_metal_purchases").catch(() => [[{ count: 0 }]]);
+    const purchase_no = `OMP-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, "0")}`;
 
     const net_weight  = (parseFloat(gross_weight) || 0) - (parseFloat(stone_deduction) || 0);
     const purityValue = parseFloat(purity) || 0.9167;
@@ -465,9 +487,9 @@ async function createOldMetalPurchase(req, res) {
 
     const [result] = await db.query(
       `INSERT INTO old_metal_purchases
-         (purchase_no, customer_id, metal_type, gross_weight, stone_deduction, net_weight, purity, fine_weight, rate, rate_per_gram, amount_paid, total_paid, payment_mode, purchase_date)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_DATE)`,
-      [purchase_no, customer_id || null, metal_type, gross_weight || 0, stone_deduction || 0,
+         (branch_id, purchase_no, customer_id, metal_type, gross_weight, stone_deduction, net_weight, purity, fine_weight, rate, rate_per_gram, amount_paid, total_paid, payment_mode, purchase_date)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_DATE)`,
+      [activeBranchId, purchase_no, customer_id || null, metal_type, gross_weight || 0, stone_deduction || 0,
        net_weight, String(purity), fine_weight, rateVal, rateVal, amount_paid, amount_paid, payment_mode]
     );
 
@@ -477,11 +499,13 @@ async function createOldMetalPurchase(req, res) {
   }
 }
 
-// â”€â”€â”€ SUPPLIER LIST (for dropdowns) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── SUPPLIER LIST (for dropdowns) ───────────────────────────────────────────
 async function getSuppliersList(req, res) {
   try {
+    const bf = branchFilter(req, "branch_id");
     const [rows] = await db.query(
-      "SELECT id, company_name, outstanding FROM suppliers WHERE status='Active' ORDER BY company_name"
+      `SELECT id, company_name, outstanding FROM suppliers WHERE status='Active' AND ${bf.sql} ORDER BY company_name`,
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {

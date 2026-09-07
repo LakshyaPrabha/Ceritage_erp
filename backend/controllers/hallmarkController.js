@@ -211,7 +211,7 @@ async function registerHuid(req, res) {
     // ───────────────────────────────────────
     // Check product
     // ───────────────────────────────────────
-
+    const bf = branchFilter(req, "branch_id");
     const [[product]] = await db.query(
       `
       SELECT
@@ -222,20 +222,20 @@ async function registerHuid(req, res) {
         huid,
         hallmark_status
       FROM products
-      WHERE id = ?
+      WHERE id = ? AND ${bf.sql}
       `,
-      [product_id]
+      [product_id, ...bf.params]
     );
 
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: "Product not found",
+        message: "Product not found or access denied",
       });
     }
 
     // ───────────────────────────────────────
-    // Check duplicate HUID
+    // Check duplicate HUID within same branch realm
     // ───────────────────────────────────────
 
     const [[existing]] = await db.query(
@@ -247,9 +247,10 @@ async function registerHuid(req, res) {
       FROM products
       WHERE UPPER(huid) = ?
         AND id != ?
+        AND ${bf.sql}
       LIMIT 1
       `,
-      [cleanHuid, product_id]
+      [cleanHuid, product_id, ...bf.params]
     );
 
     if (existing) {
@@ -320,6 +321,7 @@ async function verifyHuid(req, res) {
     }
 
     const cleanHuid = huid.trim().toUpperCase();
+    const bf = branchFilter(req, "p.branch_id");
 
     const [[product]] = await db.query(
       `
@@ -344,11 +346,11 @@ async function verifyHuid(req, res) {
       LEFT JOIN suppliers s
         ON p.supplier_id = s.id
 
-      WHERE UPPER(p.huid) = ?
+      WHERE UPPER(p.huid) = ? AND ${bf.sql}
 
       LIMIT 1
       `,
-      [cleanHuid]
+      [cleanHuid, ...bf.params]
     );
 
     if (!product) {
@@ -356,7 +358,7 @@ async function verifyHuid(req, res) {
         success: true,
         verified: false,
         message:
-          "HUID not found in Ceritage registry",
+          "HUID not found in Ceritage registry for this branch",
       });
     }
 
@@ -384,6 +386,7 @@ async function verifyHuid(req, res) {
 
 async function getHuidTracking(req, res) {
   try {
+    const bf = branchFilter(req, "p.branch_id");
 
     const [rows] = await db.query(`
       SELECT
@@ -419,9 +422,10 @@ async function getHuidTracking(req, res) {
       WHERE
         p.huid IS NOT NULL
         AND TRIM(p.huid) != ''
+        AND ${bf.sql}
 
       ORDER BY p.created_at DESC
-    `);
+    `, bf.params);
 
     res.json({
       success: true,

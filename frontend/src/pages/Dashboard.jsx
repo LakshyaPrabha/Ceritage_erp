@@ -36,6 +36,8 @@ import Rfid           from "./modules/Rfid";
 import Advance        from "./modules/Advance";
 import Compliance     from "./modules/Compliance";
 import Ai             from "./modules/Ai";
+import AiChatbotModal from "../components/AiChatbotModal";
+import GlobalSmartSearch from "../components/GlobalSmartSearch";
 
 export function getTheme(dark) {
   return dark
@@ -229,7 +231,7 @@ function useLiveRates() {
             gold22K: legRes.data.rate_22k,
             silver999: legRes.data.silver_rate,
           },
-          source: "Metals.Dev",
+          source: "API-Ninjas",
           isAvailable: true,
           updatedAt: legRes.data.created_at || legRes.data.effective_date,
         });
@@ -295,7 +297,7 @@ function LiveRateTicker({ t }) {
       borderRadius:8, padding:"4px 12px", whiteSpace:"nowrap",
       display:"flex", alignItems:"center", gap:6 }}>
       <span>{label}{statusBadge}</span>
-      <span style={{ fontSize:10, opacity:0.7, borderLeft:`1px solid ${t.tickerBorder}`, paddingLeft:6 }}>Metals.Dev</span>
+      <span style={{ fontSize:10, opacity:0.7, borderLeft:`1px solid ${t.tickerBorder}`, paddingLeft:6 }}>API-Ninjas</span>
     </div>
   );
 }
@@ -307,6 +309,20 @@ export default function Dashboard() {
   const [branches,    setBranches]    = useState([]);
   const [activeBranchId, setActiveBranch] = useState(() => getActiveBranchId());
   const [moduleKey,   setModuleKey]   = useState(0);
+  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
+  const [isSearchOpen,  setIsSearchOpen]  = useState(false);
+
+  // Global Ctrl + K / Cmd + K shortcut to open AI Smart Search
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const navigate  = useNavigate();
   const dark      = useSystemTheme();
@@ -332,9 +348,11 @@ export default function Dashboard() {
         if (res && res.data) {
           setBranches(res.data);
           const current = getActiveBranchId();
-          if (!current && res.user_branch_id) {
-            setActiveBranch(String(res.user_branch_id));
-            setActiveBranchId(res.user_branch_id);
+          const branchExists = res.data.some(b => String(b.id) === String(current));
+          if (!current || !branchExists) {
+            const defaultId = res.user_branch_id || (res.data[0]?.id ? String(res.data[0].id) : "1");
+            setActiveBranch(String(defaultId));
+            setActiveBranchId(defaultId);
           }
         }
       } catch {
@@ -358,6 +376,8 @@ export default function Dashboard() {
     localStorage.removeItem("ceritage_user");
     localStorage.removeItem("ceritage_role");
     localStorage.removeItem("ceritage_permissions");
+    localStorage.removeItem("ceritage_branch_id");
+    sessionStorage.removeItem("ceritage_branch_id");
     navigate("/");
   }
 
@@ -562,6 +582,62 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* ── Global Smart Search Trigger (Ctrl+K) ── */}
+            <button
+              onClick={() => setIsSearchOpen(true)}
+              style={{
+                background: t.inputBg,
+                color: t.textSub,
+                border: `1px solid ${t.inputBorder}`,
+                borderRadius: 8,
+                padding: "6px 12px",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <span>Search...</span>
+              <kbd style={{
+                fontSize: 10,
+                background: "rgba(255,255,255,0.08)",
+                padding: "2px 5px",
+                borderRadius: 4,
+                border: `1px solid ${t.border}`,
+                color: t.textMuted
+              }}>Ctrl K</kbd>
+            </button>
+
+            {/* ── AI Assistant Trigger ── */}
+            <button
+              onClick={() => setIsChatbotOpen(true)}
+              title="AI Showroom Assistant"
+              style={{
+                background: "rgba(139,59,200,0.12)",
+                color: BRAND.purple,
+                border: `1px solid ${BRAND.purple}33`,
+                borderRadius: 8,
+                padding: "6px 11px",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <span>AI Assistant</span>
+            </button>
+
             {/* ── Live rate ticker — fetches real data ── */}
             <LiveRateTicker t={t} />
             <div style={{ width:30, height:30, borderRadius:"50%",
@@ -716,6 +792,51 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* ── FLOATING AI ASSISTANT BUTTON (BOTTOM RIGHT) ── */}
+      <button
+        onClick={() => setIsChatbotOpen(true)}
+        title="Open Ceritage AI Voice & Chat Assistant"
+        style={{
+          position: "fixed",
+          bottom: 24,
+          right: 24,
+          zIndex: 999,
+          width: 52,
+          height: 52,
+          borderRadius: "50%",
+          background: BRAND.grad,
+          border: "2px solid rgba(255,255,255,0.3)",
+          color: "#fff",
+          fontSize: 22,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          boxShadow: "0 8px 24px rgba(139,59,200,0.45)",
+          transition: "transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+        }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+      </button>
+
+      {/* ── AI Chatbot & Voice Assistant Modal ── */}
+      <AiChatbotModal
+        isOpen={isChatbotOpen}
+        onClose={() => setIsChatbotOpen(false)}
+        onNavigate={setActive}
+        t={t}
+      />
+
+      {/* ── Universal Global Smart Search Modal (Ctrl + K) ── */}
+      <GlobalSmartSearch
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onNavigate={setActive}
+        t={t}
+      />
     </div>
   );
 }

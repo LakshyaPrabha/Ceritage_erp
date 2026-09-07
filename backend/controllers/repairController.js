@@ -57,14 +57,14 @@ async function getAll(req, res) {
 }
 
 async function getById(req, res) {
-  const branch_id = req.user?.branch_id || 1;
   try {
+    const bf = branchFilter(req, "r.branch_id");
     const [rows] = await db.query(
       `SELECT r.*, c.full_name AS customer_name, c.phone AS customer_phone
        FROM repair_jobs r
        LEFT JOIN customers c ON r.customer_id = c.id
-       WHERE r.id = ? AND r.branch_id = ?`,
-      [req.params.id, branch_id]
+       WHERE r.id = ? AND ${bf.sql}`,
+      [req.params.id, ...bf.params]
     );
     if (rows.length === 0) return res.status(404).json({ success: false, message: "Job not found" });
     res.json({ success: true, data: rows[0] });
@@ -74,7 +74,7 @@ async function getById(req, res) {
 }
 
 async function create(req, res) {
-  const branch_id = req.user?.branch_id || 1;
+  const activeBranchId = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
   const {
     customer_id, item_name, item_type, metal, purity, weight_g,
     issue_desc, work_to_do, received_date, promised_date,
@@ -86,10 +86,10 @@ async function create(req, res) {
 
   try {
     const [[{ count }]] = await db.query(
-      "SELECT COUNT(*) AS count FROM repair_jobs WHERE branch_id = ?", [branch_id]
-    );
+      "SELECT COUNT(*) AS count FROM repair_jobs WHERE branch_id = ?", [activeBranchId]
+    ).catch(() => [[{ count: 0 }]]);
     const year = new Date().getFullYear().toString().slice(-2);
-    const job_no = `REP${year}${String(count + 1).padStart(4, "0")}`;
+    const job_no = `REP${year}${String((count || 0) + 1).padStart(4, "0")}`;
 
     const [result] = await db.query(
       `INSERT INTO repair_jobs
@@ -98,7 +98,7 @@ async function create(req, res) {
           estimated_cost, advance_paid, assigned_to, notes, status)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'Received')`,
       [
-        branch_id, job_no, customer_id || null,
+        activeBranchId, job_no, customer_id || null,
         item_name.trim(), item_type || null, metal || null, purity || null,
         parseFloat(weight_g) || 0, issue_desc.trim(), work_to_do || null,
         received_date || new Date().toISOString().split("T")[0],
@@ -115,7 +115,7 @@ async function create(req, res) {
 }
 
 async function update(req, res) {
-  const branch_id = req.user?.branch_id || 1;
+  const bf = branchFilter(req, "branch_id");
   const {
     customer_id, item_name, item_type, metal, purity, weight_g,
     issue_desc, work_to_do, received_date, promised_date,
@@ -130,7 +130,7 @@ async function update(req, res) {
          issue_desc=?, work_to_do=?, received_date=?, promised_date=?,
          estimated_cost=?, actual_cost=?, advance_paid=?,
          assigned_to=?, status=?, delivery_date=?, notes=?
-       WHERE id=? AND branch_id=?`,
+       WHERE id=? AND ${bf.sql}`,
       [
         customer_id || null, item_name, item_type || null, metal || null,
         purity || null, parseFloat(weight_g) || 0,
@@ -138,27 +138,26 @@ async function update(req, res) {
         received_date, promised_date || null,
         parseFloat(estimated_cost) || 0, parseFloat(actual_cost) || 0,
         parseFloat(advance_paid) || 0, assigned_to || null,
-        status || "Received",
-        delivery_date || null, notes || null,
-        req.params.id, branch_id,
+        status || 'Received', delivery_date || null, notes || null,
+        req.params.id, ...bf.params
       ]
     );
-    res.json({ success: true, message: "Job updated." });
+    res.json({ success: true, message: "Repair job updated." });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 }
 
 async function updateStatus(req, res) {
-  const branch_id = req.user?.branch_id || 1;
+  const bf = branchFilter(req, "branch_id");
   const { status, actual_cost, delivery_date } = req.body;
   try {
     await db.query(
       `UPDATE repair_jobs SET status=?,
          actual_cost=COALESCE(?,actual_cost),
          delivery_date=COALESCE(?,delivery_date)
-       WHERE id=? AND branch_id=?`,
-      [status, actual_cost || null, delivery_date || null, req.params.id, branch_id]
+       WHERE id=? AND ${bf.sql}`,
+      [status, actual_cost || null, delivery_date || null, req.params.id, ...bf.params]
     );
     res.json({ success: true, message: `Status updated to ${status}.` });
   } catch (err) {
@@ -167,14 +166,10 @@ async function updateStatus(req, res) {
 }
 
 async function remove(req, res) {
-  const branch_id = req.user?.branch_id || 1;
+  const bf = branchFilter(req, "branch_id");
   try {
-    const [r] = await db.query(
-      "DELETE FROM repair_jobs WHERE id=? AND branch_id=?",
-      [req.params.id, branch_id]
-    );
-    if (r.affectedRows === 0) return res.status(404).json({ success: false, message: "Job not found." });
-    res.json({ success: true, message: "Job deleted." });
+    await db.query(`UPDATE repair_jobs SET status='Cancelled' WHERE id=? AND ${bf.sql}`, [req.params.id, ...bf.params]);
+    res.json({ success: true, message: "Repair job cancelled." });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

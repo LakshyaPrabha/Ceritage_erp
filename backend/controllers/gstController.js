@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const { branchFilter } = require("../utils/branchScope");
 
 // ── DECIMAL-SAFE MONETARY HELPER (Minor Unit / Integer Paise) ────────────────
 function toPaise(amt) {
@@ -8,37 +9,167 @@ function fromPaise(paise) {
   return Number((paise / 100).toFixed(2));
 }
 
+// ── ENSURE GST TABLES EXIST IN LIVE DATABASE ─────────────────────────────────
+async function initGstTables() {
+  try {
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS gst_tax_master (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        branch_id INT DEFAULT 1,
+        rule_code VARCHAR(30) UNIQUE NOT NULL,
+        hsn_code VARCHAR(10) NOT NULL,
+        product_category VARCHAR(100) NOT NULL,
+        gst_rate DECIMAL(5,2) NOT NULL,
+        cgst_rate DECIMAL(5,2) NOT NULL,
+        sgst_rate DECIMAL(5,2) NOT NULL,
+        igst_rate DECIMAL(5,2) NOT NULL,
+        effective_from DATE NOT NULL,
+        is_active TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS gst_error_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        branch_id INT DEFAULT 1,
+        error_code VARCHAR(20) NOT NULL,
+        severity ENUM('CRITICAL','HIGH','MEDIUM','LOW','INFO') DEFAULT 'MEDIUM',
+        transaction_type ENUM('SALES','PURCHASE','ADVANCE','JOBWORK') DEFAULT 'SALES',
+        transaction_id INT,
+        invoice_no VARCHAR(50),
+        invoice_date DATE,
+        party_name VARCHAR(150),
+        party_gstin VARCHAR(20),
+        hsn_code VARCHAR(20) DEFAULT '7113',
+        taxable_value DECIMAL(14,2) DEFAULT 0.00,
+        expected_gst DECIMAL(12,2) DEFAULT 0.00,
+        recorded_gst DECIMAL(12,2) DEFAULT 0.00,
+        difference DECIMAL(12,2) DEFAULT 0.00,
+        message TEXT,
+        resolution_note TEXT,
+        status ENUM('OPEN','RESOLVED','IGNORED') DEFAULT 'OPEN',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS gstr2b_reconciliations (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        branch_id INT DEFAULT 1,
+        supplier_gstin VARCHAR(20) NOT NULL,
+        supplier_name VARCHAR(150),
+        invoice_no VARCHAR(50) NOT NULL,
+        invoice_date DATE,
+        books_taxable DECIMAL(14,2) DEFAULT 0.00,
+        books_gst DECIMAL(12,2) DEFAULT 0.00,
+        gstr2b_taxable DECIMAL(14,2) DEFAULT 0.00,
+        gstr2b_gst DECIMAL(12,2) DEFAULT 0.00,
+        difference_gst DECIMAL(12,2) DEFAULT 0.00,
+        match_status ENUM('MATCHED','MISMATCH_AMOUNT','MISSING_IN_2B','MISSING_IN_BOOKS','PROVISIONAL') DEFAULT 'MATCHED',
+        tax_period VARCHAR(10),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_po_recon (supplier_gstin, invoice_no, tax_period)
+      )
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS gst_period_locks (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        branch_id INT DEFAULT 1,
+        tax_period VARCHAR(10) NOT NULL,
+        financial_year VARCHAR(20) NOT NULL,
+        total_sales_taxable DECIMAL(16,2) DEFAULT 0.00,
+        total_output_gst DECIMAL(14,2) DEFAULT 0.00,
+        total_input_itc DECIMAL(14,2) DEFAULT 0.00,
+        net_tax_liability DECIMAL(14,2) DEFAULT 0.00,
+        validation_status ENUM('OPEN','VERIFIED','LOCKED') DEFAULT 'LOCKED',
+        locked_by VARCHAR(100),
+        locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_period_branch (tax_period, branch_id)
+      )
+    `);
+
+    // Ensure branch_id columns exist on existing tables
+    try {
+      const [colsErr] = await db.query("SHOW COLUMNS FROM gst_error_logs");
+      if (!colsErr.some(c => c.Field.toLowerCase() === 'branch_id')) {
+        await db.query("ALTER TABLE gst_error_logs ADD COLUMN branch_id INT DEFAULT 1 AFTER id");
+      }
+    } catch {}
+    try {
+      const [cols2b] = await db.query("SHOW COLUMNS FROM gstr2b_reconciliations");
+      if (!cols2b.some(c => c.Field.toLowerCase() === 'branch_id')) {
+        await db.query("ALTER TABLE gstr2b_reconciliations ADD COLUMN branch_id INT DEFAULT 1 AFTER id");
+      }
+    } catch {}
+  } catch (err) {
+    console.warn("GST Tables initialization warning:", err.message);
+  }
+}
+initGstTables();
+
 // POST /api/gst/validate-complete
 exports.executeCompleteValidation = async (req, res) => {
   try {
+    await initGstTables();
     const { tax_period, financial_year, branch_id } = req.body;
-    const branchId = branch_id || req.user?.branch_id || 1;
+    const branchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
+    const bf = branchFilter(req);
+    const bfInv = branchFilter(req, "i.branch_id");
+    const bfPo = branchFilter(req, "po.branch_id");
 
     // Fetch Active Branch Profile & GSTIN dynamically from database
     const [[branchInfo]] = await db.query(
-      "SELECT name, city, state, gstin FROM branches WHERE id = ? LIMIT 1",
+      "SELECT id, name, city, gstin FROM branches WHERE id = ? LIMIT 1",
       [branchId]
     );
 
     const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
     // 1. Fetch Invoices for Branch / Period
+    let invWhere = `WHERE i.status != 'Cancelled' AND ${bfInv.sql}`;
+    const invParams = [...bfInv.params];
+    if (tax_period && tax_period !== "all") {
+      invWhere += " AND DATE_FORMAT(COALESCE(i.invoice_date, i.created_at), '%Y-%m') = ?";
+      invParams.push(tax_period);
+    } else if (financial_year && financial_year !== "all") {
+      const parts = financial_year.split("-");
+      const startYear = parts[0];
+      const endYear = "20" + parts[1];
+      invWhere += " AND DATE(COALESCE(i.invoice_date, i.created_at)) >= ? AND DATE(COALESCE(i.invoice_date, i.created_at)) <= ?";
+      invParams.push(`${startYear}-04-01`, `${endYear}-03-31`);
+    }
+
     const [invoices] = await db.query(`
       SELECT i.*, c.full_name AS customer_name, c.gst_number AS customer_gstin, c.city AS customer_city
       FROM invoices i
       LEFT JOIN customers c ON i.customer_id = c.id
-      WHERE i.status != 'Cancelled'
+      ${invWhere}
       ORDER BY i.id DESC
-    `);
+    `, invParams);
 
     // 2. Fetch Purchase Orders for Branch / Period
+    let poWhere = `WHERE po.status != 'CANCELLED' AND ${bfPo.sql}`;
+    const poParams = [...bfPo.params];
+    if (tax_period && tax_period !== "all") {
+      poWhere += " AND DATE_FORMAT(COALESCE(po.order_date, po.created_at), '%Y-%m') = ?";
+      poParams.push(tax_period);
+    } else if (financial_year && financial_year !== "all") {
+      const parts = financial_year.split("-");
+      const startYear = parts[0];
+      const endYear = "20" + parts[1];
+      poWhere += " AND DATE(COALESCE(po.order_date, po.created_at)) >= ? AND DATE(COALESCE(po.order_date, po.created_at)) <= ?";
+      poParams.push(`${startYear}-04-01`, `${endYear}-03-31`);
+    }
+
     const [purchases] = await db.query(`
       SELECT po.*, s.company_name AS supplier_name, s.gstin AS supplier_gstin, s.city AS supplier_city
       FROM purchase_orders po
       LEFT JOIN suppliers s ON po.supplier_id = s.id
-      WHERE po.status != 'CANCELLED'
+      ${poWhere}
       ORDER BY po.id DESC
-    `);
+    `, poParams);
 
     const newErrors = [];
     let salesMatched = 0;
@@ -83,6 +214,7 @@ exports.executeCompleteValidation = async (req, res) => {
       // Duplicate Check (GST016)
       if (invoiceNumberSet.has(invNo)) {
         newErrors.push({
+          branch_id: branchId,
           error_code: "GST016",
           severity: "CRITICAL",
           transaction_type: "SALES",
@@ -106,6 +238,7 @@ exports.executeCompleteValidation = async (req, res) => {
       // GSTIN Validation (GST002)
       if (gstin && !GSTIN_REGEX.test(gstin)) {
         newErrors.push({
+          branch_id: branchId,
           error_code: "GST002",
           severity: "HIGH",
           transaction_type: "SALES",
@@ -130,6 +263,7 @@ exports.executeCompleteValidation = async (req, res) => {
 
       if (taxDiffPaise > 100 && taxablePaise > 0) {
         newErrors.push({
+          branch_id: branchId,
           error_code: "GST015",
           severity: "CRITICAL",
           transaction_type: "SALES",
@@ -168,6 +302,7 @@ exports.executeCompleteValidation = async (req, res) => {
 
       if (supplierGstin && !GSTIN_REGEX.test(supplierGstin)) {
         newErrors.push({
+          branch_id: branchId,
           error_code: "GST023",
           severity: "HIGH",
           transaction_type: "PURCHASE",
@@ -189,11 +324,12 @@ exports.executeCompleteValidation = async (req, res) => {
       if (supplierGstin && tax_period) {
         await db.query(`
           INSERT INTO gstr2b_reconciliations 
-            (supplier_gstin, supplier_name, invoice_no, invoice_date, books_taxable, books_gst, gstr2b_taxable, gstr2b_gst, difference_gst, match_status, tax_period)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00, 'MATCHED', ?)
+            (branch_id, supplier_gstin, supplier_name, invoice_no, invoice_date, books_taxable, books_gst, gstr2b_taxable, gstr2b_gst, difference_gst, match_status, tax_period)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0.00, 'MATCHED', ?)
           ON DUPLICATE KEY UPDATE 
             books_taxable = VALUES(books_taxable), books_gst = VALUES(books_gst)
         `, [
+          branchId,
           supplierGstin,
           po.supplier_name || 'Bullion Dealer',
           billNo,
@@ -211,8 +347,8 @@ exports.executeCompleteValidation = async (req, res) => {
 
     // ── GSTR-2B LIVE MATCH STATUS ──
     const [reconRows] = await db.query(
-      "SELECT * FROM gstr2b_reconciliations WHERE tax_period = ?",
-      [tax_period || new Date().toISOString().slice(0, 7)]
+      `SELECT * FROM gstr2b_reconciliations WHERE tax_period = ? AND ${bf.sql}`,
+      [tax_period || new Date().toISOString().slice(0, 7), ...bf.params]
     );
 
     let matched2bCount = 0;
@@ -223,14 +359,14 @@ exports.executeCompleteValidation = async (req, res) => {
     }
 
     // Save live errors in database
-    await db.query("DELETE FROM gst_error_logs WHERE status = 'OPEN'");
+    await db.query(`DELETE FROM gst_error_logs WHERE status = 'OPEN' AND ${bf.sql}`, bf.params);
     for (const err of newErrors) {
       await db.query(`
         INSERT INTO gst_error_logs 
-          (error_code, severity, transaction_type, transaction_id, invoice_no, invoice_date, party_name, party_gstin, hsn_code, taxable_value, expected_gst, recorded_gst, difference, message, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN')
+          (branch_id, error_code, severity, transaction_type, transaction_id, invoice_no, invoice_date, party_name, party_gstin, hsn_code, taxable_value, expected_gst, recorded_gst, difference, message, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN')
       `, [
-        err.error_code, err.severity, err.transaction_type, err.transaction_id, err.invoice_no, err.invoice_date,
+        branchId, err.error_code, err.severity, err.transaction_type, err.transaction_id, err.invoice_no, err.invoice_date,
         err.party_name, err.party_gstin, err.hsn_code, err.taxable_value, err.expected_gst, err.recorded_gst,
         err.difference, err.message
       ]);
@@ -317,18 +453,36 @@ exports.executeCompleteValidation = async (req, res) => {
 // GET /api/gst/returns-working
 exports.getReturnsWorking = async (req, res) => {
   try {
+    const { tax_period, financial_year } = req.query;
+    const bfInv = branchFilter(req, "i.branch_id");
+
+    let periodWhere = ` AND ${bfInv.sql}`;
+    const periodParams = [...bfInv.params];
+
+    if (tax_period && tax_period !== "all") {
+      periodWhere += " AND DATE_FORMAT(COALESCE(i.invoice_date, i.created_at), '%Y-%m') = ?";
+      periodParams.push(tax_period);
+    } else if (financial_year && financial_year !== "all") {
+      const parts = financial_year.split("-");
+      const startYear = parts[0];
+      const endYear = "20" + parts[1];
+      periodWhere += " AND DATE(COALESCE(i.invoice_date, i.created_at)) >= ? AND DATE(COALESCE(i.invoice_date, i.created_at)) <= ?";
+      periodParams.push(`${startYear}-04-01`, `${endYear}-03-31`);
+    }
+
     // 1. Table 4A: B2B Registered Sales
     const [b2bRows] = await db.query(`
       SELECT 
-        i.invoice_no, i.created_at AS invoice_date, c.full_name AS customer_name, c.gst_number AS customer_gstin,
+        i.invoice_no, COALESCE(i.invoice_date, i.created_at) AS invoice_date, c.full_name AS customer_name, c.gst_number AS customer_gstin,
         (i.grand_total - (COALESCE(i.cgst,0)+COALESCE(i.sgst,0)+COALESCE(i.igst,0))) AS taxable_value,
         i.cgst, i.sgst, i.igst, (COALESCE(i.cgst,0)+COALESCE(i.sgst,0)+COALESCE(i.igst,0)) AS total_tax,
         i.grand_total
       FROM invoices i
       JOIN customers c ON i.customer_id = c.id
       WHERE c.gst_number IS NOT NULL AND TRIM(c.gst_number) != '' AND i.status != 'Cancelled'
+      ${periodWhere}
       ORDER BY i.id DESC
-    `);
+    `, periodParams);
 
     // 2. Table 7: B2C Small Retail Sales
     const [[b2cSummary]] = await db.query(`
@@ -343,7 +497,8 @@ exports.getReturnsWorking = async (req, res) => {
       FROM invoices i
       LEFT JOIN customers c ON i.customer_id = c.id
       WHERE (c.gst_number IS NULL OR TRIM(c.gst_number) = '') AND i.status != 'Cancelled'
-    `);
+      ${periodWhere}
+    `, periodParams);
 
     // 3. Table 12: HSN Summary
     const [[hsnSummary]] = await db.query(`
@@ -360,7 +515,8 @@ exports.getReturnsWorking = async (req, res) => {
         COALESCE(SUM(i.cgst + i.sgst + i.igst), 0) AS total_tax
       FROM invoices i
       WHERE i.status != 'Cancelled'
-    `);
+      ${periodWhere}
+    `, periodParams);
 
     return res.json({
       success: true,
@@ -380,9 +536,10 @@ exports.getReturnsWorking = async (req, res) => {
 exports.getGstErrors = async (req, res) => {
   try {
     const { severity, status, search } = req.query;
+    const bf = branchFilter(req);
 
-    const conditions = [];
-    const params = [];
+    const conditions = [bf.sql];
+    const params = [...bf.params];
 
     if (severity && severity !== "all") {
       conditions.push("severity = ?");
@@ -398,7 +555,7 @@ exports.getGstErrors = async (req, res) => {
       params.push(s, s, s, s);
     }
 
-    const whereClause = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+    const whereClause = "WHERE " + conditions.join(" AND ");
 
     const [rows] = await db.query(`
       SELECT * FROM gst_error_logs
@@ -459,11 +616,12 @@ exports.recalculateInvoiceGst = async (req, res) => {
 exports.getGstr2b = async (req, res) => {
   try {
     const { status } = req.query;
+    const bf = branchFilter(req);
 
-    let query = "SELECT * FROM gstr2b_reconciliations";
-    const params = [];
+    let query = `SELECT * FROM gstr2b_reconciliations WHERE ${bf.sql}`;
+    const params = [...bf.params];
     if (status && status !== "all") {
-      query += " WHERE match_status = ?";
+      query += " AND match_status = ?";
       params.push(status);
     }
     query += " ORDER BY id DESC";
@@ -489,18 +647,39 @@ exports.getTaxMaster = async (req, res) => {
 // POST /api/gst/tax-master
 exports.createTaxRule = async (req, res) => {
   try {
-    const { rule_code, hsn_code, product_category, gst_rate, effective_from } = req.body;
+    const { rule_code, hsn_code, product_category, gst_rate, effective_from, branch_id } = req.body;
+    const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
 
     const totalGst = parseFloat(gst_rate) || 3.0;
     const cgst = totalGst / 2;
     const sgst = totalGst / 2;
 
     await db.query(`
-      INSERT INTO gst_tax_master (rule_code, hsn_code, product_category, gst_rate, cgst_rate, sgst_rate, igst_rate, effective_from)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [rule_code, hsn_code, product_category, totalGst, cgst, sgst, totalGst, effective_from || new Date().toISOString().split("T")[0]]);
+      INSERT INTO gst_tax_master (branch_id, rule_code, hsn_code, product_category, gst_rate, cgst_rate, sgst_rate, igst_rate, effective_from)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [activeBranchId, rule_code, hsn_code, product_category, totalGst, cgst, sgst, totalGst, effective_from || new Date().toISOString().split("T")[0]]);
 
     return res.json({ success: true, message: `Tax Rule ${rule_code} created successfully` });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// DELETE /api/gst/tax-master/:id
+exports.deleteTaxRule = async (req, res) => {
+  try {
+    await db.query("DELETE FROM gst_tax_master WHERE id = ?", [req.params.id]);
+    return res.json({ success: true, message: "Tax rule deleted successfully" });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /api/gst/tax-master/clear
+exports.clearTaxMaster = async (req, res) => {
+  try {
+    await db.query("TRUNCATE TABLE gst_tax_master");
+    return res.json({ success: true, message: "Tax master cleared. Table is now completely empty." });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -510,13 +689,15 @@ exports.createTaxRule = async (req, res) => {
 // POST /api/gst/close-period
 exports.closeGstPeriod = async (req, res) => {
   try {
-    const { tax_period, financial_year } = req.body;
+    const { tax_period, financial_year, branch_id } = req.body;
+    const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
     const period = tax_period || new Date().toISOString().slice(0, 7);
     const fy = financial_year || "2026-27";
+    const bf = branchFilter(req);
 
     const [[critCount]] = await db.query(`
-      SELECT COUNT(*) AS total FROM gst_error_logs WHERE severity = 'CRITICAL' AND status = 'OPEN'
-    `);
+      SELECT COUNT(*) AS total FROM gst_error_logs WHERE severity = 'CRITICAL' AND status = 'OPEN' AND ${bf.sql}
+    `, bf.params);
 
     if (critCount.total > 0) {
       return res.status(400).json({
@@ -525,7 +706,7 @@ exports.closeGstPeriod = async (req, res) => {
       });
     }
 
-    const [invoices] = await db.query("SELECT * FROM invoices WHERE status != 'Cancelled'");
+    const [invoices] = await db.query(`SELECT * FROM invoices WHERE status != 'Cancelled' AND ${bf.sql}`, bf.params);
     let totalTaxable = 0;
     let totalGst = 0;
     for (const i of invoices) {
@@ -535,10 +716,10 @@ exports.closeGstPeriod = async (req, res) => {
 
     await db.query(`
       INSERT INTO gst_period_locks 
-        (tax_period, financial_year, total_sales_taxable, total_output_gst, total_input_itc, net_tax_liability, validation_status, locked_by)
-      VALUES (?, ?, ?, ?, 0, ?, 'LOCKED', ?)
+        (branch_id, tax_period, financial_year, total_sales_taxable, total_output_gst, total_input_itc, net_tax_liability, validation_status, locked_by)
+      VALUES (?, ?, ?, ?, ?, 0, ?, 'LOCKED', ?)
       ON DUPLICATE KEY UPDATE validation_status = 'LOCKED', locked_at = NOW()
-    `, [period, fy, totalTaxable, totalGst, totalGst, req.user?.username || 'Admin']);
+    `, [activeBranchId, period, fy, totalTaxable, totalGst, totalGst, req.user?.username || 'Admin']);
 
     return res.json({
       success: true,
@@ -553,32 +734,42 @@ exports.closeGstPeriod = async (req, res) => {
 // POST /api/gst/ca-review-pack
 exports.generateCaReviewPack = async (req, res) => {
   try {
-    const { tax_period } = req.body;
+    const { tax_period, financial_year, branch_id } = req.body;
     const period = tax_period || new Date().toISOString().slice(0, 7);
+    const fy = financial_year || "2026-27";
+    const branchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
+    const bf = branchFilter(req);
+    const bfInv = branchFilter(req, "i.branch_id");
+    const bfPo = branchFilter(req, "po.branch_id");
+
+    const [[branchInfo]] = await db.query(
+      "SELECT id, name, city, gstin FROM branches WHERE id = ? LIMIT 1",
+      [branchId]
+    );
 
     const [sales] = await db.query(`
       SELECT i.invoice_no, i.created_at AS date, c.full_name AS customer, c.gst_number AS gstin,
              (i.grand_total - (COALESCE(i.cgst,0)+COALESCE(i.sgst,0)+COALESCE(i.igst,0))) AS taxable_value,
              i.cgst, i.sgst, i.igst, i.grand_total
-      FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id WHERE i.status != 'Cancelled'
-    `);
+      FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id WHERE i.status != 'Cancelled' AND ${bfInv.sql}
+    `, bfInv.params);
 
     const [purchases] = await db.query(`
       SELECT po.po_no, po.purchase_date AS date, s.company_name AS supplier, s.gstin AS gstin,
              po.amount AS taxable_value, po.gst_amount, po.total
-      FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id = s.id WHERE po.status != 'CANCELLED'
-    `);
+      FROM purchase_orders po LEFT JOIN suppliers s ON po.supplier_id = s.id WHERE po.status != 'CANCELLED' AND ${bfPo.sql}
+    `, bfPo.params);
 
-    const [recon] = await db.query("SELECT * FROM gstr2b_reconciliations WHERE tax_period = ?", [period]);
-    const [errors] = await db.query("SELECT * FROM gst_error_logs");
+    const [recon] = await db.query(`SELECT * FROM gstr2b_reconciliations WHERE tax_period = ? AND ${bf.sql}`, [period, ...bf.params]);
+    const [errors] = await db.query(`SELECT * FROM gst_error_logs WHERE ${bf.sql}`, bf.params);
 
     const caPack = {
       meta: {
         package_name: "CERITAGE_JEWELLERY_ERP_CA_REVIEW_PACK",
         tax_period: period,
-        financial_year: "2026-27",
-        gstin: req.user?.branch_gstin || "—",
-        company_name: "Ceritage Fine Jewels",
+        financial_year: fy,
+        gstin: branchInfo?.gstin || "—",
+        company_name: branchInfo?.name || "Main Showroom",
         generated_at: new Date().toISOString(),
         generated_by: req.user?.username || "Admin",
       },

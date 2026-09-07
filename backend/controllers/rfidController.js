@@ -121,7 +121,7 @@ async function ensureTables() {
 
       for (const t of defaultTrays) {
         await db.query(
-          "INSERT INTO showcase_trays (tray_code, name, category, counter, capacity, rfid_tag_id, status, notes) VALUES (?,?,?,?,?,?,?,?)",
+          "INSERT IGNORE INTO showcase_trays (tray_code, name, category, counter, capacity, rfid_tag_id, status, notes) VALUES (?,?,?,?,?,?,?,?)",
           t
         );
       }

@@ -133,30 +133,31 @@ server.on("error", (err) => {
   console.error("Server error:", err);
 });
 
-// â”€â”€ Metals.Dev Automated Twice-Daily Scheduler (Day & Evening Slots) â”€â”€
+// ── API-Ninjas Automated Twice-Daily Scheduler (Day & Evening Slots) ──
 const metalRateService = require("./services/metalRateService");
 
 setInterval(async () => {
   try {
-    if (!process.env.METALS_DEV_API_KEY) return;
+    const hasKey = process.env.API_NINJAS_KEY || process.env.API_NINJAS_API_KEY;
+    if (!hasKey) return;
 
     const now = new Date();
     // Convert to Indian Standard Time (IST)
     const istString = now.toLocaleTimeString("en-US", { timeZone: "Asia/Kolkata", hour12: false });
     const [hours, minutes] = istString.split(":").map(Number);
 
-    const dayTime = process.env.METALS_DEV_DAY_TIME || "10:30";
+    const dayTime = process.env.API_NINJAS_DAY_TIME || "10:30";
     const [dayHour, dayMin] = dayTime.split(":").map(Number);
 
-    const eveningTime = process.env.METALS_DEV_EVENING_TIME || "18:30";
+    const eveningTime = process.env.API_NINJAS_EVENING_TIME || "18:30";
     const [eveHour, eveMin] = eveningTime.split(":").map(Number);
 
     // 1. Check Morning / Day Slot (e.g. 10:30 AM IST)
     if (hours === dayHour && minutes >= dayMin && minutes <= dayMin + 4) {
       const quota = await metalRateService.getDailySyncStatus();
       if (!quota.daySlotCompleted && quota.canRequest) {
-        console.log(`[Auto Scheduler] â˜€ï¸ Triggering Day Slot Market Rate Sync (${dayTime} IST)...`);
-        await metalRateService.refreshRates({ slot: "DAY", updatedBy: "Automated Day Scheduler" });
+        console.log(`[Auto Scheduler] ☀️ Triggering Day Slot Market Rate Sync via API-Ninjas (${dayTime} IST)...`);
+        await metalRateService.refreshRates({ slot: "DAY", updatedBy: "API-Ninjas Day Scheduler" });
       }
     }
 
@@ -164,8 +165,8 @@ setInterval(async () => {
     if (hours === eveHour && minutes >= eveMin && minutes <= eveMin + 4) {
       const quota = await metalRateService.getDailySyncStatus();
       if (!quota.eveningSlotCompleted && quota.canRequest) {
-        console.log(`[Auto Scheduler] ðŸŒ™ Triggering Evening Slot Market Rate Sync (${eveningTime} IST)...`);
-        await metalRateService.refreshRates({ slot: "EVENING", updatedBy: "Automated Evening Scheduler" });
+        console.log(`[Auto Scheduler] 🌙 Triggering Evening Slot Market Rate Sync via API-Ninjas (${eveningTime} IST)...`);
+        await metalRateService.refreshRates({ slot: "EVENING", updatedBy: "API-Ninjas Evening Scheduler" });
       }
     }
   } catch (err) {

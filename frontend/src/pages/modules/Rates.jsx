@@ -114,14 +114,14 @@ export default function Rates({ t, initialTab }) {
     fetchCurrent();
   }, [fetchCurrent]);
 
-  // ── Refresh Rates from Metals.Dev API ────────────────────
+  // ── Refresh Rates from API-Ninjas API ────────────────────
   async function handleRefreshMarketRates() {
     setRefreshing(true);
-    setRefreshMsg("Syncing latest rates from Metals.Dev...");
+    setRefreshMsg("Syncing latest rates from API-Ninjas...");
     try {
       const res = await apiRequest("/metal-rates/refresh", { method: "POST" });
       if (res && res.success) {
-        setRefreshMsg("Market rates successfully refreshed from Metals.Dev!");
+        setRefreshMsg("Market rates successfully refreshed from API-Ninjas!");
         await fetchCurrent();
         window.dispatchEvent(new Event("metal-rates-updated"));
       } else {
@@ -221,7 +221,7 @@ export default function Rates({ t, initialTab }) {
     "Purity":      r.purity,
     "Price (₹/g)": fmt(r.price_per_gram) || "—",
     "Rate Type":   r.rate_type || "LIVE_MARKET",
-    "Source":      r.source || "Metals.Dev",
+    "Source":      r.source || "API-Ninjas",
   }));
 
   const live = ratesData?.liveMarket || {};
@@ -235,7 +235,7 @@ export default function Rates({ t, initialTab }) {
     <div>
       <PageHeader
         title="Live Metal Rates"
-        subtitle="Metals.Dev Live Market Rates · MCX Reference · LBMA Reference · Shop Adjustments · Rate History"
+        subtitle="API-Ninjas Live Market Rates · MCX Reference · LBMA Reference · Shop Adjustments · Rate History"
         t={t}
         actions={<>
           <BtnOutline t={t} onClick={handleRefreshMarketRates} disabled={refreshing || ratesLoading}>
@@ -249,7 +249,7 @@ export default function Rates({ t, initialTab }) {
         padding:"12px 16px", marginBottom:18, display:"flex", flexDirection:"column", gap:8 }}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ display:"flex", alignItems:"center", gap:12, fontSize:12, color:t.textMuted }}>
-            <div><strong>Provider:</strong> <span style={{ color:BRAND.purple, fontWeight:700 }}>Metals.Dev</span></div>
+            <div><strong>Provider:</strong> <span style={{ color:BRAND.purple, fontWeight:700 }}>API-Ninjas</span></div>
             <div>•</div>
             <div><strong>Currency:</strong> INR</div>
             <div>•</div>
@@ -351,9 +351,9 @@ export default function Rates({ t, initialTab }) {
       {/* ── Tab 1: Live Market Rates ── */}
       {tab === "live" && (
         <Card t={t}>
-          <CardHeader title="Live Market Prices (Metals.Dev)" t={t} />
+          <CardHeader title="Live Market Prices (API-Ninjas)" t={t} />
           <div style={{ fontSize:13, color:t.textMuted, marginBottom:14 }}>
-            Direct live spot pricing from Metals.Dev with calculated standard purities (22K, 18K, 14K) and Ceritage shop adjustments.
+            Direct live spot pricing from API-Ninjas with calculated standard purities (22K, 18K, 14K) and Ceritage shop adjustments.
           </div>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
             <thead>
@@ -394,9 +394,9 @@ export default function Rates({ t, initialTab }) {
       {/* ── Tab 2: MCX Reference ── */}
       {tab === "mcx" && (
         <Card t={t}>
-          <CardHeader title="MCX Commodity References (Metals.Dev Feed)" t={t} />
+          <CardHeader title="MCX Commodity References (API-Ninjas Feed)" t={t} />
           <div style={{ fontSize:13, color:t.textMuted, marginBottom:16 }}>
-            Indian Multi Commodity Exchange (MCX) contract reference values provided via the Metals.Dev data feed.
+            Indian Multi Commodity Exchange (MCX) contract reference values provided via the API-Ninjas data feed.
           </div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
             <div style={{ background:t.card2||t.card, borderRadius:10, padding:16, border:`1px solid ${t.borderDash}` }}>
@@ -437,9 +437,9 @@ export default function Rates({ t, initialTab }) {
       {/* ── Tab 3: LBMA Reference ── */}
       {tab === "lbma" && (
         <Card t={t}>
-          <CardHeader title="LBMA Reference Prices (Metals.Dev Feed)" t={t} />
+          <CardHeader title="LBMA Reference Prices (API-Ninjas Feed)" t={t} />
           <div style={{ fontSize:13, color:t.textMuted, marginBottom:16 }}>
-            London Bullion Market Association (LBMA) official benchmark fixings converted to INR/gram via Metals.Dev.
+            London Bullion Market Association (LBMA) official benchmark fixings converted to INR/gram via API-Ninjas.
           </div>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
             <thead>
@@ -479,8 +479,8 @@ export default function Rates({ t, initialTab }) {
         <Card t={t}>
           <CardHeader title="Ceritage Shop Selling Adjustments" t={t} />
           <div style={{ fontSize:13, color:t.textMuted, marginBottom:16 }}>
-            Set custom shop margin / premium (+ or - ₹ per gram) added to the Metals.Dev live market rate.
-            Formula: <code>Ceritage Selling Rate = Metals.Dev Market Rate + Shop Adjustment</code>.
+            Set custom shop margin / premium (+ or - ₹ per gram) added to the API-Ninjas live market rate.
+            Formula: <code>Ceritage Selling Rate = API-Ninjas Market Rate + Shop Adjustment</code>.
           </div>
           <form onSubmit={handleSaveAdjustments}>
             <FormGrid>

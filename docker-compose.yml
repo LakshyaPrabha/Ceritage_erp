@@ -1,20 +1,35 @@
 version: "3.8"
 
 services:
+  # 1. Node.js Backend API (Connects to your Cloud Database via .env)
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: ceritage-backend
+    restart: unless-stopped
     ports:
       - "5000:5000"
     env_file:
       - ./backend/.env
-    restart: unless-stopped
+    networks:
+      - ceritage-net
 
+  # 2. React Frontend + Nginx Web Server
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: ceritage-frontend
+    restart: unless-stopped
     ports:
+      - "80:80"
       - "5173:80"
     depends_on:
       - backend
-    restart: unless-stopped
+    networks:
+      - ceritage-net
+
+networks:
+  ceritage-net:
+    driver: bridge

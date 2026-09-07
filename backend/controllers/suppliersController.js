@@ -1,5 +1,22 @@
 const db = require("../config/db");
 const accounting = require("../services/accountingPostingService");
+const { branchFilter } = require("../utils/branchScope");
+
+let tablesReady = false;
+async function ensureTables() {
+  if (tablesReady) return;
+  try {
+    const [cols] = await db.query(
+      "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'suppliers' AND COLUMN_NAME = 'branch_id'"
+    );
+    if (cols.length === 0) {
+      await db.query("ALTER TABLE suppliers ADD COLUMN branch_id INT DEFAULT 1");
+    }
+    tablesReady = true;
+  } catch (err) {
+    console.warn("Suppliers table check error:", err.message);
+  }
+}
 
 // ── GET /api/suppliers/kpis ───────────────────────────────────────────────────
 async function getKpis(req, res) {
@@ -62,7 +79,8 @@ async function getAll(req, res) {
 async function getById(req, res) {
   try {
     await ensureTables();
-    const [rows] = await db.query("SELECT * FROM suppliers WHERE id = ?", [req.params.id]);
+    const bf = branchFilter(req, "branch_id");
+    const [rows] = await db.query(`SELECT * FROM suppliers WHERE id = ? AND ${bf.sql}`, [req.params.id, ...bf.params]);
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: "Supplier not found." });
     }
@@ -106,13 +124,16 @@ async function create(req, res) {
       return res.status(400).json({ success: false, message: "Company name is required." });
     }
 
+    const activeBranchId = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
+
     const [result] = await db.query(
       `INSERT INTO suppliers
-         (company_name, contact_person, phone, email,
+         (branch_id, company_name, contact_person, phone, email,
           supply_type, city, gstin, pan,
           credit_limit, bank_account, ifsc, status)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
+        activeBranchId,
         company_name.trim(),
         contact_person || null,
         phone          || null,

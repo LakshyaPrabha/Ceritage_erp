@@ -108,6 +108,10 @@ export default function Login() {
       sessionStorage.setItem("ceritage_permissions", JSON.stringify(result.user?.permissions || {}));
       localStorage.setItem("ceritage_permissions", JSON.stringify(result.user?.permissions || {}));
       localStorage.setItem("ceritage_role", result.user?.role || "");
+      if (result.user?.branch_id) {
+        sessionStorage.setItem("ceritage_branch_id", String(result.user.branch_id));
+        localStorage.setItem("ceritage_branch_id", String(result.user.branch_id));
+      }
       window.location.href = "/dashboard";
     } catch (err) {
       setLoading(false);

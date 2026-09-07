@@ -107,26 +107,15 @@ async function getLiveStock(req, res) {
 // ─── ADJUSTMENTS ──────────────────────────────────────────────────────────────
 async function getAdjustments(req, res) {
   try {
-    // Ensure table exists
-    await db.query(
-      `CREATE TABLE IF NOT EXISTS stock_adjustments (
-        id          INT AUTO_INCREMENT PRIMARY KEY,
-        product_id  INT,
-        adj_type    ENUM('Add','Remove','Damage','Loss','Correction') DEFAULT 'Add',
-        qty_change  INT NOT NULL,
-        reason      VARCHAR(255),
-        adjusted_by VARCHAR(100),
-        created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL
-      )`
-    );
-
+    const bf = branchFilter(req, "p.branch_id");
     const [rows] = await db.query(
       `SELECT sa.*, p.name AS product_name, p.sku
        FROM stock_adjustments sa
        LEFT JOIN products p ON sa.product_id = p.id
-       ORDER BY sa.created_at DESC LIMIT 200`
-    );
+       WHERE ${bf.sql}
+       ORDER BY sa.created_at DESC LIMIT 200`,
+      bf.params
+    ).catch(() => [[]]);
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -144,9 +133,12 @@ async function createAdjustment(req, res) {
       return res.status(400).json({ success: false, message: "product_id and qty_change required" });
     }
 
+    const activeBranchId = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
+
     await conn.query(
       `CREATE TABLE IF NOT EXISTS stock_adjustments (
         id          INT AUTO_INCREMENT PRIMARY KEY,
+        branch_id   INT DEFAULT 1,
         product_id  INT,
         adj_type    ENUM('Add','Remove','Damage','Loss','Correction') DEFAULT 'Add',
         qty_change  INT NOT NULL,
@@ -158,9 +150,9 @@ async function createAdjustment(req, res) {
     );
 
     const [result] = await conn.query(
-      `INSERT INTO stock_adjustments (product_id, adj_type, qty_change, reason, adjusted_by)
-       VALUES (?, ?, ?, ?, ?)`,
-      [product_id, adj_type || "Add", qty_change, reason || null, adjusted_by || "Admin"]
+      `INSERT INTO stock_adjustments (branch_id, product_id, adj_type, qty_change, reason, adjusted_by)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [activeBranchId, product_id, adj_type || "Add", qty_change, reason || null, adjusted_by || "Admin"]
     );
 
     // +/- stock based on type
@@ -188,6 +180,8 @@ async function createAdjustment(req, res) {
 async function getMovementLog(req, res) {
   try {
     const { type } = req.query;
+    const bfInv = branchFilter(req, "i.branch_id");
+    const bfAdj = branchFilter(req, "p.branch_id");
 
     // Sales movements
     const [sales] = await db.query(
@@ -203,10 +197,11 @@ async function getMovementLog(req, res) {
        FROM invoice_items ii
        JOIN invoices i ON ii.invoice_id = i.id
        LEFT JOIN products p ON ii.product_id = p.id
-       WHERE ii.product_id IS NOT NULL
+       WHERE ii.product_id IS NOT NULL AND ${bfInv.sql}
        ORDER BY i.invoice_date DESC
-       LIMIT 50`
-    );
+       LIMIT 50`,
+      bfInv.params
+    ).catch(() => [[]]);
 
     // Stock adjustments
     let adjs = [];
@@ -223,8 +218,10 @@ async function getMovementLog(req, res) {
            sa.adjusted_by  AS by_user
          FROM stock_adjustments sa
          LEFT JOIN products p ON sa.product_id = p.id
+         WHERE ${bfAdj.sql}
          ORDER BY sa.created_at DESC
-         LIMIT 50`
+         LIMIT 50`,
+        bfAdj.params
       );
       adjs = adjRows;
     } catch { /* table might not exist yet */ }
@@ -243,14 +240,16 @@ async function getMovementLog(req, res) {
 // ─── LOW STOCK ────────────────────────────────────────────────────────────────
 async function getLowStock(req, res) {
   try {
+    const bf = branchFilter(req);
     const [rows] = await db.query(
       `SELECT
          id, sku, name, jewellery_category,
          stock_qty,min_stock_qty AS min_stock,mrp AS selling_price,
          ${STOCK_STATUS_EXPR} AS stock_status
        FROM products
-       WHERE stock_qty <= min_stock_qty
-       ORDER BY stock_qty ASC`
+       WHERE stock_qty <= min_stock_qty AND ${bf.sql}
+       ORDER BY stock_qty ASC`,
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -261,6 +260,7 @@ async function getLowStock(req, res) {
 // ─── DAMAGED STOCK ────────────────────────────────────────────────────────────
 async function getDamagedStock(req, res) {
   try {
+    const bf = branchFilter(req, "p.branch_id");
     let rows = [];
     try {
       const [result] = await db.query(
@@ -272,8 +272,9 @@ async function getDamagedStock(req, res) {
            (p.mrp * ABS(sa.qty_change)) AS value_lost
          FROM stock_adjustments sa
          LEFT JOIN products p ON sa.product_id = p.id
-         WHERE sa.adj_type IN ('Damage','Loss')
-         ORDER BY sa.created_at DESC`
+         WHERE sa.adj_type IN ('Damage','Loss') AND ${bf.sql}
+         ORDER BY sa.created_at DESC`,
+        bf.params
       );
       rows = result;
     } catch { /* table not yet created */ }

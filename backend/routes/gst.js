@@ -12,6 +12,8 @@ router.post("/recalculate-invoice/:id", checkPermission("gst", "edit"), c.recalc
 router.get("/gstr2b",                   checkPermission("gst"),         c.getGstr2b);
 router.get("/tax-master",               checkPermission("gst"),         c.getTaxMaster);
 router.post("/tax-master",              checkPermission("gst", "edit"), c.createTaxRule);
+router.delete("/tax-master/:id",        checkPermission("gst", "edit"), c.deleteTaxRule);
+router.post("/tax-master/clear",        checkPermission("gst", "edit"), c.clearTaxMaster);
 router.get("/returns-working",          checkPermission("gst"),         c.getReturnsWorking);
 router.post("/close-period",            checkPermission("gst", "edit"), c.closeGstPeriod);
 router.post("/ca-review-pack",          checkPermission("gst"),         c.generateCaReviewPack);

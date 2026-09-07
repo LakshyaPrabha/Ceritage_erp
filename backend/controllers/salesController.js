@@ -14,9 +14,11 @@ async function getKpis(req, res) {
        WHERE invoice_type IN ('Retail Invoice','Wholesale Invoice','Tax Invoice','Online Invoice') AND ${bf.sql}`,
       bf.params
     );
+    const bfRet = branchFilter(req, "branch_id");
     const [[ret]] = await db.query(
-      "SELECT COALESCE(SUM(refund_amount),0) AS returns_value FROM returns"
-    );
+      `SELECT COALESCE(SUM(refund_amount),0) AS returns_value FROM returns WHERE ${bfRet.sql}`,
+      bfRet.params
+    ).catch(() => [[{ returns_value: 0 }]]);
     res.json({ success: true, data: { ...kpis, returns_value: ret.returns_value } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -81,11 +83,12 @@ async function getAll(req, res) {
 // ─── GET SINGLE SALE ──────────────────────────────────────────────────────────
 async function getById(req, res) {
   try {
+    const bf = branchFilter(req, "i.branch_id");
     const [[inv]] = await db.query(
       `SELECT i.*, c.full_name AS customer_name, c.phone AS customer_phone
        FROM invoices i LEFT JOIN customers c ON i.customer_id = c.id
-       WHERE i.id = ?`,
-      [req.params.id]
+       WHERE i.id = ? AND ${bf.sql}`,
+      [req.params.id, ...bf.params]
     );
     if (!inv) return res.status(404).json({ success: false, message: "Invoice not found" });
 
@@ -109,6 +112,7 @@ async function createSale(req, res) {
     await conn.beginTransaction();
 
     const {
+      branch_id,
       invoice_type = "Retail Invoice",
       customer_id,
       invoice_date,
@@ -127,6 +131,8 @@ async function createSale(req, res) {
       gift_voucher,
     } = req.body;
 
+    const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
+
     // Generate invoice number
     const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM invoices");
     const year = new Date().getFullYear();
@@ -134,11 +140,11 @@ async function createSale(req, res) {
 
     const [invResult] = await conn.query(
       `INSERT INTO invoices
-         (invoice_no, invoice_type, customer_id, invoice_date, salesperson_id,
+         (branch_id, invoice_no, invoice_type, customer_id, invoice_date, salesperson_id,
           payment_mode, discount_pct, discount_amt, coupon_code, gift_voucher,
           old_gold_exchange, cgst, sgst, igst, grand_total, paid_amount, status, notes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [invoice_no, invoice_type, customer_id || null, invoice_date || new Date().toISOString().slice(0, 10),
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [activeBranchId, invoice_no, invoice_type, customer_id || null, invoice_date || new Date().toISOString().slice(0, 10),
        salesperson_id || null, payment_mode, discount_pct, discount_amt,
        coupon_code || null, gift_voucher || null, old_gold_exchange,
        cgst, sgst, igst, grand_total, paid_amount, status, notes || null]
@@ -173,13 +179,12 @@ async function createSale(req, res) {
       }
     }
 
-    // Update customer wallet/loyalty (total_purchased column exists in some versions)
-    // Using balance_due for credit tracking — skip if column doesn't exist
+    // Update customer wallet/loyalty
     if (customer_id && status === "Credit") {
       await conn.query(
         "UPDATE customers SET balance_due = COALESCE(balance_due,0) + ? WHERE id = ?",
         [grand_total - (paid_amount || 0), customer_id]
-      ).catch(() => {}); // silent if column mismatch
+      ).catch(() => {});
     }
 
     await conn.commit();
@@ -196,8 +201,9 @@ async function createSale(req, res) {
 async function getPendingOrders(req, res) {
   try {
     const { status } = req.query;
-    let where = "WHERE o.status NOT IN ('Delivered')";
-    const params = [];
+    const bf = branchFilter(req, "o.branch_id");
+    let where = `WHERE o.status NOT IN ('Delivered') AND ${bf.sql}`;
+    const params = [...bf.params];
     if (status) { where += " AND o.status = ?"; params.push(status); }
 
     const [rows] = await db.query(
@@ -223,6 +229,7 @@ async function getPendingOrders(req, res) {
 
 async function getAdvanceOrders(req, res) {
   try {
+    const bf = branchFilter(req, "o.branch_id");
     const [rows] = await db.query(
       `SELECT o.*,
               o.order_no AS order_id,
@@ -235,8 +242,9 @@ async function getAdvanceOrders(req, res) {
               c.phone AS customer_phone
        FROM orders o
        LEFT JOIN customers c ON o.customer_id = c.id
-       WHERE o.advance_paid > 0
-       ORDER BY o.due_date ASC`
+       WHERE o.advance_paid > 0 AND ${bf.sql}
+       ORDER BY o.due_date ASC`,
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -247,12 +255,15 @@ async function getAdvanceOrders(req, res) {
 // ─── SALES RETURNS ────────────────────────────────────────────────────────────
 async function getSalesReturns(req, res) {
   try {
+    const bf = branchFilter(req, "r.branch_id");
     const [rows] = await db.query(
       `SELECT r.*, c.full_name AS customer_name
        FROM returns r
        LEFT JOIN customers c ON r.customer_id = c.id
-       ORDER BY r.return_date DESC, r.created_at DESC`
-    );
+       WHERE ${bf.sql}
+       ORDER BY r.return_date DESC, r.created_at DESC`,
+      bf.params
+    ).catch(() => [[]]);
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -261,15 +272,16 @@ async function getSalesReturns(req, res) {
 
 async function createSalesReturn(req, res) {
   try {
-    const { customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, return_date } = req.body;
+    const { branch_id, customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, return_date } = req.body;
+    const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
 
-    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM returns");
-    const return_no = `RTN-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM returns").catch(() => [[{ count: 0 }]]);
+    const return_no = `RTN-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, "0")}`;
 
     const [result] = await db.query(
-      `INSERT INTO returns (return_no, customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, return_date)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [return_no, customer_id || null, invoice_ref || null, item_description,
+      `INSERT INTO returns (branch_id, return_no, customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, return_date)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [activeBranchId, return_no, customer_id || null, invoice_ref || null, item_description,
        reason, refund_amount || 0, refund_mode,
        return_date || new Date().toISOString().slice(0, 10)]
     );
@@ -291,9 +303,11 @@ async function createSalesReturn(req, res) {
 // ─── DELIVERY CHALLANS ────────────────────────────────────────────────────────
 async function getChallans(req, res) {
   try {
+    const bf = branchFilter(req, "branch_id");
     const [rows] = await db.query(
-      "SELECT * FROM delivery_challans ORDER BY created_at DESC"
-    );
+      `SELECT * FROM delivery_challans WHERE ${bf.sql} ORDER BY created_at DESC`,
+      bf.params
+    ).catch(() => [[]]);
     res.json({ success: true, data: rows });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -302,16 +316,17 @@ async function getChallans(req, res) {
 
 async function createChallan(req, res) {
   try {
-    const { invoice_ref, customer_id, customer_name, phone, delivery_address, items_description, quantity, delivery_mode, delivered_by } = req.body;
+    const { branch_id, invoice_ref, customer_id, customer_name, phone, delivery_address, items_description, quantity, delivery_mode, delivered_by } = req.body;
+    const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
 
-    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM delivery_challans");
-    const dc_no = `DC-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+    const [[{ count }]] = await db.query("SELECT COUNT(*) AS count FROM delivery_challans").catch(() => [[{ count: 0 }]]);
+    const dc_no = `DC-${new Date().getFullYear()}-${String((count || 0) + 1).padStart(4, "0")}`;
 
     const [result] = await db.query(
       `INSERT INTO delivery_challans
-         (dc_no, invoice_ref, customer_id, customer_name, phone, delivery_address, items_description, quantity, delivery_mode, delivered_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [dc_no, invoice_ref || null, customer_id || null, customer_name,
+         (branch_id, dc_no, invoice_ref, customer_id, customer_name, phone, delivery_address, items_description, quantity, delivery_mode, delivered_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [activeBranchId, dc_no, invoice_ref || null, customer_id || null, customer_name,
        phone || null, delivery_address, items_description, quantity || 1,
        delivery_mode, delivered_by || null]
     );

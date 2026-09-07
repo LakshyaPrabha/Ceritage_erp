@@ -1,6 +1,9 @@
 const db = require("../config/db");
 
+let branchTablesChecked = false;
+
 async function ensureTables() {
+  if (branchTablesChecked) return;
   try {
     // 1. Branches Table (Stores Main/Root Headquarters & branches)
     await db.query(`
@@ -56,12 +59,35 @@ async function ensureTables() {
         manager_id INT NULL,
         phone VARCHAR(30) NULL,
         gstin VARCHAR(30) NULL,
-        status ENUM('Active', 'Inactive') DEFAULT 'Active',
+        is_primary_hq TINYINT(1) DEFAULT 0,
+        status VARCHAR(50) DEFAULT 'Active',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         FOREIGN KEY (main_branch_id) REFERENCES branches(id) ON DELETE CASCADE
       )
     `);
+
+    try {
+      const [sbCols] = await db.query("SHOW COLUMNS FROM sub_branches");
+      const sbSet = new Set(sbCols.map((c) => c.Field.toLowerCase()));
+      if (!sbSet.has("branch_id")) {
+        await db.query("ALTER TABLE sub_branches ADD COLUMN branch_id INT NULL AFTER id");
+      }
+      if (!sbSet.has("main_branch_id")) {
+        await db.query("ALTER TABLE sub_branches ADD COLUMN main_branch_id INT NOT NULL AFTER branch_id");
+      }
+      if (!sbSet.has("is_primary_hq")) {
+        await db.query("ALTER TABLE sub_branches ADD COLUMN is_primary_hq TINYINT(1) DEFAULT 0");
+      }
+      if (!sbSet.has("gstin")) {
+        await db.query("ALTER TABLE sub_branches ADD COLUMN gstin VARCHAR(30) NULL");
+      }
+      if (!sbSet.has("status")) {
+        await db.query("ALTER TABLE sub_branches ADD COLUMN status VARCHAR(50) DEFAULT 'Active'");
+      }
+    } catch (e) {
+      console.warn("sub_branches column check warning:", e.message);
+    }
 
     // Ensure existing sub-branches are synced to sub_branches table
     try {
@@ -99,6 +125,8 @@ async function ensureTables() {
         FOREIGN KEY (to_branch_id) REFERENCES branches(id) ON DELETE CASCADE
       )
     `);
+
+    branchTablesChecked = true;
   } catch (err) {
     console.error("Branch table init error:", err.message);
   }

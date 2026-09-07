@@ -52,12 +52,13 @@ async function getAll(req, res) {
 // GET /api/billing/:id — single invoice with items
 async function getById(req, res) {
   try {
+    const bf = branchFilter(req, "i.branch_id");
     const [inv] = await db.query(
       `SELECT i.*, c.full_name AS customer_name, c.phone, c.pan, c.gst_number
        FROM invoices i
        LEFT JOIN customers c ON i.customer_id = c.id
-       WHERE i.id = ?`,
-      [req.params.id]
+       WHERE i.id = ? AND ${bf.sql}`,
+      [req.params.id, ...bf.params]
     );
     if (inv.length === 0) return res.status(404).json({ success: false, message: "Invoice not found" });
 
@@ -75,6 +76,35 @@ async function getById(req, res) {
     res.json({ success: true, data: { ...inv[0], items, tenders } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+let billingSchemaChecked = false;
+
+async function ensureBillingSchema(conn) {
+  if (billingSchemaChecked) return;
+  try {
+    await conn.query("ALTER TABLE accounts MODIFY COLUMN type VARCHAR(50) NOT NULL").catch(() => {});
+    await conn.query("ALTER TABLE journal_entries MODIFY COLUMN voucher_type VARCHAR(50) NOT NULL DEFAULT 'JOURNAL'").catch(() => {});
+    await conn.query("ALTER TABLE customer_wallet_transactions MODIFY COLUMN transaction_type VARCHAR(50) NOT NULL").catch(() => {});
+    await conn.query("ALTER TABLE customer_loyalty_transactions MODIFY COLUMN transaction_type VARCHAR(50) NOT NULL").catch(() => {});
+    await conn.query("ALTER TABLE customer_audit_logs MODIFY COLUMN action_type VARCHAR(50) NULL DEFAULT 'UPDATE'").catch(() => {});
+    await conn.query("ALTER TABLE customer_audit_logs MODIFY COLUMN action VARCHAR(100) NULL").catch(() => {});
+    try {
+      const [cdnCols] = await conn.query("SHOW COLUMNS FROM credit_debit_notes");
+      if (!cdnCols.some(c => c.Field.toLowerCase() === 'branch_id')) {
+        await conn.query("ALTER TABLE credit_debit_notes ADD COLUMN branch_id INT DEFAULT 1 AFTER note_type");
+      }
+    } catch {}
+    try {
+      const [retCols] = await conn.query("SHOW COLUMNS FROM returns");
+      if (!retCols.some(c => c.Field.toLowerCase() === 'branch_id')) {
+        await conn.query("ALTER TABLE returns ADD COLUMN branch_id INT DEFAULT 1 AFTER return_no");
+      }
+    } catch {}
+    billingSchemaChecked = true;
+  } catch (e) {
+    console.warn("Billing schema check notice:", e.message);
   }
 }
 
@@ -141,6 +171,7 @@ async function create(req, res) {
 
   const conn = await db.getConnection();
   try {
+    await ensureBillingSchema(conn);
     await conn.beginTransaction();
 
     // 1. Fetch customer details with row-level lock for atomic balance calculations
@@ -534,9 +565,9 @@ async function create(req, res) {
 
 // GET /api/billing/kpis
 async function getKpis(req, res) {
-  const branch_id = req.user.branch_id;
   try {
     const today = new Date().toISOString().split("T")[0];
+    const bf = branchFilter(req);
     const [[kpis]] = await db.query(
       `SELECT
          SUM(CASE WHEN DATE(invoice_date) = ? THEN grand_total ELSE 0 END) AS today_billing,
@@ -544,8 +575,8 @@ async function getKpis(req, res) {
          SUM(CASE WHEN status='Partial' OR status='Credit' THEN grand_total - COALESCE(paid_amount,0) ELSE 0 END) AS pending_payments,
          SUM(CASE WHEN invoice_type='Return Invoice' AND DATE(invoice_date) = ? THEN 1 ELSE 0 END) AS returns_today
        FROM invoices
-       WHERE branch_id = ?`,
-      [today, today, today, branch_id]
+       WHERE ${bf.sql}`,
+      [today, today, today, ...bf.params]
     );
     res.json({ success: true, data: kpis });
   } catch (err) {
@@ -555,14 +586,14 @@ async function getKpis(req, res) {
 
 // GET /api/billing/credit-debit-notes
 async function getCreditDebitNotes(req, res) {
-  const branch_id = req.user.branch_id;
   try {
+    const bf = branchFilter(req, "n.branch_id");
     const [rows] = await db.query(
       `SELECT n.*, c.full_name AS customer_name FROM credit_debit_notes n
        LEFT JOIN customers c ON n.customer_id = c.id
-       WHERE n.branch_id = ?
+       WHERE ${bf.sql}
        ORDER BY n.created_at DESC`,
-      [branch_id]
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -572,7 +603,7 @@ async function getCreditDebitNotes(req, res) {
 
 // POST /api/billing/credit-debit-notes
 async function createCreditDebitNote(req, res) {
-  const branch_id = req.user.branch_id;
+  const activeBranchId = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
   const { note_type, customer_id, against_invoice, reason, amount, description } = req.body;
   const noteAmount = Number(amount || 0);
 
@@ -582,6 +613,7 @@ async function createCreditDebitNote(req, res) {
 
   const conn = await db.getConnection();
   try {
+    await ensureBillingSchema(conn);
     await conn.beginTransaction();
 
     const prefix = note_type === "Credit" ? "CN" : "DN";
@@ -591,9 +623,9 @@ async function createCreditDebitNote(req, res) {
     const note_no = `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 
     const [result] = await conn.query(
-      `INSERT INTO credit_debit_notes (note_no, note_type, customer_id, against_invoice, reason, amount, description)
-       VALUES (?,?,?,?,?,?,?)`,
-      [note_no, note_type, customer_id || null, against_invoice || null, reason, noteAmount, description || null]
+      `INSERT INTO credit_debit_notes (note_no, note_type, branch_id, customer_id, against_invoice, reason, amount, description)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [note_no, note_type, activeBranchId, customer_id || null, against_invoice || null, reason, noteAmount, description || null]
     );
 
     if (customer_id) {
@@ -645,14 +677,14 @@ async function createCreditDebitNote(req, res) {
 
 // GET /api/billing/returns
 async function getReturns(req, res) {
-  const branch_id = req.user.branch_id;
   try {
+    const bf = branchFilter(req, "r.branch_id");
     const [rows] = await db.query(
       `SELECT r.*, c.full_name AS customer_name FROM returns r
        LEFT JOIN customers c ON r.customer_id = c.id
-       WHERE r.branch_id = ?
+       WHERE ${bf.sql}
        ORDER BY r.return_date DESC`,
-      [branch_id]
+      bf.params
     );
     res.json({ success: true, data: rows });
   } catch (err) {
@@ -662,7 +694,7 @@ async function getReturns(req, res) {
 
 // POST /api/billing/returns
 async function createReturn(req, res) {
-  const branch_id = req.user.branch_id;
+  const activeBranchId = Number(req.body.branch_id || req.branchId || req.user?.branch_id || 1);
   const {
     customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, item_condition,
     cgst = 0, sgst = 0, igst = 0, taxable_amount
@@ -671,20 +703,21 @@ async function createReturn(req, res) {
 
   const conn = await db.getConnection();
   try {
+    await ensureBillingSchema(conn);
     await conn.beginTransaction();
 
     const [[{ count }]] = await conn.query("SELECT COUNT(*) AS count FROM returns");
     const return_no = `RET-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 
     const [result] = await conn.query(
-      `INSERT INTO returns (return_no, customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, item_condition)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [return_no, customer_id || null, invoice_ref || null, item_description, reason, refAmount, refund_mode, item_condition || null]
+      `INSERT INTO returns (return_no, branch_id, customer_id, invoice_ref, item_description, reason, refund_amount, refund_mode, item_condition)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [return_no, activeBranchId, customer_id || null, invoice_ref || null, item_description, reason, refAmount, refund_mode, item_condition || null]
     );
 
     if (refAmount > 0) {
       await accounting.postSalesRefund(conn, {
-        branch_id,
+        branch_id: activeBranchId,
         amount: refAmount,
         refund_mode: refund_mode || "Cash",
         reference_no: return_no,
@@ -786,14 +819,18 @@ async function createReturn(req, res) {
 // GET /api/billing/staff — active salespeople & staff for billing assignment
 async function getStaff(req, res) {
   try {
+    const bfUser = branchFilter(req, "branch_id");
     const [users] = await db.query(
-      `SELECT id, username, full_name, role, branch_id FROM users WHERE status = 'active' ORDER BY full_name ASC`
+      `SELECT id, username, full_name, role, branch_id FROM users WHERE status = 'active' AND ${bfUser.sql} ORDER BY full_name ASC`,
+      bfUser.params
     );
 
     let employees = [];
     try {
+      const bfEmp = branchFilter(req, "branch_id");
       const [empRows] = await db.query(
-        `SELECT id, name AS full_name, email AS username, role, branch_id FROM employees WHERE status = 'Active' ORDER BY name ASC`
+        `SELECT id, name AS full_name, email AS username, role, branch_id FROM employees WHERE status = 'Active' AND ${bfEmp.sql} ORDER BY name ASC`,
+        bfEmp.params
       );
       employees = empRows;
     } catch {}

@@ -27,14 +27,16 @@ async function getAllUsers(req, res) {
 // GET /api/users/:id
 async function getUserById(req, res) {
   try {
+    const bf = branchFilter(req, "u.branch_id");
+    const userId = req.user?.id || 1;
     const [rows] = await db.query(
       `SELECT u.id, u.username, u.full_name, u.role,
               u.status, u.last_login, u.branch_id,
               b.name AS branch_name
        FROM users u
        LEFT JOIN branches b ON u.branch_id = b.id
-       WHERE u.id = ?`,
-      [req.params.id]
+       WHERE u.id = ? AND (${bf.sql} OR u.id = ?)`,
+      [req.params.id, ...bf.params, userId]
     );
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: "User not found" });
@@ -60,6 +62,7 @@ async function getUserById(req, res) {
 // POST /api/users
 async function createUser(req, res) {
   const { username, password, full_name, role, branch_id, status = "active" } = req.body;
+  const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
 
   if (!username || !password || !full_name || !role) {
     return res.status(400).json({ success: false, message: "username, password, full_name, role required" });
@@ -77,13 +80,13 @@ async function createUser(req, res) {
     const [result] = await db.query(
       `INSERT INTO users (username, password_hash, full_name, role, branch_id, status)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [username.toLowerCase(), password_hash, full_name, role, branch_id || null, status]
+      [username.toLowerCase(), password_hash, full_name, role, activeBranchId, status]
     );
 
     res.status(201).json({
       success: true,
       message: "User created successfully",
-      data: { id: result.insertId, username, full_name, role, branch_id, status },
+      data: { id: result.insertId, username, full_name, role, branch_id: activeBranchId, status },
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -93,18 +96,21 @@ async function createUser(req, res) {
 // PUT /api/users/:id
 async function updateUser(req, res) {
   const { full_name, role, branch_id, status, password } = req.body;
+  const activeBranchId = Number(branch_id || req.branchId || req.user?.branch_id || 1);
+  const bf = branchFilter(req);
+  const userId = req.user?.id || 1;
 
   try {
     if (password) {
       const password_hash = await bcrypt.hash(password, 12);
       await db.query(
-        "UPDATE users SET full_name=?, role=?, branch_id=?, status=?, password_hash=? WHERE id=?",
-        [full_name, role, branch_id || null, status, password_hash, req.params.id]
+        `UPDATE users SET full_name=?, role=?, branch_id=?, status=?, password_hash=? WHERE id=? AND (${bf.sql} OR id = ?)`,
+        [full_name, role, activeBranchId, status, password_hash, req.params.id, ...bf.params, userId]
       );
     } else {
       await db.query(
-        "UPDATE users SET full_name=?, role=?, branch_id=?, status=? WHERE id=?",
-        [full_name, role, branch_id || null, status, req.params.id]
+        `UPDATE users SET full_name=?, role=?, branch_id=?, status=? WHERE id=? AND (${bf.sql} OR id = ?)`,
+        [full_name, role, activeBranchId, status, req.params.id, ...bf.params, userId]
       );
     }
     res.json({ success: true, message: "User updated" });
@@ -120,7 +126,8 @@ async function deleteUser(req, res) {
     if (parseInt(req.params.id) === req.user.id) {
       return res.status(400).json({ success: false, message: "Cannot delete your own account" });
     }
-    await db.query("DELETE FROM users WHERE id = ?", [req.params.id]);
+    const bf = branchFilter(req);
+    await db.query(`DELETE FROM users WHERE id = ? AND ${bf.sql}`, [req.params.id, ...bf.params]);
     res.json({ success: true, message: "User deleted" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -175,3 +182,4 @@ async function updateRolePermissions(req, res) {
 }
 
 module.exports = { getAllUsers, getUserById, createUser, updateUser, deleteUser, getRolePermissions, updateRolePermissions };
+
